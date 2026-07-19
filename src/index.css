@@ -1,0 +1,40 @@
+:root {
+  --t-bg: #f6f5f2;
+  --t-surf: #ffffff;
+  --t-surf2: #fbfaf8;
+  --t-surf3: #f3f1ec;
+  --t-brd: #e9e6de;
+  --t-brd2: #f0ede6;
+  --t-txt: #211f1c;
+  --t-txt2: #48453e;
+  --t-muted: #8b877e;
+  --t-acc: oklch(0.5 0.15 264);
+  --t-acc-bg: oklch(0.94 0.02 264);
+  --t-acc-dk: oklch(0.4 0.14 264);
+  --t-acc-fo: oklch(0.85 0.05 264);
+  --t-success: oklch(0.5 0.14 150);
+  --t-success-bg: oklch(0.94 0.04 150);
+  --t-amber: oklch(0.45 0.13 85);
+  --t-amber-bg: oklch(0.93 0.05 85);
+  --t-amber-brd: oklch(0.88 0.06 85);
+  --t-urgent: oklch(0.45 0.18 20);
+  --t-urgent-bg: oklch(0.96 0.04 20);
+  --t-important: oklch(0.4 0.14 264);
+  --t-important-bg: oklch(0.94 0.03 264);
+  --t-quick: oklch(0.42 0.14 145);
+  --t-quick-bg: oklch(0.94 0.04 145);
+  --t-kind-task: oklch(0.4 0.14 240);
+  --t-kind-task-bg: oklch(0.94 0.03 240);
+  --t-kind-reminder: oklch(0.45 0.13 75);
+  --t-kind-reminder-bg: oklch(0.96 0.04 75);
+  --t-kind-resp: oklch(0.42 0.12 185);
+  --t-kind-resp-bg: oklch(0.94 0.03 185);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: var(--t-txt); background: var(--t-bg); }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--t-brd); border-radius: 4px; }
+input, textarea, select, button { font-family: inherit; }
+button { cursor: pointer; }
+@keyframes spin { to { transform: rotate(360deg); } }

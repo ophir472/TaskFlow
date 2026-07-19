@@ -1,0 +1,171 @@
+import { useStore, type View } from '../../store';
+import type { SyncState } from '../../App';
+
+const NAV: { key: View; label: string; icon: string }[] = [
+  { key: 'feed', label: 'Card Feed', icon: '🂡' },
+  { key: 'kanban', label: 'Kanban', icon: '⫴' },
+  { key: 'table', label: 'Table', icon: '☰' },
+  { key: 'archive', label: 'Archive', icon: '🗑' },
+  { key: 'settings', label: 'Settings', icon: '⚙' },
+];
+
+interface Props {
+  onNewItem: () => void;
+  syncState: SyncState;
+}
+
+export function Sidebar({ onNewItem, syncState }: Props) {
+  const view = useStore(s => s.view);
+  const setView = useStore(s => s.setView);
+  const collapsed = useStore(s => s.sidebarCollapsed);
+  const setSidebarCollapsed = useStore(s => s.setSidebarCollapsed);
+  const snoozesToday = useStore(s => s.snoozesToday);
+  const promotionsToday = useStore(s => s.promotionsToday);
+  const snoozeLimit = useStore(s => s.snoozeLimit);
+  const promotionGoal = useStore(s => s.promotionGoal);
+
+  const pieCount = Math.min(promotionsToday, promotionGoal);
+  const pieDeg = Math.round((pieCount / promotionGoal) * 360);
+  const goalMet = pieCount >= promotionGoal;
+  const pieColor = goalMet ? 'oklch(0.6 0.14 150)' : 'oklch(0.5 0.15 264)';
+
+  const width = collapsed ? '44px' : '220px';
+
+  return (
+    <div
+      onClick={() => setSidebarCollapsed(!collapsed)}
+      style={{
+        width, flexShrink: 0, background: 'var(--t-surf, #ffffff)', borderRight: '1px solid var(--t-brd, #e6e3dc)',
+        display: 'flex', flexDirection: 'column',
+        padding: collapsed ? '16px 6px' : '20px 14px',
+        gap: 2,
+        transition: 'width 0.15s ease, padding 0.15s ease',
+        boxSizing: 'border-box', overflow: 'hidden',
+        cursor: 'pointer',
+      }}
+    >
+
+      {/* Top: logo / collapse toggle */}
+      <div style={{
+        display: 'flex', alignItems: 'center',
+        justifyContent: collapsed ? 'center' : 'space-between',
+        paddingBottom: 18,
+      }}>
+        {collapsed ? (
+          <div style={{
+            width: 28, height: 28, borderRadius: 7,
+            background: 'var(--t-acc, oklch(0.5 0.15 264))',
+            color: 'white', fontSize: 13, fontWeight: 800,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            userSelect: 'none', letterSpacing: '-0.03em', flexShrink: 0,
+          }}>TF</div>
+        ) : (
+          <div style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.02em', whiteSpace: 'nowrap', userSelect: 'none' }}>TaskFlow</div>
+        )}
+      </div>
+
+      {/* Nav items */}
+      {NAV.map(nav => {
+        const active = view === nav.key;
+        return (
+          <div
+            key={nav.key}
+            onClick={e => { e.stopPropagation(); setView(nav.key); }}
+            title={collapsed ? nav.label : undefined}
+            style={{
+              padding: collapsed ? '8px 0' : '9px 10px',
+              borderRadius: 8,
+              fontSize: collapsed ? 16 : 14,
+              fontWeight: active ? 600 : 500,
+              cursor: 'pointer',
+              color: active ? 'var(--t-acc-dk, oklch(0.4 0.14 264))' : 'var(--t-txt2, #48453e)',
+              background: active ? 'var(--t-acc-bg, oklch(0.94 0.02 264))' : 'transparent',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              gap: 10,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span style={{ lineHeight: 1 }}>{nav.icon}</span>
+            {!collapsed && <span>{nav.label}</span>}
+          </div>
+        );
+      })}
+
+      <div style={{ flex: 1 }} />
+
+      {/* New item button */}
+      <button
+        onClick={e => { e.stopPropagation(); onNewItem(); }}
+        title={collapsed ? 'New item' : undefined}
+        style={{
+          border: 'none',
+          background: 'var(--t-acc, oklch(0.5 0.15 264))',
+          color: 'white',
+          fontSize: collapsed ? 18 : 14,
+          fontWeight: 600,
+          padding: collapsed ? '8px 0' : '10px 14px',
+          borderRadius: 9,
+          cursor: 'pointer',
+          marginBottom: 12,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          width: '100%',
+          lineHeight: 1,
+        }}
+      >
+        {collapsed ? '+' : '+ New item'}
+      </button>
+
+      {/* Promotions + snoozes + sync footer */}
+      <div style={{
+        paddingTop: 10,
+        borderTop: '1px solid #efece5',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: collapsed ? 'center' : 'stretch',
+        gap: 10,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} title={collapsed ? `${pieCount}/${promotionGoal} promotions` : undefined}>
+          <div style={{
+            width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+            background: `conic-gradient(${pieColor} ${pieDeg}deg, #ece9e2 0deg)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <div style={{ width: 17, height: 17, borderRadius: '50%', background: 'var(--t-surf)' }} />
+          </div>
+          {!collapsed && (
+            <div style={{ fontSize: 12, color: 'var(--t-muted)', whiteSpace: 'nowrap' }}>
+              <span style={{ fontWeight: 600, color: 'var(--t-txt2)' }}>{pieCount}/{promotionGoal} today</span>
+            </div>
+          )}
+        </div>
+        {!collapsed && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--t-muted)' }}>
+            <span>Snoozes today</span>
+            <span style={{ fontWeight: 600, color: 'var(--t-txt2)' }}>{snoozesToday}/{snoozeLimit}</span>
+          </div>
+        )}
+
+        {/* Sync indicator — always visible */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          justifyContent: collapsed ? 'center' : 'flex-start',
+        }} title={syncState === 'syncing' ? 'Saving…' : 'Saved'}>
+          {syncState === 'syncing' ? (
+            <>
+              <span style={{ display: 'inline-block', fontSize: 13, animation: 'spin 0.8s linear infinite', color: 'var(--t-muted)' }}>↻</span>
+              {!collapsed && <span style={{ fontSize: 11, color: 'var(--t-muted)' }}>Saving…</span>}
+            </>
+          ) : (
+            <>
+              <span style={{ fontSize: 13, color: 'var(--t-success)' }}>✓</span>
+              {!collapsed && <span style={{ fontSize: 11, color: 'var(--t-success)' }}>Saved</span>}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

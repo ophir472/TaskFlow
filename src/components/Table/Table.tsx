@@ -1,0 +1,230 @@
+import { useState, useRef, useEffect } from 'react';
+import { useStore } from '../../store';
+import { scoreItem } from '../../engine';
+import { formatSchedule } from '../../scheduleEngine';
+import type { Item, Task, Reminder, Responsibility } from '../../types';
+
+// ── Column definitions ──────────────────────────────────────────
+
+interface ColDef {
+  key: string;
+  label: string;
+  defaultOn: boolean;
+  getValue: (it: Item) => string | number;
+  align?: 'right';
+}
+
+const STD_COLS: ColDef[] = [
+  { key: 'title', label: 'Title', defaultOn: true, getValue: it => it.title },
+  { key: 'type', label: 'Type', defaultOn: true, getValue: it => it.kind === 'task' ? 'Task' : it.kind === 'reminder' ? 'Reminder' : 'Responsibility' },
+  { key: 'requester', label: 'Requester', defaultOn: true, getValue: it => (it as Task).requester ?? '' },
+  { key: 'project', label: 'Project', defaultOn: true, getValue: it => (it as Task).project ?? '' },
+  { key: 'status', label: 'Status / Schedule', defaultOn: true, getValue: it => it.kind === 'task' ? it.status.replace('_', ' ') : formatSchedule((it as Reminder | Responsibility).schedule) },
+  { key: 'jira', label: 'Jira', defaultOn: true, getValue: it => (it as Task).jiraLink ?? '' },
+  { key: 'tags', label: 'Tags', defaultOn: false, getValue: it => {
+    if (it.kind !== 'task') return '';
+    const t = it as Task;
+    if (t.noTag) return 'None';
+    return [t.urgent && 'Urgent', t.important && 'Important', t.quick && 'Quick'].filter(Boolean).join(', ') || '—';
+  }},
+  { key: 'score', label: 'Score', defaultOn: true, align: 'right', getValue: it => scoreItem(it) },
+  { key: 'created', label: 'Created', defaultOn: false, getValue: it => new Date(it.createdAt).toLocaleDateString() },
+  { key: 'updated', label: 'Updated', defaultOn: false, getValue: it => new Date(it.updatedAt).toLocaleDateString() },
+];
+
+// ── Styles ──────────────────────────────────────────────────────
+
+const selectSt: React.CSSProperties = { fontSize: 13, padding: '7px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)' };
+
+// ── Component ───────────────────────────────────────────────────
+
+export function Table() {
+  const items = useStore(s => s.items);
+  const requesters = useStore(s => s.requesters);
+  const projects = useStore(s => s.projects);
+  const customFields = useStore(s => s.customFields);
+  const archiveItem = useStore(s => s.archiveItem);
+  const deleteItem = useStore(s => s.deleteItem);
+
+  const [reqFilter, setReqFilter] = useState('');
+  const [projFilter, setProjFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
+  const [colPickerOpen, setColPickerOpen] = useState(false);
+  const colPickerRef = useRef<HTMLDivElement>(null);
+
+  // Build all available columns (std + custom)
+  const allCols: ColDef[] = [
+    ...STD_COLS,
+    ...customFields.filter(f => f.showInTable).map(f => ({
+      key: `cf_${f.id}`,
+      label: f.name,
+      defaultOn: true,
+      getValue: (it: Item) => it.kind === 'task' ? ((it as Task).customValues?.[f.id] ?? '') : '',
+    })),
+  ];
+
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(
+    new Set(STD_COLS.filter(c => c.defaultOn).map(c => c.key))
+  );
+
+  // Sync new custom field cols into visible set
+  useEffect(() => {
+    const newKeys = customFields.filter(f => f.showInTable).map(f => `cf_${f.id}`);
+    setVisibleCols(prev => {
+      const next = new Set(prev);
+      newKeys.forEach(k => next.add(k));
+      return next;
+    });
+  }, [customFields]);
+
+  // Close col picker on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (colPickerRef.current && !colPickerRef.current.contains(e.target as Node)) setColPickerOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const cols = allCols.filter(c => visibleCols.has(c.key));
+
+  function toggleCol(key: string) {
+    if (key === 'title') return; // title always visible
+    setVisibleCols(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  function handleSortClick(key: string) {
+    setSort(prev => {
+      if (!prev || prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return null;
+    });
+  }
+
+  function sortIcon(key: string) {
+    if (!sort || sort.key !== key) return <span style={{ color: 'var(--t-brd)', marginLeft: 4 }}>↕</span>;
+    return <span style={{ color: 'var(--t-acc)', marginLeft: 4 }}>{sort.dir === 'asc' ? '↑' : '↓'}</span>;
+  }
+
+  // Filter rows
+  let rows = items.filter(it => {
+    if (it.archived) return false;
+    if (reqFilter && (it as Task).requester !== reqFilter) return false;
+    if (projFilter && (it as Task).project !== projFilter) return false;
+    if (typeFilter && it.kind !== typeFilter) return false;
+    if (statusFilter && it.kind === 'task' && it.status !== statusFilter) return false;
+    return true;
+  });
+
+  // Sort
+  if (sort) {
+    const col = allCols.find(c => c.key === sort.key);
+    if (col) {
+      rows = [...rows].sort((a, b) => {
+        const av = col.getValue(a), bv = col.getValue(b);
+        const cmp = typeof av === 'number' && typeof bv === 'number'
+          ? av - bv
+          : String(av).localeCompare(String(bv));
+        return sort.dir === 'asc' ? cmp : -cmp;
+      });
+    }
+  }
+
+  const th: React.CSSProperties = { padding: '11px 14px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--t-muted)', fontWeight: 700, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' };
+  const td: React.CSSProperties = { padding: '10px 14px', borderBottom: '1px solid var(--t-brd2)', fontSize: 13.5, color: 'var(--t-txt2)' };
+
+  return (
+    <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflow: 'auto' }}>
+      {/* Filters + column picker */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={selectSt}>
+          <option value="">All types</option>
+          <option value="task">Task</option>
+          <option value="reminder">Reminder</option>
+          <option value="responsibility">Responsibility</option>
+        </select>
+        <select value={reqFilter} onChange={e => setReqFilter(e.target.value)} style={selectSt}>
+          <option value="">All requesters</option>
+          {requesters.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <select value={projFilter} onChange={e => setProjFilter(e.target.value)} style={selectSt}>
+          <option value="">All projects</option>
+          {projects.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selectSt}>
+          <option value="">All statuses</option>
+          <option value="in_progress">In progress</option>
+          <option value="backlog">Backlog</option>
+          <option value="waiting">Waiting</option>
+          <option value="done">Done</option>
+        </select>
+
+        <div style={{ marginLeft: 'auto', position: 'relative' }} ref={colPickerRef}>
+          <button onClick={() => setColPickerOpen(o => !o)}
+            style={{ fontSize: 13, padding: '7px 12px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', cursor: 'pointer', color: 'var(--t-txt2)', fontWeight: 500 }}>
+            Columns ▾
+          </button>
+          {colPickerOpen && (
+            <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: '8px 0', zIndex: 30, minWidth: 180 }}>
+              {allCols.map(col => (
+                <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', cursor: col.key === 'title' ? 'default' : 'pointer', fontSize: 13.5, color: 'var(--t-txt)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'var(--t-surf)')}>
+                  <input type="checkbox" checked={visibleCols.has(col.key)} onChange={() => toggleCol(col.key)} disabled={col.key === 'title'} style={{ cursor: col.key === 'title' ? 'default' : 'pointer' }} />
+                  {col.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Table */}
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden' }}>
+        <thead>
+          <tr style={{ background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd)' }}>
+            {cols.map(col => (
+              <th key={col.key} onClick={() => handleSortClick(col.key)}
+                style={{ ...th, textAlign: col.align ?? 'left' }}>
+                {col.label}{sortIcon(col.key)}
+              </th>
+            ))}
+            <th style={{ ...th, width: 80 }}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(it => (
+            <tr key={it.id} onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')} onMouseLeave={e => (e.currentTarget.style.background = 'var(--t-surf)')}>
+              {cols.map(col => (
+                <td key={col.key} style={{ ...td, textAlign: col.align ?? 'left', fontWeight: col.key === 'title' ? 500 : 400, color: col.key === 'title' ? 'var(--t-txt)' : 'var(--t-txt2)' }}>
+                  {String(col.getValue(it) || '—')}
+                </td>
+              ))}
+              <td style={{ ...td, textAlign: 'right' }}>
+                <span onClick={() => { if (confirm('Archive this item?')) archiveItem(it.id); }}
+                  style={{ fontSize: 12, color: 'var(--t-muted)', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
+                  title="Archive">⊙</span>
+                <span onClick={() => { if (confirm('Permanently delete?')) deleteItem(it.id); }}
+                  style={{ fontSize: 12, color: 'var(--t-urgent)', cursor: 'pointer', fontWeight: 500 }}
+                  title="Delete">✕</span>
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={cols.length + 1} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      <div style={{ fontSize: 12, color: 'var(--t-muted)' }}>{rows.length} item{rows.length !== 1 ? 's' : ''}</div>
+    </div>
+  );
+}
