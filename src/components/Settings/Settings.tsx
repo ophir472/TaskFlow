@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useStore } from '../../store';
 import { nextId } from '../../engine';
 import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
+import { triggerDownload, restoreFromData, supportsAutoBackup } from '../../backup';
 
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
 const listItem: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 12px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 8, fontSize: 14, color: 'var(--t-txt)' };
@@ -33,7 +34,14 @@ function ManagedList({ title, items, onAdd, onRemove }: { title: string; items: 
   );
 }
 
-export function Settings() {
+interface BackupProps {
+  backupFileName: string | null;
+  lastBackedUp: number | null;
+  onSetBackupFile: () => void;
+  onClearBackupFile: () => void;
+}
+
+export function Settings({ backupFileName, lastBackedUp, onSetBackupFile, onClearBackupFile }: BackupProps) {
   const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);
   const customFields = useStore(s => s.customFields);
@@ -46,6 +54,29 @@ export function Settings() {
   const updateCustomField = useStore(s => s.updateCustomField);
   const themeId = useStore(s => s.themeId);
   const [page, setPage] = useState<'main' | 'appearance'>('main');
+  const importRef = useRef<HTMLInputElement>(null);
+
+  function handleExport() {
+    const date = new Date().toISOString().slice(0, 10);
+    triggerDownload(`taskflow-backup-${date}.json`);
+  }
+
+  function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result as string) as Record<string, unknown>;
+        if (!confirm('This will overwrite all current data. Continue?')) return;
+        restoreFromData(data);
+      } catch {
+        alert('Invalid backup file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldTable, setNewFieldTable] = useState(true);
   const [newFieldCard, setNewFieldCard] = useState(false);
@@ -89,6 +120,44 @@ export function Settings() {
             🎨 Change theme
           </button>
         </div>
+      </div>
+
+      {/* Backup & Restore */}
+      <div style={card}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 14 }}>Backup & Restore</div>
+
+        <div style={{ display: 'flex', gap: 10, marginBottom: supportsAutoBackup() ? 20 : 0 }}>
+          <button onClick={handleExport} style={addBtn}>↓ Export JSON</button>
+          <button onClick={() => importRef.current?.click()}
+            style={{ ...addBtn, background: 'var(--t-surf2)', color: 'var(--t-txt2)', border: '1px solid var(--t-brd)' }}>
+            ↑ Import JSON
+          </button>
+          <input ref={importRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
+        </div>
+
+        {supportsAutoBackup() && (
+          <>
+            <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: 12 }}>
+              Auto-backup writes to a file on your computer every time data changes.
+            </div>
+            {backupFileName ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 9 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--t-txt)' }}>{backupFileName}</div>
+                  {lastBackedUp
+                    ? <div style={{ fontSize: 12, color: 'var(--t-muted)', marginTop: 2 }}>Last saved {new Date(lastBackedUp).toLocaleString()}</div>
+                    : <div style={{ fontSize: 12, color: 'var(--t-muted)', marginTop: 2 }}>Waiting for next change…</div>
+                  }
+                </div>
+                <span onClick={onClearBackupFile}
+                  style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 16, lineHeight: 1 }}
+                  title="Remove auto-backup">×</span>
+              </div>
+            ) : (
+              <button onClick={onSetBackupFile} style={addBtn}>Choose backup file…</button>
+            )}
+          </>
+        )}
       </div>
 
       {/* Managed lists row */}

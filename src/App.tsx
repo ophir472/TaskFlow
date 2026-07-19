@@ -9,6 +9,7 @@ import { Archive } from './components/Archive/Archive';
 import { Settings } from './components/Settings/Settings';
 import { CreateModal } from './components/CreateModal/CreateModal';
 import { Toast } from './components/Toast/Toast';
+import { getStoredHandle, storeHandle, clearStoredHandle, ensureWritePermission, writeBackup, getExportData, supportsAutoBackup } from './backup';
 
 export type SyncState = 'idle' | 'syncing' | 'saved';
 
@@ -30,12 +31,56 @@ export default function App() {
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const backupHandleRef = useRef<FileSystemFileHandle | null>(null);
+  const backupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [backupFileName, setBackupFileName] = useState<string | null>(null);
+  const [lastBackedUp, setLastBackedUp] = useState<number | null>(() => {
+    const v = localStorage.getItem('taskflow-last-backup');
+    return v ? parseInt(v) : null;
+  });
+
+  function applyHandle(handle: FileSystemFileHandle | null) {
+    backupHandleRef.current = handle;
+    setBackupFileName(handle?.name ?? null);
+  }
+
+  async function handleSetBackupFile() {
+    if (!supportsAutoBackup()) return;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handle: FileSystemFileHandle = await (window as any).showSaveFilePicker({
+        suggestedName: 'taskflow-backup.json',
+        types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+      });
+      await storeHandle(handle);
+      applyHandle(handle);
+      await writeBackup(handle, getExportData());
+      const now = Date.now();
+      localStorage.setItem('taskflow-last-backup', String(now));
+      setLastBackedUp(now);
+    } catch {
+      // user cancelled or permission denied
+    }
+  }
+
+  async function handleClearBackupFile() {
+    await clearStoredHandle();
+    applyHandle(null);
+  }
+
   const toastTimer = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(t => (t === msg ? null : t)), 2500);
   }, []);
 
-  // Sync indicator
+  // Load stored backup handle on mount
+  useEffect(() => {
+    getStoredHandle().then(handle => {
+      if (handle) applyHandle(handle);
+    });
+  }, []);
+
+  // Sync indicator + auto-backup
   useEffect(() => {
     const unsub = useStore.subscribe(() => {
       setSyncState('syncing');
@@ -43,6 +88,24 @@ export default function App() {
       if (idleTimer.current) clearTimeout(idleTimer.current);
       syncTimer.current = setTimeout(() => setSyncState('saved'), 500);
       idleTimer.current = setTimeout(() => setSyncState('idle'), 2000);
+
+      if (backupHandleRef.current) {
+        if (backupDebounceRef.current) clearTimeout(backupDebounceRef.current);
+        backupDebounceRef.current = setTimeout(async () => {
+          const handle = backupHandleRef.current;
+          if (!handle) return;
+          try {
+            const ok = await ensureWritePermission(handle);
+            if (!ok) return;
+            await writeBackup(handle, getExportData());
+            const now = Date.now();
+            localStorage.setItem('taskflow-last-backup', String(now));
+            setLastBackedUp(now);
+          } catch {
+            // silently skip — file may have been moved/deleted
+          }
+        }, 2000);
+      }
     });
     return unsub;
   }, []);
@@ -93,7 +156,14 @@ export default function App() {
         {view === 'kanban' && <Kanban />}
         {view === 'table' && <Table />}
         {view === 'archive' && <Archive />}
-        {view === 'settings' && <Settings />}
+        {view === 'settings' && (
+          <Settings
+            backupFileName={backupFileName}
+            lastBackedUp={lastBackedUp}
+            onSetBackupFile={handleSetBackupFile}
+            onClearBackupFile={handleClearBackupFile}
+          />
+        )}
       </div>
 
       {createOpen && (
