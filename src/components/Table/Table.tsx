@@ -50,6 +50,7 @@ export function Table() {
   const [projFilter, setProjFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
   const [colPickerOpen, setColPickerOpen] = useState(false);
@@ -140,6 +141,43 @@ export function Table() {
   const th: React.CSSProperties = { padding: '11px 14px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--t-muted)', fontWeight: 700, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' };
   const td: React.CSSProperties = { padding: '10px 14px', borderBottom: '1px solid var(--t-brd2)', fontSize: 13.5, color: 'var(--t-txt2)' };
 
+  const allChecked = rows.length > 0 && rows.every(it => selected.has(it.id));
+  const someChecked = rows.some(it => selected.has(it.id)) && !allChecked;
+
+  function toggleSelectAll() {
+    if (allChecked) {
+      setSelected(prev => { const n = new Set(prev); rows.forEach(it => n.delete(it.id)); return n; });
+    } else {
+      setSelected(prev => { const n = new Set(prev); rows.forEach(it => n.add(it.id)); return n; });
+    }
+  }
+
+  function toggleRow(id: string) {
+    setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+
+  function bulkArchive() {
+    const ids = [...selected].filter(id => rows.some(r => r.id === id));
+    if (!ids.length || !confirm(`Archive ${ids.length} item${ids.length > 1 ? 's' : ''}?`)) return;
+    ids.forEach(id => archiveItem(id));
+    setSelected(new Set());
+  }
+
+  function bulkDelete() {
+    const ids = [...selected].filter(id => rows.some(r => r.id === id));
+    if (!ids.length || !confirm(`Permanently delete ${ids.length} item${ids.length > 1 ? 's' : ''}?`)) return;
+    ids.forEach(id => deleteItem(id));
+    setSelected(new Set());
+  }
+
+  const selCount = rows.filter(it => selected.has(it.id)).length;
+
+  // Ref for the "select all" checkbox to set indeterminate state
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someChecked;
+  }, [someChecked]);
+
   return (
     <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflow: 'auto' }}>
       {/* Filters + column picker */}
@@ -186,40 +224,72 @@ export function Table() {
         </div>
       </div>
 
+      {/* Bulk action bar */}
+      {selCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'var(--t-acc-bg)', border: '1px solid var(--t-acc)', borderRadius: 9 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--t-acc-dk)' }}>{selCount} selected</span>
+          <button onClick={() => setSelected(new Set())}
+            style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', cursor: 'pointer' }}>
+            Clear
+          </button>
+          <div style={{ flex: 1 }} />
+          <button onClick={bulkArchive}
+            style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--t-acc)', color: 'white', cursor: 'pointer' }}>
+            ⊙ Archive {selCount}
+          </button>
+          <button onClick={bulkDelete}
+            style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--t-urgent)', color: 'white', cursor: 'pointer' }}>
+            ✕ Delete {selCount}
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden' }}>
         <thead>
           <tr style={{ background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd)' }}>
+            <th style={{ ...th, width: 40, cursor: 'default' }} onClick={e => e.stopPropagation()}>
+              <input ref={selectAllRef} type="checkbox" checked={allChecked} onChange={toggleSelectAll} style={{ cursor: 'pointer', width: 15, height: 15 }} />
+            </th>
             {cols.map(col => (
               <th key={col.key} onClick={() => handleSortClick(col.key)}
                 style={{ ...th, textAlign: col.align ?? 'left' }}>
                 {col.label}{sortIcon(col.key)}
               </th>
             ))}
-            <th style={{ ...th, width: 80 }}></th>
+            <th style={{ ...th, width: 80, cursor: 'default' }}></th>
           </tr>
         </thead>
         <tbody>
-          {rows.map(it => (
-            <tr key={it.id} onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')} onMouseLeave={e => (e.currentTarget.style.background = 'var(--t-surf)')}>
-              {cols.map(col => (
-                <td key={col.key} style={{ ...td, textAlign: col.align ?? 'left', fontWeight: col.key === 'title' ? 500 : 400, color: col.key === 'title' ? 'var(--t-txt)' : 'var(--t-txt2)' }}>
-                  {String(col.getValue(it) || '—')}
+          {rows.map(it => {
+            const isSelected = selected.has(it.id);
+            return (
+              <tr key={it.id}
+                style={{ background: isSelected ? 'var(--t-acc-bg)' : 'var(--t-surf)' }}
+                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--t-surf2)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = isSelected ? 'var(--t-acc-bg)' : 'var(--t-surf)'; }}>
+                <td style={{ ...td, width: 40 }} onClick={() => toggleRow(it.id)}>
+                  <input type="checkbox" checked={isSelected} onChange={() => toggleRow(it.id)} style={{ cursor: 'pointer', width: 15, height: 15 }} />
                 </td>
-              ))}
-              <td style={{ ...td, textAlign: 'right' }}>
-                <span onClick={() => { if (confirm('Archive this item?')) archiveItem(it.id); }}
-                  style={{ fontSize: 12, color: 'var(--t-muted)', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
-                  title="Archive">⊙</span>
-                <span onClick={() => { if (confirm('Permanently delete?')) deleteItem(it.id); }}
-                  style={{ fontSize: 12, color: 'var(--t-urgent)', cursor: 'pointer', fontWeight: 500 }}
-                  title="Delete">✕</span>
-              </td>
-            </tr>
-          ))}
+                {cols.map(col => (
+                  <td key={col.key} style={{ ...td, textAlign: col.align ?? 'left', fontWeight: col.key === 'title' ? 500 : 400, color: col.key === 'title' ? 'var(--t-txt)' : 'var(--t-txt2)' }}>
+                    {String(col.getValue(it) || '—')}
+                  </td>
+                ))}
+                <td style={{ ...td, textAlign: 'right' }}>
+                  <span onClick={() => { if (confirm('Archive this item?')) archiveItem(it.id); }}
+                    style={{ fontSize: 12, color: 'var(--t-muted)', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
+                    title="Archive">⊙</span>
+                  <span onClick={() => { if (confirm('Permanently delete?')) deleteItem(it.id); }}
+                    style={{ fontSize: 12, color: 'var(--t-urgent)', cursor: 'pointer', fontWeight: 500 }}
+                    title="Delete">✕</span>
+                </td>
+              </tr>
+            );
+          })}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={cols.length + 1} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
+              <td colSpan={cols.length + 2} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
             </tr>
           )}
         </tbody>
