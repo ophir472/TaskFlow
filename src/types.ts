@@ -41,10 +41,20 @@ export interface Subtask {
   createdAt: number;
 }
 
+export interface JiraConfig {
+  host: string;
+  username: string;
+  apiToken: string;
+  projectKey: string;
+  component: string;
+  defaultAssigneeId: string;
+}
+
 export interface Task {
   id: string;
   kind: 'task';
   title: string;
+  description: string;
   notes: string;
   blockers: string;
   generalLink: string;

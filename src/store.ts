@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField } from './types';
+import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig } from './types';
 import { midnight } from './engine';
 
 const SNOOZE_LIMIT = 2;
@@ -26,6 +26,7 @@ interface AppState {
   themeId: string;
   customAccent: string | null;
   customBg: string | null;
+  jiraConfig: JiraConfig | null;
 
   setDisplayId: (id: string | null) => void;
   setTriggerTagForId: (id: string | null) => void;
@@ -57,6 +58,7 @@ interface AppState {
   updateItemCustomValue: (itemId: string, fieldId: string, value: string) => void;
   setView: (v: View) => void;
   setSidebarCollapsed: (v: boolean) => void;
+  setJiraConfig: (config: JiraConfig | null) => void;
   checkDailyReset: () => void;
 }
 
@@ -84,6 +86,7 @@ export const useStore = create<AppState>()(
       themeId: 'sand',
       customAccent: null,
       customBg: null,
+      jiraConfig: null,
 
       setDisplayId: (id) => set({ displayId: id }),
       setTriggerTagForId: (id) => set({ triggerTagForId: id }),
@@ -259,6 +262,7 @@ export const useStore = create<AppState>()(
 
       setView: (v) => set({ view: v }),
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
+      setJiraConfig: (config) => set({ jiraConfig: config }),
 
       checkDailyReset: () => {
         const { dailyResetAt } = get();

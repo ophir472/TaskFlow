@@ -34,6 +34,7 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
   const [title, setTitle] = useState(initialTitle);
   const [requester, setRequester] = useState(requesters[0] ?? '');
   const [project, setProject] = useState(projects[0] ?? '');
+  const [description, setDescription] = useState('');
   const [jiraLink, setJiraLink] = useState('');
   const [schedule, setSchedule] = useState<ScheduleSpec | null>(null);
   const [urgent, setUrgent] = useState(false);
@@ -54,7 +55,7 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
     const id = nextId(type === 'task' ? 't' : type === 'reminder' ? 'r' : 'p');
     let item: Item;
     if (type === 'task') {
-      item = { id, kind: 'task', title, notes: '', blockers: '', generalLink: '', jiraLink, requester, project, status: 'backlog', urgent, important, quick, noTag, toCheck: '', priorityBoost: false, subtasks: [], bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false };
+      item = { id, kind: 'task', title, description, notes: '', blockers: '', generalLink: '', jiraLink, requester, project, status: 'backlog', urgent, important, quick, noTag, toCheck: '', priorityBoost: false, subtasks: [], bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false };
     } else if (type === 'reminder') {
       item = { id, kind: 'reminder', title, schedule: schedule!, status: 'active', priorityBoost: false, bumpedAt: 0, createdAt: now, updatedAt: now, archived: false };
     } else {
@@ -117,6 +118,10 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
                   <option value="">—</option>{projects.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
+            </div>
+            <div>
+              <div style={lbl}>Jira Description</div>
+              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Describe the ticket… (optional)" style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }} />
             </div>
             <div><div style={lbl}>Jira link</div>
               <input value={jiraLink} onChange={e => setJiraLink(e.target.value)} placeholder="e.g. PROJ-1234 (optional)" style={inp} />

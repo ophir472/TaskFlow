@@ -7,6 +7,7 @@ import { SubtaskPanel } from '../SubtaskPanel/SubtaskPanel';
 import { SubtaskFullPage } from '../SubtaskPanel/SubtaskFullPage';
 import { SchedulePicker } from '../SchedulePicker/SchedulePicker';
 import { SearchBar } from '../SearchBar/SearchBar';
+import { createJiraIssue } from '../../jira';
 
 interface Props {
   onToast: (msg: string) => void;
@@ -27,6 +28,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const setTriggerTagForId = useStore(s => s.setTriggerTagForId);
 
   const customFields = useStore(s => s.customFields);
+  const jiraConfig = useStore(s => s.jiraConfig);
   const updateItem = useStore(s => s.updateItem);
   const updateItemCustomValue = useStore(s => s.updateItemCustomValue);
   const toggleTag = useStore(s => s.toggleTag);
@@ -41,6 +43,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const completeItem = useStore(s => s.completeItem);
   const createItem = useStore(s => s.createItem);
 
+  const [creatingJira, setCreatingJira] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
   const [holdNote, setHoldNote] = useState('');
   const [holdSchedule, setHoldSchedule] = useState<ScheduleSpec | null>(null);
@@ -153,7 +156,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     const now = Date.now();
     const id = nextId('t');
     createItem({
-      id, kind: 'task', title, notes: '', blockers: '', generalLink: '', jiraLink: '',
+      id, kind: 'task', title, description: '', notes: '', blockers: '', generalLink: '', jiraLink: '',
       requester: '', project: '', status: 'backlog',
       urgent: false, important: false, quick: false, noTag: false,
       toCheck: '', priorityBoost: false, subtasks: [],
@@ -177,6 +180,25 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     if (result === 'rescheduled') onToast('Rescheduled for next occurrence');
     else if (result === 'archived') onToast('Archived');
   };
+
+  async function handleCreateJira() {
+    if (!jiraConfig || !t || !current) return;
+    setCreatingJira(true);
+    try {
+      const result = await createJiraIssue(jiraConfig, {
+        summary: t.title,
+        description: t.description ?? '',
+        requestedBy: t.requester,
+      });
+      updateItem(current.id, { jiraLink: result.key });
+      onToast(`Created ${result.key}`);
+      window.open(result.url, '_blank');
+    } catch (err) {
+      onToast(`Jira error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setCreatingJira(false);
+    }
+  }
 
   // Full-page subtask replaces the entire feed area
   if (fullPageSubtask) {
@@ -389,6 +411,12 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                 </div>
               </div>
 
+              {/* Jira Description */}
+              <div>
+                <div style={fl}>Jira Description</div>
+                <textarea value={t.description ?? ''} onChange={e => updateItem(current.id, { description: e.target.value })} rows={3} placeholder="Describe the ticket…" style={ta} />
+              </div>
+
               {/* Notes */}
               <div>
                 <div style={fl}>Notes</div>
@@ -430,6 +458,21 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
               <div>
                 <div style={fl}>Jira</div>
                 <input value={t.jiraLink} onChange={e => updateItem(current.id, { jiraLink: e.target.value })} placeholder="PROJ-1234" style={{ ...inp, fontSize: 13, padding: '7px 9px', borderRadius: 7 }} />
+                {t.jiraLink ? (
+                  <a
+                    href={`https://${jiraConfig?.host ?? ''}/browse/${t.jiraLink}`}
+                    target="_blank" rel="noreferrer"
+                    style={{ display: 'block', marginTop: 6, fontSize: 12, color: 'var(--t-acc)', textDecoration: 'none', fontWeight: 500 }}>
+                    ↗ Open {t.jiraLink}
+                  </a>
+                ) : jiraConfig ? (
+                  <button
+                    onClick={handleCreateJira}
+                    disabled={creatingJira}
+                    style={{ marginTop: 6, width: '100%', border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 12, fontWeight: 600, padding: '6px 0', borderRadius: 6, cursor: creatingJira ? 'wait' : 'pointer', opacity: creatingJira ? 0.6 : 1 }}>
+                    {creatingJira ? 'Creating…' : '+ Create in Jira'}
+                  </button>
+                ) : null}
               </div>
               <div>
                 <div style={fl}>General link</div>
