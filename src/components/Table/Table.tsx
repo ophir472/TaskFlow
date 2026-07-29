@@ -352,19 +352,20 @@ export function Table() {
                 onDragOver={e => { e.preventDefault(); if (it.id !== dragId) setDragOverId(it.id); }}
                 onDrop={e => { e.preventDefault(); handleDrop(it.id); }}
                 onDragEnd={() => { setDragId(null); setDragOverId(null); }}
-                style={rowStyle}
+                onClick={() => { window.location.hash = `feed/${it.id}`; }}
+                style={{ ...rowStyle, cursor: 'pointer' }}
                 onMouseEnter={e => { if (!isSelected && !isDragging) e.currentTarget.style.background = isToday ? 'var(--t-amber-bg)' : 'var(--t-surf2)'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = rowBg; }}>
-                <td style={{ ...td, width: 28, color: 'var(--t-brd)', cursor: 'grab', userSelect: 'none', fontSize: 15, textAlign: 'center', paddingLeft: 8, paddingRight: 4 }}>
+                <td onClick={e => e.stopPropagation()} style={{ ...td, width: 28, color: 'var(--t-brd)', cursor: 'grab', userSelect: 'none', fontSize: 15, textAlign: 'center', paddingLeft: 8, paddingRight: 4 }}>
                   ⠿
                 </td>
                 <td style={{ ...td, width: 36, textAlign: 'right', fontSize: 12, color: 'var(--t-muted)', fontWeight: 600, paddingRight: 10 }}>
                   {rows.indexOf(it) + 1}
                 </td>
-                <td style={{ ...td, width: 40 }} onClick={() => toggleRow(it.id)}>
+                <td style={{ ...td, width: 40 }} onClick={e => { e.stopPropagation(); toggleRow(it.id); }}>
                   <input type="checkbox" checked={isSelected} onChange={() => toggleRow(it.id)} onClick={e => e.stopPropagation()} style={{ cursor: 'pointer', width: 15, height: 15 }} />
                 </td>
-                <td style={{ ...td, width: 60, textAlign: 'center' }}>
+                <td onClick={e => e.stopPropagation()} style={{ ...td, width: 60, textAlign: 'center' }}>
                   {it.kind === 'task' && (
                     <input
                       type="checkbox"
@@ -380,7 +381,7 @@ export function Table() {
                     {String(col.getValue(it) || '—')}
                   </td>
                 ))}
-                <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <td onClick={e => e.stopPropagation()} style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {it.kind === 'task' && (it as Task).manuallyMoved && (
                     <span onClick={() => {
                       updateItem(it.id, { manuallyMoved: false });

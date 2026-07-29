@@ -106,15 +106,19 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     }
   }
 
-  // If displayId has left the queue (completed/archived/held), fall back to queue[0].
-  const displayItem = queue.find(it => it.id === displayId) ?? queue[0] ?? null;
+  // Allow viewing any item (including archived) when navigated to directly.
+  const displayItem = (displayId ? items.find(it => it.id === displayId) : null) ?? queue[0] ?? null;
   const current = displayItem;
 
   useEffect(() => {
     if (queue.length === 0) { setDisplayId(null); return; }
     // Don't clear displayId while editing tags — queue rebuilds but we stay pinned
     if (tagEditMode) return;
-    if (displayId && !queue.find(it => it.id === displayId)) setDisplayId(null);
+    if (displayId && !queue.find(it => it.id === displayId)) {
+      // Keep displayId if pointing to an archived item (user navigated from archive table)
+      const item = items.find(it => it.id === displayId);
+      if (!item?.archived) setDisplayId(null);
+    }
   }, [queue.map(it => it.id).join(','), tagEditMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resize title textarea whenever the active card changes

@@ -268,10 +268,11 @@ export function Archive() {
                 const isSelected = selected.has(it.id);
                 return (
                   <tr key={it.id}
-                    style={{ background: isSelected ? 'var(--t-acc-bg)' : 'var(--t-surf)' }}
+                    onClick={() => { window.location.hash = `feed/${it.id}`; }}
+                    style={{ background: isSelected ? 'var(--t-acc-bg)' : 'var(--t-surf)', cursor: 'pointer' }}
                     onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--t-surf2)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = isSelected ? 'var(--t-acc-bg)' : 'var(--t-surf)'; }}>
-                    <td style={{ ...td, width: 40 }} onClick={() => toggleRow(it.id)}>
+                    <td style={{ ...td, width: 40 }} onClick={e => { e.stopPropagation(); toggleRow(it.id); }}>
                       <input type="checkbox" checked={isSelected} onChange={() => toggleRow(it.id)} onClick={e => e.stopPropagation()} style={{ cursor: 'pointer', width: 15, height: 15 }} />
                     </td>
                     {cols.map(col => (
@@ -279,7 +280,7 @@ export function Archive() {
                         {String(col.getValue(it) || '—')}
                       </td>
                     ))}
-                    <td style={{ ...td, textAlign: 'right' }}>
+                    <td onClick={e => e.stopPropagation()} style={{ ...td, textAlign: 'right' }}>
                       <span onClick={() => unarchiveItem(it.id)}
                         style={{ fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
                         title="Restore">↩</span>
