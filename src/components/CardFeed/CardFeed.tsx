@@ -157,7 +157,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     const id = nextId('t');
     createItem({
       id, kind: 'task', title, description: '', notes: '', blockers: '', generalLink: '', jiraLink: '',
-      requester: '', project: '', status: 'backlog',
+      requester: '', project: '', status: 'backlog', forToday: false,
       urgent: false, important: false, quick: false, noTag: false,
       toCheck: '', priorityBoost: false, subtasks: [],
       bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false,

@@ -43,6 +43,7 @@ export function Table() {
   const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);
   const customFields = useStore(s => s.customFields);
+  const updateItem = useStore(s => s.updateItem);
   const archiveItem = useStore(s => s.archiveItem);
   const deleteItem = useStore(s => s.deleteItem);
 
@@ -124,7 +125,7 @@ export function Table() {
     return true;
   });
 
-  // Sort
+  // Sort by user-selected column, then always float today items to top
   if (sort) {
     const col = allCols.find(c => c.key === sort.key);
     if (col) {
@@ -137,6 +138,11 @@ export function Table() {
       });
     }
   }
+  rows = [...rows].sort((a, b) => {
+    const aT = a.kind === 'task' && (a as Task).forToday ? 1 : 0;
+    const bT = b.kind === 'task' && (b as Task).forToday ? 1 : 0;
+    return bT - aT;
+  });
 
   const th: React.CSSProperties = { padding: '11px 14px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--t-muted)', fontWeight: 700, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' };
   const td: React.CSSProperties = { padding: '10px 14px', borderBottom: '1px solid var(--t-brd2)', fontSize: 13.5, color: 'var(--t-txt2)' };
@@ -251,6 +257,7 @@ export function Table() {
             <th style={{ ...th, width: 40, cursor: 'default' }} onClick={e => e.stopPropagation()}>
               <input ref={selectAllRef} type="checkbox" checked={allChecked} onChange={toggleSelectAll} style={{ cursor: 'pointer', width: 15, height: 15 }} />
             </th>
+            <th style={{ ...th, width: 60, cursor: 'default', textAlign: 'center' }}>Today</th>
             {cols.map(col => (
               <th key={col.key} onClick={() => handleSortClick(col.key)}
                 style={{ ...th, textAlign: col.align ?? 'left' }}>
@@ -263,13 +270,25 @@ export function Table() {
         <tbody>
           {rows.map(it => {
             const isSelected = selected.has(it.id);
+            const isToday = it.kind === 'task' && (it as Task).forToday;
             return (
               <tr key={it.id}
-                style={{ background: isSelected ? 'var(--t-acc-bg)' : 'var(--t-surf)' }}
-                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--t-surf2)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = isSelected ? 'var(--t-acc-bg)' : 'var(--t-surf)'; }}>
+                style={{ background: isSelected ? 'var(--t-acc-bg)' : isToday ? 'var(--t-amber-bg)' : 'var(--t-surf)' }}
+                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = isToday ? 'var(--t-amber-bg)' : 'var(--t-surf2)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = isSelected ? 'var(--t-acc-bg)' : isToday ? 'var(--t-amber-bg)' : 'var(--t-surf)'; }}>
                 <td style={{ ...td, width: 40 }} onClick={() => toggleRow(it.id)}>
                   <input type="checkbox" checked={isSelected} onChange={() => toggleRow(it.id)} style={{ cursor: 'pointer', width: 15, height: 15 }} />
+                </td>
+                <td style={{ ...td, width: 60, textAlign: 'center' }}>
+                  {it.kind === 'task' && (
+                    <input
+                      type="checkbox"
+                      checked={(it as Task).forToday ?? false}
+                      onChange={() => updateItem(it.id, { forToday: !(it as Task).forToday })}
+                      style={{ cursor: 'pointer', width: 15, height: 15, accentColor: 'var(--t-amber)' }}
+                      title="Mark for today"
+                    />
+                  )}
                 </td>
                 {cols.map(col => (
                   <td key={col.key} style={{ ...td, textAlign: col.align ?? 'left', fontWeight: col.key === 'title' ? 500 : 400, color: col.key === 'title' ? 'var(--t-txt)' : 'var(--t-txt2)' }}>

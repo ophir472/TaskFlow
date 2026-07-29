@@ -37,6 +37,7 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
   const [description, setDescription] = useState('');
   const [jiraLink, setJiraLink] = useState('');
   const [schedule, setSchedule] = useState<ScheduleSpec | null>(null);
+  const [forToday, setForToday] = useState(false);
   const [urgent, setUrgent] = useState(false);
   const [important, setImportant] = useState(false);
   const [quick, setQuick] = useState(false);
@@ -55,7 +56,7 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
     const id = nextId(type === 'task' ? 't' : type === 'reminder' ? 'r' : 'p');
     let item: Item;
     if (type === 'task') {
-      item = { id, kind: 'task', title, description, notes: '', blockers: '', generalLink: '', jiraLink, requester, project, status: 'backlog', urgent, important, quick, noTag, toCheck: '', priorityBoost: false, subtasks: [], bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false };
+      item = { id, kind: 'task', title, description, notes: '', blockers: '', generalLink: '', jiraLink, requester, project, status: 'backlog', forToday, urgent, important, quick, noTag, toCheck: '', priorityBoost: false, subtasks: [], bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false };
     } else if (type === 'reminder') {
       item = { id, kind: 'reminder', title, schedule: schedule!, status: 'active', priorityBoost: false, bumpedAt: 0, createdAt: now, updatedAt: now, archived: false };
     } else {
@@ -98,6 +99,11 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
 
         {type === 'task' && (
           <>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', userSelect: 'none' }}>
+              <input type="checkbox" checked={forToday} onChange={e => setForToday(e.target.checked)}
+                style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--t-amber)' }} />
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--t-txt)' }}>For today</span>
+            </label>
             <div>
               <div style={lbl}>Tags</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

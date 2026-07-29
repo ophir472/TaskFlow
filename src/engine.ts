@@ -19,14 +19,17 @@ export function buildQueue(items: Item[]): Item[] {
     return it.status === 'active';
   });
 
-  const needsTag = active.filter(
+  // When any tasks are marked for today, show only those
+  const todayTasks = active.filter(it => it.kind === 'task' && (it as Task).forToday);
+  const pool: Item[] = todayTasks.length > 0 ? todayTasks : active;
+
+  const needsTag = pool.filter(
     it => it.kind === 'task' && !it.urgent && !it.important && !it.quick && !it.noTag
   ) as Task[];
 
-  let pool: Item[] = active;
-  if (needsTag.length) pool = needsTag;
+  const ranked: Item[] = needsTag.length ? needsTag : pool;
 
-  return [...pool].sort(
+  return [...ranked].sort(
     (a, b) => (scoreItem(b) - scoreItem(a)) || (a.bumpedAt - b.bumpedAt)
   );
 }
