@@ -87,9 +87,70 @@ export function triggerDownload(filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+// Defaults for every field added since v1 — ensures old backups load cleanly
+const STATE_DEFAULTS: Record<string, unknown> = {
+  taskOrder: [],
+  jiraConfig: null,
+  tableVisibleCols: null,
+  archiveVisibleCols: null,
+  tableColWidths: {},
+  archiveColWidths: {},
+  promotionGoal: 3,
+  displayId: null,
+  triggerTagForId: null,
+  themeId: 'sand',
+  customAccent: null,
+  customBg: null,
+  sidebarCollapsed: false,
+};
+
+// Fields that may be missing from tasks in older backups
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeItem(item: any): any {
+  if (item?.kind !== 'task') return item;
+  return {
+    description: '',
+    forToday: false,
+    notes: item.notes ?? '',
+    blockers: item.blockers ?? '',
+    generalLink: item.generalLink ?? '',
+    jiraLink: item.jiraLink ?? '',
+    requester: item.requester ?? '',
+    project: item.project ?? '',
+    toCheck: item.toCheck ?? '',
+    priorityBoost: item.priorityBoost ?? false,
+    subtasks: item.subtasks ?? [],
+    staleness: item.staleness ?? 0,
+    customValues: item.customValues ?? {},
+    archived: item.archived ?? false,
+    ...item,
+  };
+}
+
 export function restoreFromData(data: Record<string, unknown>): void {
-  const { exportedAt: _, ...storeData } = data;
-  localStorage.setItem('taskflow-store', JSON.stringify(storeData));
+  const { exportedAt: _, ...raw } = data;
+
+  // The Zustand persist format is { state: {...}, version: N }
+  // Old backups might not wrap in `state`, handle both
+  const backupState = (raw.state && typeof raw.state === 'object')
+    ? raw.state as Record<string, unknown>
+    : raw;
+
+  // Normalize: inject defaults for missing fields, then apply backup on top
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const items = Array.isArray((backupState as any).items)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ? (backupState as any).items.map(normalizeItem)
+    : [];
+
+  const normalizedState = {
+    ...STATE_DEFAULTS,
+    ...backupState,
+    items,
+  };
+
+  // Always write the current schema version so Zustand doesn't discard the state
+  localStorage.setItem('taskflow-store', JSON.stringify({ state: normalizedState, version: 2 }));
   window.location.reload();
 }
 
