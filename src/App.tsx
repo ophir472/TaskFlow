@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useStore } from './store';
 import { getThemeVars } from './themes';
+import type { View } from './store';
+
+const VALID_VIEWS: View[] = ['feed', 'kanban', 'table', 'archive', 'settings'];
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { CardFeed } from './components/CardFeed/CardFeed';
 import { Kanban } from './components/Kanban/Kanban';
@@ -110,6 +113,24 @@ export default function App() {
     return unsub;
   }, []);
 
+  // Hash-based routing: URL → view on load and on back/forward
+  useEffect(() => {
+    function syncFromHash() {
+      const hash = window.location.hash.slice(1) as View;
+      if (VALID_VIEWS.includes(hash)) setView(hash);
+      else if (!window.location.hash) setView('feed');
+    }
+    syncFromHash();
+    window.addEventListener('hashchange', syncFromHash);
+    return () => window.removeEventListener('hashchange', syncFromHash);
+  }, [setView]);
+
+  // View → URL: keep hash in sync when view changes via sidebar/code
+  useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    if (hash !== view) window.location.hash = view;
+  }, [view]);
+
   // Apply theme CSS variables
   useEffect(() => {
     const vars = getThemeVars(themeId);
@@ -172,7 +193,6 @@ export default function App() {
           onToast={toastTimer}
           onCreated={id => {
             setTriggerTagForId(id);
-            setView('feed');
           }}
         />
       )}
