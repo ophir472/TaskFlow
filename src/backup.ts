@@ -94,6 +94,12 @@ export function supportsAutoBackup(): boolean {
   return typeof window !== 'undefined' && 'showSaveFilePicker' in window;
 }
 
+export async function readBackupFile(handle: FileSystemFileHandle): Promise<Record<string, unknown>> {
+  const file = await handle.getFile();
+  const text = await file.text();
+  return JSON.parse(text) as Record<string, unknown>;
+}
+
 export async function triggerExcelDownload(): Promise<void> {
   const XLSX = await import('xlsx');
   const raw = localStorage.getItem('taskflow-store') ?? '{}';

@@ -12,7 +12,7 @@ import { Archive } from './components/Archive/Archive';
 import { Settings } from './components/Settings/Settings';
 import { CreateModal } from './components/CreateModal/CreateModal';
 import { Toast } from './components/Toast/Toast';
-import { getStoredHandle, storeHandle, clearStoredHandle, ensureWritePermission, writeBackup, getExportData, supportsAutoBackup } from './backup';
+import { getStoredHandle, storeHandle, clearStoredHandle, ensureWritePermission, writeBackup, getExportData, supportsAutoBackup, readBackupFile, restoreFromData } from './backup';
 import { Confetti } from './components/Confetti';
 
 export type SyncState = 'idle' | 'syncing' | 'saved';
@@ -28,6 +28,56 @@ export default function App() {
   const promotionsToday = useStore(s => s.promotionsToday);
   const setTriggerTagForId = useStore(s => s.setTriggerTagForId);
   const checkDailyReset = useStore(s => s.checkDailyReset);
+
+  const items = useStore(s => s.items);
+
+  // ── Startup restore ──────────────────────────────────────────────
+  // Detect data loss (empty store) and offer to restore from backup file.
+  type RestoreState = 'idle' | 'checking' | 'found' | 'manual' | 'dismissed';
+  const [restoreState, setRestoreState] = useState<RestoreState>('idle');
+  const [foundBackupHandle, setFoundBackupHandle] = useState<FileSystemFileHandle | null>(null);
+  const [foundBackupData, setFoundBackupData] = useState<Record<string, unknown> | null>(null);
+  const restoreFileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Only trigger when the store is genuinely empty on first load
+    const initialEmpty = items.length === 0;
+    if (!initialEmpty) return;
+    setRestoreState('checking');
+    getStoredHandle().then(async handle => {
+      if (!handle) { setRestoreState('manual'); return; }
+      try {
+        const data = await readBackupFile(handle);
+        const count = (data?.state as any)?.items?.length ?? 0;
+        if (count === 0) { setRestoreState('manual'); return; }
+        setFoundBackupHandle(handle);
+        setFoundBackupData(data);
+        setRestoreState('found');
+      } catch {
+        setRestoreState('manual');
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleAutoRestore() {
+    if (foundBackupData) restoreFromData(foundBackupData);
+  }
+
+  function handleManualRestore(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result as string) as Record<string, unknown>;
+        restoreFromData(data);
+      } catch { alert('Invalid backup file.'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
+  const showRestore = restoreState === 'found' || restoreState === 'manual';
 
   const [createOpen, setCreateOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -212,6 +262,41 @@ export default function App() {
       )}
       <Toast text={toast} />
       {showConfetti && <Confetti onDone={() => setShowConfetti(false)} />}
+
+      {/* Startup restore prompt — shown when all data is gone */}
+      {showRestore && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 480, background: 'var(--t-surf)', borderRadius: 18, padding: '40px 36px', boxShadow: '0 12px 48px rgba(0,0,0,0.3)', textAlign: 'center' }}>
+            <div style={{ fontSize: 40, marginBottom: 14 }}>⚠️</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 8 }}>No data found</div>
+            <div style={{ fontSize: 14, color: 'var(--t-muted)', marginBottom: 28, lineHeight: 1.6 }}>
+              {restoreState === 'found'
+                ? `Found your backup file "${foundBackupHandle?.name}". Restore your data now or start fresh.`
+                : 'Your browser data may have been cleared. Select your backup JSON file to restore, or start fresh.'}
+            </div>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+              {restoreState === 'found' ? (
+                <button onClick={handleAutoRestore}
+                  style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 14, fontWeight: 600, padding: '12px 22px', borderRadius: 10, cursor: 'pointer' }}>
+                  ↑ Restore from "{foundBackupHandle?.name}"
+                </button>
+              ) : (
+                <>
+                  <button onClick={() => restoreFileRef.current?.click()}
+                    style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 14, fontWeight: 600, padding: '12px 22px', borderRadius: 10, cursor: 'pointer' }}>
+                    ↑ Select backup file…
+                  </button>
+                  <input ref={restoreFileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleManualRestore} />
+                </>
+              )}
+              <button onClick={() => setRestoreState('dismissed')}
+                style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 14, fontWeight: 600, padding: '12px 22px', borderRadius: 10, cursor: 'pointer' }}>
+                Start fresh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
