@@ -29,6 +29,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
 
   const customFields = useStore(s => s.customFields);
   const jiraConfig = useStore(s => s.jiraConfig);
+  const taskOrder = useStore(s => s.taskOrder);
   const updateItem = useStore(s => s.updateItem);
   const updateItemCustomValue = useStore(s => s.updateItemCustomValue);
   const toggleTag = useStore(s => s.toggleTag);
@@ -60,7 +61,16 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     el.style.height = el.scrollHeight + 'px';
   }, []);
 
-  const queue = buildQueue(items);
+  let queue = buildQueue(items);
+  if (taskOrder.length > 0) {
+    const orderMap = new Map(taskOrder.map((id, i) => [id, i]));
+    queue = [...queue].sort((a, b) => {
+      const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : Infinity;
+      const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : Infinity;
+      if (ai !== bi) return ai - bi;
+      return (scoreItem(b) - scoreItem(a)) || (a.bumpedAt - b.bumpedAt);
+    });
+  }
 
   // If displayId has left the queue (completed/archived/held), fall back to queue[0].
   const displayItem = queue.find(it => it.id === displayId) ?? queue[0] ?? null;

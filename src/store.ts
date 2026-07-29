@@ -27,6 +27,7 @@ interface AppState {
   customAccent: string | null;
   customBg: string | null;
   jiraConfig: JiraConfig | null;
+  taskOrder: string[];
 
   setDisplayId: (id: string | null) => void;
   setTriggerTagForId: (id: string | null) => void;
@@ -59,6 +60,7 @@ interface AppState {
   setView: (v: View) => void;
   setSidebarCollapsed: (v: boolean) => void;
   setJiraConfig: (config: JiraConfig | null) => void;
+  setTaskOrder: (order: string[]) => void;
   checkDailyReset: () => void;
 }
 
@@ -87,6 +89,7 @@ export const useStore = create<AppState>()(
       customAccent: null,
       customBg: null,
       jiraConfig: null,
+      taskOrder: [],
 
       setDisplayId: (id) => set({ displayId: id }),
       setTriggerTagForId: (id) => set({ triggerTagForId: id }),
@@ -263,6 +266,7 @@ export const useStore = create<AppState>()(
       setView: (v) => set({ view: v }),
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
       setJiraConfig: (config) => set({ jiraConfig: config }),
+      setTaskOrder: (order) => set({ taskOrder: order }),
 
       checkDailyReset: () => {
         const { dailyResetAt } = get();

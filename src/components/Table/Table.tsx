@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import { scoreItem } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
 import type { Item, Task, Reminder, Responsibility } from '../../types';
+import type { CSSProperties } from 'react';
 
 // ── Column definitions ──────────────────────────────────────────
 
@@ -43,6 +44,8 @@ export function Table() {
   const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);
   const customFields = useStore(s => s.customFields);
+  const taskOrder = useStore(s => s.taskOrder);
+  const setTaskOrder = useStore(s => s.setTaskOrder);
   const updateItem = useStore(s => s.updateItem);
   const archiveItem = useStore(s => s.archiveItem);
   const deleteItem = useStore(s => s.deleteItem);
@@ -56,6 +59,8 @@ export function Table() {
   const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
   const [colPickerOpen, setColPickerOpen] = useState(false);
   const colPickerRef = useRef<HTMLDivElement>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   // Build all available columns (std + custom)
   const allCols: ColDef[] = [
@@ -125,24 +130,59 @@ export function Table() {
     return true;
   });
 
-  // Sort by user-selected column, then always float today items to top
+  // Determine row order: manual > column sort > default (today→score)
+  const activeTaskOrder = taskOrder.filter(id => rows.some(r => r.id === id));
   if (sort) {
+    // Temporary column sort (today floats on top as secondary)
     const col = allCols.find(c => c.key === sort.key);
     if (col) {
       rows = [...rows].sort((a, b) => {
         const av = col.getValue(a), bv = col.getValue(b);
         const cmp = typeof av === 'number' && typeof bv === 'number'
-          ? av - bv
-          : String(av).localeCompare(String(bv));
+          ? av - bv : String(av).localeCompare(String(bv));
         return sort.dir === 'asc' ? cmp : -cmp;
       });
     }
+    rows = [...rows].sort((a, b) => {
+      const aT = a.kind === 'task' && (a as Task).forToday ? 1 : 0;
+      const bT = b.kind === 'task' && (b as Task).forToday ? 1 : 0;
+      return bT - aT;
+    });
+  } else if (activeTaskOrder.length > 0) {
+    // Manual order: user dragged items into position
+    const orderMap = new Map(activeTaskOrder.map((id, i) => [id, i]));
+    rows = [...rows].sort((a, b) => {
+      const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : Infinity;
+      const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : Infinity;
+      if (ai !== bi) return ai - bi;
+      // Unordered items fall back to score
+      return scoreItem(b) - scoreItem(a);
+    });
+  } else {
+    // Default: today first, then by score
+    rows = [...rows].sort((a, b) => {
+      const aT = a.kind === 'task' && (a as Task).forToday ? 1 : 0;
+      const bT = b.kind === 'task' && (b as Task).forToday ? 1 : 0;
+      if (aT !== bT) return bT - aT;
+      return scoreItem(b) - scoreItem(a);
+    });
   }
-  rows = [...rows].sort((a, b) => {
-    const aT = a.kind === 'task' && (a as Task).forToday ? 1 : 0;
-    const bT = b.kind === 'task' && (b as Task).forToday ? 1 : 0;
-    return bT - aT;
-  });
+
+  function handleDrop(targetId: string) {
+    if (!dragId || dragId === targetId) return;
+    const ids = rows.map(r => r.id);
+    const newIds = [...ids];
+    const from = newIds.indexOf(dragId);
+    const to = newIds.indexOf(targetId);
+    newIds.splice(from, 1);
+    newIds.splice(to, 0, dragId);
+    // Preserve tasks not currently visible (due to filters) at end of order
+    const notVisible = taskOrder.filter(id => !ids.includes(id));
+    setTaskOrder([...newIds, ...notVisible]);
+    setSort(null); // lock into manual mode
+    setDragId(null);
+    setDragOverId(null);
+  }
 
   const th: React.CSSProperties = { padding: '11px 14px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--t-muted)', fontWeight: 700, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' };
   const td: React.CSSProperties = { padding: '10px 14px', borderBottom: '1px solid var(--t-brd2)', fontSize: 13.5, color: 'var(--t-txt2)' };
@@ -210,6 +250,13 @@ export function Table() {
           <option value="done">Done</option>
         </select>
 
+        {taskOrder.length > 0 && (
+          <button onClick={() => setTaskOrder([])}
+            style={{ fontSize: 12, padding: '6px 11px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-muted)', cursor: 'pointer' }}>
+            ↺ Reset order
+          </button>
+        )}
+
         <div style={{ marginLeft: 'auto', position: 'relative' }} ref={colPickerRef}>
           <button onClick={() => setColPickerOpen(o => !o)}
             style={{ fontSize: 13, padding: '7px 12px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', cursor: 'pointer', color: 'var(--t-txt2)', fontWeight: 500 }}>
@@ -254,6 +301,7 @@ export function Table() {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden' }}>
         <thead>
           <tr style={{ background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd)' }}>
+            <th style={{ ...th, width: 28, cursor: 'default' }} />
             <th style={{ ...th, width: 40, cursor: 'default' }} onClick={e => e.stopPropagation()}>
               <input ref={selectAllRef} type="checkbox" checked={allChecked} onChange={toggleSelectAll} style={{ cursor: 'pointer', width: 15, height: 15 }} />
             </th>
@@ -271,11 +319,27 @@ export function Table() {
           {rows.map(it => {
             const isSelected = selected.has(it.id);
             const isToday = it.kind === 'task' && (it as Task).forToday;
+            const isDragging = dragId === it.id;
+            const isDragOver = dragOverId === it.id;
+            const rowBg = isSelected ? 'var(--t-acc-bg)' : isToday ? 'var(--t-amber-bg)' : 'var(--t-surf)';
+            const rowStyle: CSSProperties = {
+              background: rowBg,
+              opacity: isDragging ? 0.4 : 1,
+              borderTop: isDragOver ? '2px solid var(--t-acc)' : undefined,
+            };
             return (
               <tr key={it.id}
-                style={{ background: isSelected ? 'var(--t-acc-bg)' : isToday ? 'var(--t-amber-bg)' : 'var(--t-surf)' }}
-                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = isToday ? 'var(--t-amber-bg)' : 'var(--t-surf2)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = isSelected ? 'var(--t-acc-bg)' : isToday ? 'var(--t-amber-bg)' : 'var(--t-surf)'; }}>
+                draggable
+                onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragId(it.id); }}
+                onDragOver={e => { e.preventDefault(); if (it.id !== dragId) setDragOverId(it.id); }}
+                onDrop={e => { e.preventDefault(); handleDrop(it.id); }}
+                onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                style={rowStyle}
+                onMouseEnter={e => { if (!isSelected && !isDragging) e.currentTarget.style.background = isToday ? 'var(--t-amber-bg)' : 'var(--t-surf2)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = rowBg; }}>
+                <td style={{ ...td, width: 28, color: 'var(--t-brd)', cursor: 'grab', userSelect: 'none', fontSize: 15, textAlign: 'center', paddingLeft: 8, paddingRight: 4 }}>
+                  ⠿
+                </td>
                 <td style={{ ...td, width: 40 }} onClick={() => toggleRow(it.id)}>
                   <input type="checkbox" checked={isSelected} onChange={() => toggleRow(it.id)} style={{ cursor: 'pointer', width: 15, height: 15 }} />
                 </td>
@@ -308,7 +372,7 @@ export function Table() {
           })}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={cols.length + 2} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
+              <td colSpan={cols.length + 3} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
             </tr>
           )}
         </tbody>
