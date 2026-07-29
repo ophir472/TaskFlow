@@ -67,9 +67,12 @@ export async function writeBackup(handle: FileSystemFileHandle, data: object): P
   await writable.close();
 }
 
+
 export function getExportData(): object {
   const raw = localStorage.getItem('taskflow-store') ?? '{}';
   const parsed = JSON.parse(raw);
+  // Column layout is now in the Zustand store (tableVisibleCols, archiveVisibleCols, etc.)
+  // so it's automatically included in `parsed`. No separate bundle needed.
   return { exportedAt: new Date().toISOString(), ...parsed };
 }
 

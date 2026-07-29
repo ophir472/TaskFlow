@@ -58,6 +58,10 @@ export function Table() {
   const toggleTag = useStore(s => s.toggleTag);
   const archiveItem = useStore(s => s.archiveItem);
   const deleteItem = useStore(s => s.deleteItem);
+  const tableVisibleColsArr = useStore(s => s.tableVisibleCols);
+  const setTableVisibleCols = useStore(s => s.setTableVisibleCols);
+  const tableColWidthsStore = useStore(s => s.tableColWidths);
+  const setTableColWidths = useStore(s => s.setTableColWidths);
 
   const [reqFilter, setReqFilter] = useState('');
   const [projFilter, setProjFilter] = useState('');
@@ -75,30 +79,43 @@ export function Table() {
   const [editValue, setEditValue] = useState('');
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
   const [modalTaskId, setModalTaskId] = useState<string | null>(null);
-  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
-    try { const s = localStorage.getItem('taskflow-table-col-widths'); if (s) return JSON.parse(s); } catch {}
-    return {};
-  });
-  const resizeRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
+  const colWidths = tableColWidthsStore;
+  const [hoveredResize, setHoveredResize] = useState<string | null>(null);
 
-  useEffect(() => {
-    localStorage.setItem('taskflow-table-col-widths', JSON.stringify(colWidths));
-  }, [colWidths]);
+  function setColWidths(updater: ((p: Record<string, number>) => Record<string, number>) | Record<string, number>) {
+    const next = typeof updater === 'function' ? updater(colWidths) : updater;
+    setTableColWidths(next);
+  }
+
+  function resetColWidth(colKey: string) {
+    const n = { ...colWidths }; delete n[colKey]; setTableColWidths(n);
+  }
 
   function startColResize(e: React.MouseEvent, colKey: string) {
     e.preventDefault();
     e.stopPropagation();
-    const startWidth = colWidths[colKey] ?? DEFAULT_COL_WIDTHS[colKey] ?? 130;
-    resizeRef.current = { colKey, startX: e.clientX, startWidth };
+    const resizeTh = (e.currentTarget as HTMLElement).closest('th') as HTMLTableCellElement;
+    const table = resizeTh.closest('table') as HTMLTableElement;
+    // Freeze ALL data column widths so other columns don't redistribute during drag
+    const dataHeaders = Array.from(table.querySelectorAll('thead th[data-colkey]')) as HTMLTableCellElement[];
+    dataHeaders.forEach(th => { th.style.width = th.offsetWidth + 'px'; });
+    const startX = e.clientX;
+    const startWidth = resizeTh.offsetWidth;
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
     function onMove(ev: MouseEvent) {
-      if (!resizeRef.current) return;
-      const newW = Math.max(50, resizeRef.current.startWidth + (ev.clientX - resizeRef.current.startX));
-      setColWidths(prev => ({ ...prev, [resizeRef.current!.colKey]: newW }));
+      resizeTh.style.width = Math.max(50, startWidth + (ev.clientX - startX)) + 'px';
     }
-    function onUp() {
-      resizeRef.current = null;
+    function onUp(ev: MouseEvent) {
+      const finalW = Math.max(50, startWidth + (ev.clientX - startX));
+      const newWidths: Record<string, number> = {};
+      dataHeaders.forEach(th => {
+        const key = th.dataset.colkey;
+        if (key) newWidths[key] = key === colKey ? finalW : th.offsetWidth;
+      });
+      // React will overwrite the drag-set DOM styles with these state values on next render.
+      // Do NOT clear th.style.width here — that would undo what React sets.
+      setColWidths(newWidths);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       document.removeEventListener('mousemove', onMove);
@@ -121,28 +138,22 @@ export function Table() {
     })),
   ];
 
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(() => {
-    try {
-      const saved = localStorage.getItem('taskflow-table-cols');
-      if (saved) return new Set(JSON.parse(saved) as string[]);
-    } catch { /* ignore */ }
-    return new Set(STD_COLS.filter(c => c.defaultOn).map(c => c.key));
-  });
-
-  // Persist column layout
-  useEffect(() => {
-    localStorage.setItem('taskflow-table-cols', JSON.stringify([...visibleCols]));
-  }, [visibleCols]);
+  // visibleCols from store (persisted + included in backup automatically)
+  const defaultVisibleCols = new Set(STD_COLS.filter(c => c.defaultOn).map(c => c.key));
+  const visibleCols: Set<string> = tableVisibleColsArr ? new Set(tableVisibleColsArr) : defaultVisibleCols;
+  function setVisibleCols(updater: ((p: Set<string>) => Set<string>) | Set<string>) {
+    const next = typeof updater === 'function' ? updater(visibleCols) : updater;
+    setTableVisibleCols([...next]);
+  }
 
   // Sync new custom field cols into visible set
   useEffect(() => {
     const newKeys = customFields.filter(f => f.showInTable).map(f => `cf_${f.id}`);
-    setVisibleCols(prev => {
-      const next = new Set(prev);
-      newKeys.forEach(k => next.add(k));
-      return next;
-    });
-  }, [customFields]);
+    const missing = newKeys.filter(k => !visibleCols.has(k));
+    if (missing.length > 0) {
+      setTableVisibleCols([...visibleCols, ...missing]);
+    }
+  }, [customFields]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close col picker on outside click
   useEffect(() => {
@@ -431,7 +442,7 @@ export function Table() {
       </div>
 
       {/* Table */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden', tableLayout: 'fixed' }}>
+      <table style={{ width: 'auto', minWidth: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden', tableLayout: 'fixed' }}>
         <thead>
           <tr style={{ background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd)' }}>
             <th style={{ ...th, width: 40, cursor: 'default' }} onClick={e => e.stopPropagation()}>
@@ -439,17 +450,26 @@ export function Table() {
             </th>
             <th style={{ ...th, width: 36, cursor: 'default', textAlign: 'right' }}>#</th>
             <th style={{ ...th, width: 60, cursor: 'default', textAlign: 'center' }}>Today</th>
-            <th style={{ ...th, width: 28, cursor: 'default' }} />
             {cols.map(col => {
               const colW = colWidths[col.key] ?? DEFAULT_COL_WIDTHS[col.key] ?? 130;
               return (
-                <th key={col.key} onClick={() => handleSortClick(col.key)}
-                  style={{ ...th, textAlign: col.align ?? 'left', width: colW, position: 'relative', overflow: 'hidden' }}>
-                  {col.label}{sortIcon(col.key)}
-                  <div onMouseDown={e => startColResize(e, col.key)}
-                    style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 5, cursor: 'col-resize', zIndex: 1 }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-acc)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')} />
+                // No padding on th itself — inner flex div handles it, so no absolute positioning needed
+                <th key={col.key} data-colkey={col.key} style={{ ...th, padding: 0, width: colW, textAlign: 'left' }}>
+                  <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                    {/* Sort label */}
+                    <div onClick={() => handleSortClick(col.key)}
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '11px 6px 11px 14px', cursor: 'pointer', overflow: 'hidden', textAlign: col.align ?? 'left', justifyContent: col.align === 'right' ? 'flex-end' : 'flex-start' }}>
+                      {col.label}{sortIcon(col.key)}
+                    </div>
+                    {/* Resize handle — flex child, no absolute positioning, constrained to header height */}
+                    <div
+                      onMouseDown={e => startColResize(e, col.key)}
+                      onDoubleClick={e => { e.stopPropagation(); resetColWidth(col.key); }}
+                      onMouseEnter={() => setHoveredResize(col.key)}
+                      onMouseLeave={() => setHoveredResize(null)}
+                      title="Drag to resize · Double-click to reset"
+                      style={{ width: 8, flexShrink: 0, cursor: 'col-resize', borderRight: `2px solid ${hoveredResize === col.key ? 'var(--t-acc)' : 'var(--t-brd2)'}`, transition: 'border-color 0.12s' }} />
+                  </div>
                 </th>
               );
             })}
@@ -499,9 +519,6 @@ export function Table() {
                       title="Mark for today"
                     />
                   )}
-                </td>
-                <td onClick={e => e.stopPropagation()} style={{ ...td, width: 28, color: 'var(--t-brd)', cursor: 'grab', userSelect: 'none', fontSize: 15, textAlign: 'center', paddingLeft: 8, paddingRight: 4 }}>
-                  ⠿
                 </td>
                 {cols.map(col => {
                   const isEditable = it.kind === 'task' && (EDITABLE_COLS.has(col.key) || col.key.startsWith('cf_'));
@@ -614,7 +631,25 @@ export function Table() {
           })}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={cols.length + 5} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
+              <td colSpan={cols.length + 4} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
+            </tr>
+          )}
+          {/* Drop zone below last row — lets user drag to the very end */}
+          {dragId && (
+            <tr onDragOver={e => { e.preventDefault(); setDragOverId('__bottom__'); }}
+              onDragLeave={() => setDragOverId(null)}
+              onDrop={e => {
+                e.preventDefault();
+                if (!dragId) return;
+                const ids = rows.map(r => r.id).filter(id => id !== dragId);
+                ids.push(dragId);
+                const notVisible = taskOrder.filter(id => !rows.some(r => r.id === id));
+                setTaskOrder([...ids, ...notVisible]);
+                updateItem(dragId, { manuallyMoved: true });
+                setSort(null); setDragId(null); setDragOverId(null);
+              }}
+              style={{ borderTop: dragOverId === '__bottom__' ? '2px solid var(--t-acc)' : undefined }}>
+              <td colSpan={cols.length + 4} style={{ height: 28 }} />
             </tr>
           )}
         </tbody>

@@ -25,6 +25,10 @@ interface AppState {
   customBg: string | null;
   jiraConfig: JiraConfig | null;
   taskOrder: string[];
+  tableVisibleCols: string[] | null;
+  archiveVisibleCols: string[] | null;
+  tableColWidths: Record<string, number>;
+  archiveColWidths: Record<string, number>;
 
   setDisplayId: (id: string | null) => void;
   setTriggerTagForId: (id: string | null) => void;
@@ -58,6 +62,10 @@ interface AppState {
   setJiraConfig: (config: JiraConfig | null) => void;
   setTaskOrder: (order: string[]) => void;
   resetManualOrder: () => void;
+  setTableVisibleCols: (cols: string[]) => void;
+  setArchiveVisibleCols: (cols: string[]) => void;
+  setTableColWidths: (widths: Record<string, number>) => void;
+  setArchiveColWidths: (widths: Record<string, number>) => void;
   checkDailyReset: () => void;
 }
 
@@ -85,6 +93,10 @@ export const useStore = create<AppState>()(
       customBg: null,
       jiraConfig: null,
       taskOrder: [],
+      tableVisibleCols: null,
+      archiveVisibleCols: null,
+      tableColWidths: {},
+      archiveColWidths: {},
 
       setDisplayId: (id) => set({ displayId: id }),
       setTriggerTagForId: (id) => set({ triggerTagForId: id }),
@@ -251,6 +263,10 @@ export const useStore = create<AppState>()(
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
       setJiraConfig: (config) => set({ jiraConfig: config }),
       setTaskOrder: (order) => set({ taskOrder: order }),
+      setTableVisibleCols: (cols) => set({ tableVisibleCols: cols }),
+      setArchiveVisibleCols: (cols) => set({ archiveVisibleCols: cols }),
+      setTableColWidths: (widths) => set({ tableColWidths: widths }),
+      setArchiveColWidths: (widths) => set({ archiveColWidths: widths }),
       resetManualOrder: () => set(s => ({
         taskOrder: [],
         items: s.items.map(it =>
