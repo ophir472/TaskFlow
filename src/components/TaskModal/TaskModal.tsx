@@ -1,0 +1,199 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useStore } from '../../store';
+import type { Task } from '../../types';
+import { scoreItem } from '../../engine';
+
+interface Props { taskId: string; onClose: () => void }
+
+const fl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 };
+const inp: React.CSSProperties = { width: '100%', fontSize: 14, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', boxSizing: 'border-box' };
+const ta: React.CSSProperties = { ...inp, resize: 'vertical' as const, fontFamily: 'inherit' };
+const sel: React.CSSProperties = { width: '100%', fontSize: 13, padding: '7px 8px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)' };
+
+export function TaskModal({ taskId, onClose }: Props) {
+  const items = useStore(s => s.items);
+  const requesters = useStore(s => s.requesters);
+  const projects = useStore(s => s.projects);
+  const customFields = useStore(s => s.customFields);
+  const updateItem = useStore(s => s.updateItem);
+  const toggleTag = useStore(s => s.toggleTag);
+  const addSubtask = useStore(s => s.addSubtask);
+  const deleteSubtask = useStore(s => s.deleteSubtask);
+  const toggleSubtaskDone = useStore(s => s.toggleSubtaskDone);
+  const updateItemCustomValue = useStore(s => s.updateItemCustomValue);
+
+  const [newSubtask, setNewSubtask] = useState('');
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+
+  const task = items.find(it => it.id === taskId) as Task | undefined;
+
+  const autoResizeTitle = useCallback(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }, []);
+
+  useEffect(() => { autoResizeTitle(); }, [autoResizeTitle]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  if (!task) return null;
+
+  const score = scoreItem(task);
+  const TAG_DEFS = [
+    { key: 'urgent' as const,    label: 'Urgent',        ac: 'var(--t-urgent)',    ab: 'var(--t-urgent-bg)',    abr: 'var(--t-urgent)'    },
+    { key: 'important' as const, label: 'Important',     ac: 'var(--t-important)', ab: 'var(--t-important-bg)', abr: 'var(--t-important)' },
+    { key: 'quick' as const,     label: 'Quick',         ac: 'var(--t-quick)',     ab: 'var(--t-quick-bg)',     abr: 'var(--t-quick)'     },
+    { key: 'noTag' as const,     label: 'None of these', ac: 'var(--t-txt2)',      ab: 'var(--t-surf3)',        abr: 'var(--t-muted)'     },
+  ];
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+      onClick={onClose}>
+      <div
+        style={{ width: 900, maxWidth: '96vw', maxHeight: '90vh', overflow: 'auto', background: 'var(--t-surf)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.28)', borderTop: '3px solid var(--t-acc)' }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ padding: '22px 26px 0', borderBottom: '1px solid var(--t-brd)', paddingBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '3px 9px', borderRadius: 20, background: 'var(--t-acc-bg)', color: 'var(--t-acc)' }}>TASK</span>
+              <span style={{ fontSize: 12, color: 'var(--t-muted)' }}>Score {score.toFixed(0)}</span>
+              {task.archived && <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: 'var(--t-urgent-bg)', color: 'var(--t-urgent)' }}>ARCHIVED</span>}
+            </div>
+            <span onClick={onClose} style={{ cursor: 'pointer', fontSize: 20, color: 'var(--t-muted)', lineHeight: 1, padding: '2px 6px' }}>×</span>
+          </div>
+          <textarea
+            ref={titleRef}
+            value={task.title}
+            onChange={e => { updateItem(taskId, { title: e.target.value }); autoResizeTitle(); }}
+            rows={1}
+            style={{ width: '100%', border: 'none', outline: 'none', fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', padding: '6px 0 0', color: 'var(--t-txt)', background: 'transparent', resize: 'none', overflow: 'hidden', lineHeight: 1.3, fontFamily: 'inherit', display: 'block', boxSizing: 'border-box' }}
+          />
+        </div>
+
+        {/* Body */}
+        <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+
+          {/* Left: main fields */}
+          <div style={{ flex: 1, padding: '18px 20px 24px 26px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+            {/* Tags */}
+            <div>
+              <div style={fl}>Tags</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {TAG_DEFS.map(({ key, label, ac, ab, abr }) => {
+                  const active = key === 'noTag' ? task.noTag : task[key];
+                  return (
+                    <div key={key} onClick={() => toggleTag(taskId, key)}
+                      style={{ padding: '7px 13px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', userSelect: 'none', border: `1.5px solid ${active ? abr : 'var(--t-brd)'}`, color: active ? ac : 'var(--t-muted)', background: active ? ab : 'transparent' }}>
+                      {active ? '✓ ' : ''}{label}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* To check */}
+            {task.toCheck && (
+              <div style={{ background: 'var(--t-amber-bg)', border: '1px solid var(--t-amber-brd)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--t-amber)' }}>
+                <b>To check:</b> {task.toCheck}
+              </div>
+            )}
+
+            {/* Subtasks */}
+            <div>
+              <div style={{ ...fl, marginBottom: 8 }}>Subtasks {task.subtasks.length > 0 && `(${task.subtasks.filter(s => s.done).length}/${task.subtasks.length})`}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {task.subtasks.map(sub => (
+                  <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid var(--t-brd2)', borderRadius: 9, background: 'var(--t-surf2)' }}>
+                    <input type="checkbox" checked={sub.done} onChange={() => toggleSubtaskDone(taskId, sub.id)} style={{ width: 15, height: 15, cursor: 'pointer', flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 14, textDecoration: sub.done ? 'line-through' : 'none', color: sub.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{sub.title}</span>
+                    <span onClick={() => deleteSubtask(taskId, sub.id)} style={{ cursor: 'pointer', fontSize: 14, color: 'var(--t-muted)' }}>×</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={newSubtask} onChange={e => setNewSubtask(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && newSubtask.trim()) { addSubtask(taskId, newSubtask.trim()); setNewSubtask(''); } }}
+                    placeholder="Add subtask…" style={{ ...inp, flex: 1 }} />
+                  <button onClick={() => { if (newSubtask.trim()) { addSubtask(taskId, newSubtask.trim()); setNewSubtask(''); } }} disabled={!newSubtask.trim()}
+                    style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 18, width: 34, height: 34, borderRadius: 8, cursor: 'pointer', opacity: newSubtask.trim() ? 1 : 0.4, flexShrink: 0 }}>+</button>
+                </div>
+              </div>
+            </div>
+
+            {/* Jira Description */}
+            <div>
+              <div style={fl}>Jira Description</div>
+              <textarea value={task.description ?? ''} onChange={e => updateItem(taskId, { description: e.target.value })} rows={3} placeholder="Describe the ticket…" style={ta} />
+            </div>
+
+            {/* Notes */}
+            <div>
+              <div style={fl}>Notes</div>
+              <textarea value={task.notes} onChange={e => updateItem(taskId, { notes: e.target.value })} rows={4} style={ta} />
+            </div>
+
+            {/* Blockers */}
+            <div>
+              <div style={fl}>Blockers</div>
+              <textarea value={task.blockers} onChange={e => updateItem(taskId, { blockers: e.target.value })} rows={2} placeholder="Who can help?" style={ta} />
+            </div>
+
+            {/* Custom fields */}
+            {customFields.filter(f => f.showInCard).map(f => (
+              <div key={f.id}>
+                <div style={fl}>{f.name}</div>
+                <input value={task.customValues?.[f.id] ?? ''} onChange={e => updateItemCustomValue(taskId, f.id, e.target.value)} style={inp} />
+              </div>
+            ))}
+          </div>
+
+          {/* Right sidebar */}
+          <div style={{ width: 200, flexShrink: 0, borderLeft: '1px solid var(--t-brd2)', padding: '18px 16px 24px' }}>
+            <div style={{ background: 'var(--t-surf2)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <div style={fl}>Status</div>
+                <select value={task.status} onChange={e => updateItem(taskId, { status: e.target.value as Task['status'] })} style={sel}>
+                  <option value="in_progress">In progress</option>
+                  <option value="backlog">Backlog</option>
+                  <option value="waiting">Waiting</option>
+                  <option value="done">Done</option>
+                </select>
+              </div>
+              <div>
+                <div style={fl}>Requester</div>
+                <select value={task.requester} onChange={e => updateItem(taskId, { requester: e.target.value })} style={sel}>
+                  <option value="">—</option>
+                  {requesters.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={fl}>Project</div>
+                <select value={task.project} onChange={e => updateItem(taskId, { project: e.target.value })} style={sel}>
+                  <option value="">—</option>
+                  {projects.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={fl}>Jira</div>
+                <input value={task.jiraLink} onChange={e => updateItem(taskId, { jiraLink: e.target.value })} placeholder="PROJ-1234" style={{ ...inp, fontSize: 13, padding: '7px 9px' }} />
+              </div>
+              <div>
+                <div style={fl}>General link</div>
+                <input value={task.generalLink} onChange={e => updateItem(taskId, { generalLink: e.target.value })} placeholder="Any URL or ref" style={{ ...inp, fontSize: 13, padding: '7px 9px' }} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

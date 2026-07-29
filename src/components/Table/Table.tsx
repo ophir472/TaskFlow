@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
+import { TaskModal } from '../TaskModal/TaskModal';
 import { scoreItem } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
 import type { Item, Task, Reminder, Responsibility } from '../../types';
@@ -36,6 +37,7 @@ const STD_COLS: ColDef[] = [
 // ── Styles ──────────────────────────────────────────────────────
 
 const selectSt: React.CSSProperties = { fontSize: 13, padding: '7px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)' };
+const EDITABLE_COLS = new Set(['title', 'requester', 'project', 'status', 'jira']);
 
 // ── Component ───────────────────────────────────────────────────
 
@@ -48,6 +50,8 @@ export function Table() {
   const setTaskOrder = useStore(s => s.setTaskOrder);
   const resetManualOrder = useStore(s => s.resetManualOrder);
   const updateItem = useStore(s => s.updateItem);
+  const updateItemCustomValue = useStore(s => s.updateItemCustomValue);
+  const toggleTag = useStore(s => s.toggleTag);
   const archiveItem = useStore(s => s.archiveItem);
   const deleteItem = useStore(s => s.deleteItem);
 
@@ -62,6 +66,13 @@ export function Table() {
   const colPickerRef = useRef<HTMLDivElement>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [focusedRowIdx, setFocusedRowIdx] = useState(-1);
+  const [editCell, setEditCell] = useState<{ rowId: string; colKey: string } | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [hoveredCell, setHoveredCell] = useState<string | null>(null);
+  const [modalTaskId, setModalTaskId] = useState<string | null>(null);
+  const rowsRef = useRef<Item[]>([]);
+  const focusedIdxRef = useRef(-1);
 
   // Build all available columns (std + custom)
   const allCols: ColDef[] = [
@@ -74,9 +85,18 @@ export function Table() {
     })),
   ];
 
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(
-    new Set(STD_COLS.filter(c => c.defaultOn).map(c => c.key))
-  );
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('taskflow-table-cols');
+      if (saved) return new Set(JSON.parse(saved) as string[]);
+    } catch { /* ignore */ }
+    return new Set(STD_COLS.filter(c => c.defaultOn).map(c => c.key));
+  });
+
+  // Persist column layout
+  useEffect(() => {
+    localStorage.setItem('taskflow-table-cols', JSON.stringify([...visibleCols]));
+  }, [visibleCols]);
 
   // Sync new custom field cols into visible set
   useEffect(() => {
@@ -185,6 +205,65 @@ export function Table() {
     }
   }
 
+  // Keep refs current for keydown handler
+  rowsRef.current = rows;
+  focusedIdxRef.current = focusedRowIdx;
+
+  // Arrow key row navigation
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setFocusedRowIdx(i => Math.min(i + 1, rowsRef.current.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setFocusedRowIdx(i => Math.max(i - 1, 0));
+      } else if (e.key === 'Enter' && focusedIdxRef.current >= 0) {
+        const item = rowsRef.current[focusedIdxRef.current];
+        if (item) openTask(item.id);
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Inline edit helpers
+  function getRawEditValue(it: Item, colKey: string): string {
+    if (it.kind !== 'task') return '';
+    const t = it as Task;
+    if (colKey === 'title') return t.title;
+    if (colKey === 'requester') return t.requester ?? '';
+    if (colKey === 'project') return t.project ?? '';
+    if (colKey === 'status') return t.status;
+    if (colKey === 'jira') return t.jiraLink ?? '';
+    if (colKey.startsWith('cf_')) return t.customValues?.[colKey.slice(3)] ?? '';
+    return '';
+  }
+
+  function startEdit(e: React.MouseEvent, rowId: string, colKey: string) {
+    e.stopPropagation();
+    const item = rows.find(r => r.id === rowId);
+    if (!item || item.kind !== 'task') return;
+    setEditCell({ rowId, colKey });
+    setEditValue(getRawEditValue(item, colKey));
+  }
+
+  function saveEdit(value: string, colKey: string, rowId: string) {
+    if (colKey === 'title') updateItem(rowId, { title: value });
+    else if (colKey === 'requester') updateItem(rowId, { requester: value });
+    else if (colKey === 'project') updateItem(rowId, { project: value });
+    else if (colKey === 'status') updateItem(rowId, { status: value as Task['status'] });
+    else if (colKey === 'jira') updateItem(rowId, { jiraLink: value });
+    else if (colKey.startsWith('cf_')) updateItemCustomValue(rowId, colKey.slice(3), value);
+    setEditCell(null);
+  }
+
+  function commitEdit() { if (editCell) saveEdit(editValue, editCell.colKey, editCell.rowId); }
+
+  function openTask(id: string) { setModalTaskId(id); }
+
   function handleDrop(targetId: string) {
     if (!dragId || dragId === targetId) return;
     const ids = rows.map(r => r.id);
@@ -244,6 +323,7 @@ export function Table() {
   }, [someChecked]);
 
   return (
+    <>
     <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflow: 'auto' }}>
       {/* Filters + column picker */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -318,33 +398,37 @@ export function Table() {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden' }}>
         <thead>
           <tr style={{ background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd)' }}>
-            <th style={{ ...th, width: 28, cursor: 'default' }} />
-            <th style={{ ...th, width: 36, cursor: 'default', textAlign: 'right' }}>#</th>
             <th style={{ ...th, width: 40, cursor: 'default' }} onClick={e => e.stopPropagation()}>
               <input ref={selectAllRef} type="checkbox" checked={allChecked} onChange={toggleSelectAll} style={{ cursor: 'pointer', width: 15, height: 15 }} />
             </th>
+            <th style={{ ...th, width: 36, cursor: 'default', textAlign: 'right' }}>#</th>
             <th style={{ ...th, width: 60, cursor: 'default', textAlign: 'center' }}>Today</th>
+            <th style={{ ...th, width: 28, cursor: 'default' }} />
             {cols.map(col => (
               <th key={col.key} onClick={() => handleSortClick(col.key)}
                 style={{ ...th, textAlign: col.align ?? 'left' }}>
                 {col.label}{sortIcon(col.key)}
               </th>
             ))}
-            <th style={{ ...th, width: 80, cursor: 'default' }}></th>
+            <th style={{ ...th, width: 40, cursor: 'default' }}></th>
           </tr>
         </thead>
         <tbody>
-          {rows.map(it => {
+          {rows.map((it, rowIdx) => {
             const isSelected = selected.has(it.id);
             const isToday = it.kind === 'task' && (it as Task).forToday;
             const isDragging = dragId === it.id;
             const isDragOver = dragOverId === it.id;
-            const rowBg = isSelected ? 'var(--t-acc-bg)' : isToday ? 'var(--t-amber-bg)' : 'var(--t-surf)';
+            const isFocused = focusedRowIdx === rowIdx;
+            const rowBg = isSelected ? 'var(--t-acc-bg)' : isToday ? 'var(--t-amber-bg)' : isFocused ? 'var(--t-surf2)' : 'var(--t-surf)';
             const rowStyle: CSSProperties = {
               background: rowBg,
               opacity: isDragging ? 0.4 : 1,
               borderTop: isDragOver ? '2px solid var(--t-acc)' : undefined,
+              outline: isFocused ? '2px solid var(--t-acc)' : undefined,
+              outlineOffset: '-2px',
             };
+            const inpSt: CSSProperties = { width: '100%', fontSize: 13.5, padding: '5px 7px', border: '1px solid var(--t-acc)', borderRadius: 5, background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', boxSizing: 'border-box' };
             return (
               <tr key={it.id}
                 draggable
@@ -352,18 +436,15 @@ export function Table() {
                 onDragOver={e => { e.preventDefault(); if (it.id !== dragId) setDragOverId(it.id); }}
                 onDrop={e => { e.preventDefault(); handleDrop(it.id); }}
                 onDragEnd={() => { setDragId(null); setDragOverId(null); }}
-                onClick={() => { window.location.hash = `feed/${it.id}`; }}
-                style={{ ...rowStyle, cursor: 'pointer' }}
+                onClick={() => setFocusedRowIdx(rowIdx)}
+                style={{ ...rowStyle, cursor: 'default' }}
                 onMouseEnter={e => { if (!isSelected && !isDragging) e.currentTarget.style.background = isToday ? 'var(--t-amber-bg)' : 'var(--t-surf2)'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = rowBg; }}>
-                <td onClick={e => e.stopPropagation()} style={{ ...td, width: 28, color: 'var(--t-brd)', cursor: 'grab', userSelect: 'none', fontSize: 15, textAlign: 'center', paddingLeft: 8, paddingRight: 4 }}>
-                  ⠿
-                </td>
-                <td style={{ ...td, width: 36, textAlign: 'right', fontSize: 12, color: 'var(--t-muted)', fontWeight: 600, paddingRight: 10 }}>
-                  {rows.indexOf(it) + 1}
-                </td>
                 <td style={{ ...td, width: 40 }} onClick={e => { e.stopPropagation(); toggleRow(it.id); }}>
                   <input type="checkbox" checked={isSelected} onChange={() => toggleRow(it.id)} onClick={e => e.stopPropagation()} style={{ cursor: 'pointer', width: 15, height: 15 }} />
+                </td>
+                <td style={{ ...td, width: 36, textAlign: 'right', fontSize: 12, color: 'var(--t-muted)', fontWeight: 600, paddingRight: 10 }}>
+                  {rowIdx + 1}
                 </td>
                 <td onClick={e => e.stopPropagation()} style={{ ...td, width: 60, textAlign: 'center' }}>
                   {it.kind === 'task' && (
@@ -376,33 +457,107 @@ export function Table() {
                     />
                   )}
                 </td>
-                {cols.map(col => (
-                  <td key={col.key} style={{ ...td, textAlign: col.align ?? 'left', fontWeight: col.key === 'title' ? 500 : 400, color: col.key === 'title' ? 'var(--t-txt)' : 'var(--t-txt2)' }}>
-                    {String(col.getValue(it) || '—')}
-                  </td>
-                ))}
-                {it.kind === 'task' && (it as Task).manuallyMoved && (
-                  <td onClick={e => e.stopPropagation()} style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <span onClick={() => {
-                      updateItem(it.id, { manuallyMoved: false });
-                      setTaskOrder(taskOrder.filter(id => id !== it.id));
-                    }}
-                      style={{ fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', fontWeight: 500 }}
+                <td onClick={e => e.stopPropagation()} style={{ ...td, width: 28, color: 'var(--t-brd)', cursor: 'grab', userSelect: 'none', fontSize: 15, textAlign: 'center', paddingLeft: 8, paddingRight: 4 }}>
+                  ⠿
+                </td>
+                {cols.map(col => {
+                  const isEditable = it.kind === 'task' && (EDITABLE_COLS.has(col.key) || col.key.startsWith('cf_'));
+                  const isEditing = editCell?.rowId === it.id && editCell?.colKey === col.key;
+                  // Tags column: inline chip multi-select (no edit mode needed)
+                  if (col.key === 'tags' && it.kind === 'task') {
+                    const t = it as Task;
+                    const chips = [
+                      { key: 'urgent' as const, label: 'Urgent', color: 'var(--t-urgent)', bg: 'var(--t-urgent-bg)' },
+                      { key: 'important' as const, label: 'Important', color: 'var(--t-important)', bg: 'var(--t-important-bg)' },
+                      { key: 'quick' as const, label: 'Quick', color: 'var(--t-quick)', bg: 'var(--t-quick-bg)' },
+                      { key: 'noTag' as const, label: 'None', color: 'var(--t-muted)', bg: 'var(--t-surf2)' },
+                    ];
+                    return (
+                      <td key={col.key} onClick={e => e.stopPropagation()} style={{ ...td }}>
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {chips.map(({ key, label, color, bg }) => {
+                            const active = key === 'noTag' ? t.noTag : t[key];
+                            return (
+                              <button key={key} onClick={() => toggleTag(it.id, key)}
+                                style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, border: `1px solid ${active ? color : 'var(--t-brd)'}`, background: active ? bg : 'transparent', color: active ? color : 'var(--t-muted)', cursor: 'pointer', fontWeight: active ? 700 : 400 }}>
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    );
+                  }
+
+                  if (isEditing) {
+                    return (
+                      <td key={col.key} onClick={e => e.stopPropagation()} style={{ ...td, padding: '4px 8px' }}>
+                        {col.key === 'requester' ? (
+                          <select autoFocus value={editValue} style={inpSt}
+                            onChange={e => saveEdit(e.target.value, col.key, it.id)}
+                            onBlur={() => setEditCell(null)}>
+                            <option value="">—</option>
+                            {requesters.map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                        ) : col.key === 'project' ? (
+                          <select autoFocus value={editValue} style={inpSt}
+                            onChange={e => saveEdit(e.target.value, col.key, it.id)}
+                            onBlur={() => setEditCell(null)}>
+                            <option value="">—</option>
+                            {projects.map(p => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                        ) : col.key === 'status' ? (
+                          <select autoFocus value={editValue} style={inpSt}
+                            onChange={e => saveEdit(e.target.value, col.key, it.id)}
+                            onBlur={() => setEditCell(null)}>
+                            <option value="in_progress">In progress</option>
+                            <option value="backlog">Backlog</option>
+                            <option value="waiting">Waiting</option>
+                            <option value="done">Done</option>
+                          </select>
+                        ) : (
+                          <input autoFocus value={editValue} style={inpSt}
+                            onChange={e => setEditValue(e.target.value)}
+                            onBlur={commitEdit}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitEdit(); } if (e.key === 'Escape') setEditCell(null); }} />
+                        )}
+                      </td>
+                    );
+                  }
+                  const cellKey = `${it.id}:${col.key}`;
+                  return (
+                    <td key={col.key}
+                      onClick={isEditable ? e => startEdit(e, it.id, col.key) : undefined}
+                      onMouseEnter={() => { if (isEditable) setHoveredCell(cellKey); }}
+                      onMouseLeave={() => setHoveredCell(null)}
+                      style={{ ...td, textAlign: col.align ?? 'left', fontWeight: col.key === 'title' ? 500 : 400, color: col.key === 'title' ? 'var(--t-txt)' : 'var(--t-txt2)', cursor: isEditable ? 'text' : 'default', background: hoveredCell === cellKey ? 'var(--t-acc-bg)' : undefined }}>
+                      {String(col.getValue(it) || '—')}
+                    </td>
+                  );
+                })}
+                <td onClick={e => e.stopPropagation()} style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', width: 40 }}>
+                  {it.kind === 'task' && (it as Task).manuallyMoved && (
+                    <span onClick={() => { updateItem(it.id, { manuallyMoved: false }); setTaskOrder(taskOrder.filter(id => id !== it.id)); }}
+                      style={{ fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', marginRight: 6, fontWeight: 500 }}
                       title="Reset to auto-sort">↺</span>
-                  </td>
-                )}
-                {!(it.kind === 'task' && (it as Task).manuallyMoved) && <td />}
+                  )}
+                  <span onClick={() => { openTask(it.id); }}
+                    style={{ fontSize: 15, color: 'var(--t-acc)', cursor: 'pointer', fontWeight: 600 }}
+                    title="Open task">→</span>
+                </td>
               </tr>
             );
           })}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={cols.length + 4} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
+              <td colSpan={cols.length + 5} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
             </tr>
           )}
         </tbody>
       </table>
       <div style={{ fontSize: 12, color: 'var(--t-muted)' }}>{rows.length} item{rows.length !== 1 ? 's' : ''}</div>
     </div>
+    {modalTaskId && <TaskModal taskId={modalTaskId} onClose={() => setModalTaskId(null)} />}
+    </>
   );
 }

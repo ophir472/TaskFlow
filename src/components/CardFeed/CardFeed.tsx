@@ -28,6 +28,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const customFields = useStore(s => s.customFields);
   const jiraConfig = useStore(s => s.jiraConfig);
   const taskOrder = useStore(s => s.taskOrder);
+  const sidebarCollapsed = useStore(s => s.sidebarCollapsed);
   const updateItem = useStore(s => s.updateItem);
   const updateItemCustomValue = useStore(s => s.updateItemCustomValue);
   const toggleTag = useStore(s => s.toggleTag);
@@ -110,16 +111,11 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const displayItem = (displayId ? items.find(it => it.id === displayId) : null) ?? queue[0] ?? null;
   const current = displayItem;
 
+  // Only clear displayId when the item is deleted entirely — not when it's just outside the queue
   useEffect(() => {
-    if (queue.length === 0) { setDisplayId(null); return; }
-    // Don't clear displayId while editing tags — queue rebuilds but we stay pinned
     if (tagEditMode) return;
-    if (displayId && !queue.find(it => it.id === displayId)) {
-      // Keep displayId if pointing to an archived item (user navigated from archive table)
-      const item = items.find(it => it.id === displayId);
-      if (!item?.archived) setDisplayId(null);
-    }
-  }, [queue.map(it => it.id).join(','), tagEditMode]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (displayId && !items.find(it => it.id === displayId)) setDisplayId(null);
+  }, [items.map(it => it.id).join(','), tagEditMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resize title textarea whenever the active card changes
   useEffect(() => { autoResizeTitle(); }, [current?.id, autoResizeTitle]);
@@ -349,7 +345,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const fl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px 36px', gap: 0 }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px 36px 100px', gap: 0 }}>
       <div style={{
         width: 880, maxWidth: '100%', background: 'var(--t-surf)', border: '1px solid var(--t-brd)',
         borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden',
@@ -569,46 +565,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
           </div>
         )}
 
-        {/* Hold panel */}
-        {holdOpen && (
-          <div style={{ margin: '0 26px 22px', padding: 16, background: 'var(--t-surf3)', borderRadius: 10, border: '1px dashed var(--t-brd)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--t-txt)' }}>{holdPanelLabel}</div>
-            <SchedulePicker value={holdSchedule} onChange={setHoldSchedule} allowRecurring={isReminder} />
-            {!isReminder && (
-              <div>
-                <div style={fl}>Resume note (optional)</div>
-                <input value={holdNote} onChange={e => setHoldNote(e.target.value)} placeholder="What are you waiting for?" style={inp} />
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={handleHoldConfirm} disabled={holdConfirmDisabled} style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 13, fontWeight: 600, padding: '8px 14px', borderRadius: 7, opacity: holdConfirmDisabled ? 0.5 : 1, cursor: holdConfirmDisabled ? 'not-allowed' : 'pointer' }}>
-                Confirm
-              </button>
-              <button onClick={() => { setHoldOpen(false); setHoldNote(''); setHoldSchedule(null); }} style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 13, fontWeight: 600, padding: '8px 14px', borderRadius: 7 }}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Action bar */}
-        <div style={{ display: 'flex', gap: 8, padding: '18px 26px', borderTop: '1px solid var(--t-brd)', background: 'var(--t-surf2)', flexWrap: 'wrap' }}>
-          <button onClick={handleContinue} disabled={queue.length <= 1}
-            style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9, opacity: queue.length <= 1 ? 0.4 : 1, cursor: queue.length <= 1 ? 'default' : 'pointer' }}>
-            Continue
-          </button>
-          <button onClick={() => { setHoldOpen(o => !o); setHoldNote(''); setHoldSchedule(null); }} style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9 }}>
-            {holdButtonLabel}
-          </button>
-          <div style={{ flex: 1 }} />
-          <button onClick={handleComplete} style={{ border: 'none', background: 'var(--t-success)', color: 'white', fontSize: 14, fontWeight: 600, padding: '11px 20px', borderRadius: 9 }}>
-            {completeLabel}
-          </button>
-        </div>
-      </div>
-
-      <div style={{ width: 880, maxWidth: '100%' }}>
-        <SearchBar onPin={handlePin} onQuickCreate={handleQuickCreate} inputRef={searchRef} />
       </div>
 
       {subtaskPanel && (
@@ -619,6 +575,58 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
           onExpand={() => { setFullPageSubtask(subtaskPanel); setSubtaskPanel(null); }}
         />
       )}
+
+      {/* Fixed bottom bar: search + action buttons */}
+      <div style={{
+        position: 'fixed', bottom: 0, left: sidebarCollapsed ? 44 : 220, right: 0,
+        transition: 'left 0.15s ease',
+        background: 'var(--t-surf)', borderTop: '1px solid var(--t-brd)', zIndex: 40,
+        padding: '0 36px',
+      }}>
+        {/* Hold panel — expands above the bar */}
+        {holdOpen && current && (
+          <div style={{ padding: '14px 0 10px', borderBottom: '1px solid var(--t-brd)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--t-txt)' }}>{holdPanelLabel}</div>
+            <SchedulePicker value={holdSchedule} onChange={setHoldSchedule} allowRecurring={isReminder} />
+            {!isReminder && (
+              <input value={holdNote} onChange={e => setHoldNote(e.target.value)} placeholder="What are you waiting for?" style={{ fontSize: 14, padding: '8px 11px', borderRadius: 8, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)' }} />
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={handleHoldConfirm} disabled={holdConfirmDisabled}
+                style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 13, fontWeight: 600, padding: '7px 14px', borderRadius: 7, opacity: holdConfirmDisabled ? 0.5 : 1, cursor: holdConfirmDisabled ? 'not-allowed' : 'pointer' }}>
+                Confirm
+              </button>
+              <button onClick={() => { setHoldOpen(false); setHoldNote(''); setHoldSchedule(null); }}
+                style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 13, fontWeight: 600, padding: '7px 14px', borderRadius: 7, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Search + action buttons row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0' }}>
+          <div style={{ flex: 1 }}>
+            <SearchBar onPin={handlePin} onQuickCreate={handleQuickCreate} inputRef={searchRef} />
+          </div>
+          {current && (
+            <>
+              <button onClick={handleContinue} disabled={queue.length <= 1}
+                style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9, opacity: queue.length <= 1 ? 0.4 : 1, cursor: queue.length <= 1 ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+                Continue
+              </button>
+              <button onClick={() => { setHoldOpen(o => !o); setHoldNote(''); setHoldSchedule(null); }}
+                style={{ border: '1px solid var(--t-brd)', background: holdOpen ? 'var(--t-surf2)' : 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {holdButtonLabel}
+              </button>
+              <button onClick={handleComplete}
+                style={{ border: 'none', background: 'var(--t-success)', color: 'white', fontSize: 14, fontWeight: 600, padding: '11px 20px', borderRadius: 9, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                {completeLabel}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
 
     </div>
   );
