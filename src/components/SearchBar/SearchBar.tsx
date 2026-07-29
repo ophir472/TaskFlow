@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
-import type { Item } from '../../types';
+import type { Item, Task } from '../../types';
 
 const KIND_LABEL: Record<string, string> = {
   task: 'Task', reminder: 'Reminder', responsibility: 'Responsibility',
@@ -25,7 +25,12 @@ export function SearchBar({ onPin, onQuickCreate, inputRef: externalRef }: Props
   const containerRef = useRef<HTMLDivElement>(null);
 
   const q = query.trim().toLowerCase();
-  const results: Item[] = !q ? [] : items.filter(it => !it.archived && it.title.toLowerCase().includes(q)).slice(0, 6);
+  const results: Item[] = !q ? [] : items.filter(it => {
+    if (it.archived) return false;
+    if (it.title.toLowerCase().includes(q)) return true;
+    if (it.kind === 'task' && (it as Task).requester?.toLowerCase().includes(q)) return true;
+    return false;
+  }).slice(0, 6);
   const open = focused && q.length > 0;
 
   useEffect(() => {
@@ -88,7 +93,12 @@ export function SearchBar({ onPin, onQuickCreate, inputRef: externalRef }: Props
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', cursor: 'pointer', borderBottom: '1px solid var(--t-brd2)' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'var(--t-surf)')}>
-              <span style={{ fontSize: 14, color: 'var(--t-txt)', fontWeight: 500 }}>{item.title}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, color: 'var(--t-txt)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</div>
+                {item.kind === 'task' && (item as Task).requester && (
+                  <div style={{ fontSize: 11, color: 'var(--t-muted)', marginTop: 1 }}>{(item as Task).requester}</div>
+                )}
+              </div>
               <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: KIND_COLOR[item.kind], flexShrink: 0, marginLeft: 12 }}>
                 {KIND_LABEL[item.kind]}
               </span>
