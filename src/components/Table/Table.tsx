@@ -130,10 +130,8 @@ export function Table() {
     return true;
   });
 
-  // Determine row order: manual > column sort > default (today→score)
-  const activeTaskOrder = taskOrder.filter(id => rows.some(r => r.id === id));
+  // Sort: column sort (with today secondary) OR unified today→manual→score
   if (sort) {
-    // Temporary column sort (today floats on top as secondary)
     const col = allCols.find(c => c.key === sort.key);
     if (col) {
       rows = [...rows].sort((a, b) => {
@@ -144,26 +142,20 @@ export function Table() {
       });
     }
     rows = [...rows].sort((a, b) => {
-      const aT = a.kind === 'task' && (a as Task).forToday ? 1 : 0;
-      const bT = b.kind === 'task' && (b as Task).forToday ? 1 : 0;
-      return bT - aT;
+      const aT = a.kind === 'task' && (a as Task).forToday ? 0 : 1;
+      const bT = b.kind === 'task' && (b as Task).forToday ? 0 : 1;
+      return aT - bT;
     });
-  } else if (activeTaskOrder.length > 0) {
-    // Manual order: user dragged items into position
-    const orderMap = new Map(activeTaskOrder.map((id, i) => [id, i]));
+  } else {
+    // Always: today first → manual order → score fallback
+    const orderMap = new Map(taskOrder.map((id, i) => [id, i]));
     rows = [...rows].sort((a, b) => {
+      const aT = a.kind === 'task' && (a as Task).forToday ? 0 : 1;
+      const bT = b.kind === 'task' && (b as Task).forToday ? 0 : 1;
+      if (aT !== bT) return aT - bT;
       const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : Infinity;
       const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : Infinity;
       if (ai !== bi) return ai - bi;
-      // Unordered items fall back to score
-      return scoreItem(b) - scoreItem(a);
-    });
-  } else {
-    // Default: today first, then by score
-    rows = [...rows].sort((a, b) => {
-      const aT = a.kind === 'task' && (a as Task).forToday ? 1 : 0;
-      const bT = b.kind === 'task' && (b as Task).forToday ? 1 : 0;
-      if (aT !== bT) return bT - aT;
       return scoreItem(b) - scoreItem(a);
     });
   }
@@ -302,6 +294,7 @@ export function Table() {
         <thead>
           <tr style={{ background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd)' }}>
             <th style={{ ...th, width: 28, cursor: 'default' }} />
+            <th style={{ ...th, width: 36, cursor: 'default', textAlign: 'right' }}>#</th>
             <th style={{ ...th, width: 40, cursor: 'default' }} onClick={e => e.stopPropagation()}>
               <input ref={selectAllRef} type="checkbox" checked={allChecked} onChange={toggleSelectAll} style={{ cursor: 'pointer', width: 15, height: 15 }} />
             </th>
@@ -340,6 +333,9 @@ export function Table() {
                 <td style={{ ...td, width: 28, color: 'var(--t-brd)', cursor: 'grab', userSelect: 'none', fontSize: 15, textAlign: 'center', paddingLeft: 8, paddingRight: 4 }}>
                   ⠿
                 </td>
+                <td style={{ ...td, width: 36, textAlign: 'right', fontSize: 12, color: 'var(--t-muted)', fontWeight: 600, paddingRight: 10 }}>
+                  {rows.indexOf(it) + 1}
+                </td>
                 <td style={{ ...td, width: 40 }} onClick={() => toggleRow(it.id)}>
                   <input type="checkbox" checked={isSelected} onChange={() => toggleRow(it.id)} style={{ cursor: 'pointer', width: 15, height: 15 }} />
                 </td>
@@ -372,7 +368,7 @@ export function Table() {
           })}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={cols.length + 3} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
+              <td colSpan={cols.length + 4} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
             </tr>
           )}
         </tbody>

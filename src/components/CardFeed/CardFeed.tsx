@@ -156,29 +156,13 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     searchRef.current?.focus();
   }, [focusSearchTrigger]);
 
-  // Score groups derived from the current queue (scores sorted high→low, deduplicated)
-  const scoreGroups = [...new Set(queue.map(it => scoreItem(it)))].sort((a, b) => b - a);
-  const currentScore = current ? scoreItem(current) : 0;
-  const sameScoreGroup = queue.filter(it => scoreItem(it) === currentScore);
-
   const handleContinue = () => {
-    if (!current || sameScoreGroup.length <= 1) return;
+    if (!current || queue.length <= 1) return;
     continueItem(current.id);
     setTagEditMode(false);
     setHoldOpen(false);
-    const idx = sameScoreGroup.findIndex(it => it.id === current.id);
-    const next = sameScoreGroup[(idx + 1) % sameScoreGroup.length];
-    setDisplayId(next.id);
-  };
-
-  const handleMoveOn = () => {
-    if (!current || scoreGroups.length <= 1) return;
-    setTagEditMode(false);
-    setHoldOpen(false);
-    const groupIdx = scoreGroups.indexOf(currentScore);
-    const nextScore = scoreGroups[(groupIdx + 1) % scoreGroups.length];
-    const nextGroup = queue.filter(it => scoreItem(it) === nextScore);
-    setDisplayId(nextGroup[0].id);
+    const idx = queue.findIndex(it => it.id === current.id);
+    setDisplayId(queue[(idx + 1) % queue.length].id);
   };
 
   const handleHoldConfirm = () => {
@@ -300,11 +284,8 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const snoozeDisabled = snoozesToday >= snoozeLimit;
   const holdConfirmDisabled = isReminder && !holdSchedule;
 
-  const groupPos = sameScoreGroup.length > 1
-    ? `${sameScoreGroup.findIndex(it => it.id === current.id) + 1} of ${sameScoreGroup.length}`
-    : null;
-  const groupLabel = scoreGroups.length > 1
-    ? `Priority ${scoreGroups.indexOf(currentScore) + 1}/${scoreGroups.length}`
+  const queuePos = queue.length > 1
+    ? `${queue.findIndex(it => it.id === current.id) + 1} of ${queue.length}`
     : null;
 
   const TAG_DEFS: { key: 'urgent' | 'important' | 'quick' | 'noTag'; label: string; activeColor: string; activeBg: string; activeBorder: string }[] = [
@@ -366,11 +347,8 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
               )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {groupPos && (
-                <span style={{ fontSize: 11, color: 'var(--t-muted)' }}>{groupPos}</span>
-              )}
-              {groupLabel && queueTier === 'scored' && (
-                <span style={{ fontSize: 11, color: 'var(--t-muted)', padding: '2px 7px', background: 'var(--t-surf3)', borderRadius: 10 }}>{groupLabel}</span>
+              {queuePos && (
+                <span style={{ fontSize: 11, color: 'var(--t-muted)' }}>{queuePos}</span>
               )}
               {queueTier === 'scored' && (
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t-muted)', whiteSpace: 'nowrap' }}>Score {score.toFixed(0)}</span>
@@ -574,15 +552,10 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
 
         {/* Action bar */}
         <div style={{ display: 'flex', gap: 8, padding: '18px 26px', borderTop: '1px solid var(--t-brd)', background: 'var(--t-surf2)', flexWrap: 'wrap' }}>
-          {(['Continue', 'Move On'] as const).map((label, i) => {
-            const disabled = i === 0 ? sameScoreGroup.length <= 1 : scoreGroups.length <= 1;
-            const handler = i === 0 ? handleContinue : handleMoveOn;
-            return (
-              <button key={label} onClick={handler} disabled={disabled} style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9, opacity: disabled ? 0.4 : 1, cursor: disabled ? 'default' : 'pointer' }}>
-                {label}
-              </button>
-            );
-          })}
+          <button onClick={handleContinue} disabled={queue.length <= 1}
+            style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9, opacity: queue.length <= 1 ? 0.4 : 1, cursor: queue.length <= 1 ? 'default' : 'pointer' }}>
+            Continue
+          </button>
           <button onClick={() => { setHoldOpen(o => !o); setHoldNote(''); setHoldSchedule(null); }} style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9 }}>
             {holdButtonLabel}
           </button>
