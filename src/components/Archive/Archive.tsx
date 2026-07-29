@@ -274,7 +274,7 @@ export function Archive() {
                     onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--t-surf2)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = isSelected ? 'var(--t-acc-bg)' : 'var(--t-surf)'; }}>
                     <td style={{ ...td, width: 40 }} onClick={() => toggleRow(it.id)}>
-                      <input type="checkbox" checked={isSelected} onChange={() => toggleRow(it.id)} style={{ cursor: 'pointer', width: 15, height: 15 }} />
+                      <input type="checkbox" checked={isSelected} onChange={() => toggleRow(it.id)} onClick={e => e.stopPropagation()} style={{ cursor: 'pointer', width: 15, height: 15 }} />
                     </td>
                     {cols.map(col => (
                       <td key={col.key} style={{ ...td, textAlign: col.align ?? 'left', fontWeight: col.key === 'title' ? 500 : 400, color: col.key === 'title' ? 'var(--t-txt)' : 'var(--t-txt2)' }}>
