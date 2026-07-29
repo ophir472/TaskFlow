@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../../store';
-import { buildQueue, scoreItem, nextId } from '../../engine';
+import { scoreItem, nextId } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
 import type { Task, ScheduleSpec } from '../../types';
 import { SubtaskPanel } from '../SubtaskPanel/SubtaskPanel';
@@ -62,16 +62,28 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     el.style.height = el.scrollHeight + 'px';
   }, []);
 
-  let queue = buildQueue(items);
-  if (taskOrder.length > 0) {
-    const orderMap = new Map(taskOrder.map((id, i) => [id, i]));
-    queue = [...queue].sort((a, b) => {
-      const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : Infinity;
-      const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : Infinity;
-      if (ai !== bi) return ai - bi;
-      return (scoreItem(b) - scoreItem(a)) || (a.bumpedAt - b.bumpedAt);
-    });
-  }
+  // Queue matches table order exactly: today-filter → today→manual→score
+  const activeItems = items.filter(it => {
+    if (it.archived) return false;
+    if (it.kind === 'task') {
+      const t = it as Task;
+      return t.status !== 'done' && t.status !== 'archived' &&
+             (t.status !== 'waiting' || it.priorityBoost);
+    }
+    return it.status === 'active';
+  });
+  const todayItems = activeItems.filter(it => it.kind === 'task' && (it as Task).forToday);
+  const scope = todayItems.length > 0 ? todayItems : activeItems;
+  const orderMap = new Map(taskOrder.map((id, i) => [id, i]));
+  const queue = [...scope].sort((a, b) => {
+    const aT = a.kind === 'task' && (a as Task).forToday ? 0 : 1;
+    const bT = b.kind === 'task' && (b as Task).forToday ? 0 : 1;
+    if (aT !== bT) return aT - bT;
+    const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : Infinity;
+    const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : Infinity;
+    if (ai !== bi) return ai - bi;
+    return scoreItem(b) - scoreItem(a);
+  });
 
   // If displayId has left the queue (completed/archived/held), fall back to queue[0].
   const displayItem = queue.find(it => it.id === displayId) ?? queue[0] ?? null;
@@ -266,13 +278,9 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const isResponsibility = current.kind === 'responsibility';
   const t = isTask ? (current as Task) : null;
 
-  // Determine which queue tier is active right now
-  const activeTasks = items.filter(it =>
-    it.kind === 'task' && !it.archived &&
-    it.status !== 'done' && it.status !== 'archived' &&
-    (it.status !== 'waiting' || it.priorityBoost)
-  ) as Task[];
-  const needsTagCount = activeTasks.filter(it => !it.urgent && !it.important && !it.quick && !it.noTag).length;
+  // Tag-sweep banner
+  const needsTagCount = (activeItems.filter(it => it.kind === 'task') as Task[])
+    .filter(it => !it.urgent && !it.important && !it.quick && !it.noTag).length;
   const queueTier: 'needsTag' | 'scored' =
     needsTagCount > 0 ? 'needsTag' : 'scored';
 
