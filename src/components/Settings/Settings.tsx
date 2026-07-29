@@ -3,7 +3,7 @@ import { useStore } from '../../store';
 import { nextId } from '../../engine';
 import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
-import { triggerDownload, restoreFromData, supportsAutoBackup } from '../../backup';
+import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload } from '../../backup';
 import type { JiraConfig } from '../../types';
 
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
@@ -137,11 +137,14 @@ export function Settings({ backupFileName, lastBackedUp, onSetBackupFile, onClea
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 14 }}>Backup & Restore</div>
 
-        <div style={{ display: 'flex', gap: 10, marginBottom: supportsAutoBackup() ? 20 : 0 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: supportsAutoBackup() ? 20 : 0 }}>
           <button onClick={handleExport} style={addBtn}>↓ Export JSON</button>
           <button onClick={() => importRef.current?.click()}
             style={{ ...addBtn, background: 'var(--t-surf2)', color: 'var(--t-txt2)', border: '1px solid var(--t-brd)' }}>
             ↑ Import JSON
+          </button>
+          <button onClick={() => triggerExcelDownload()} style={{ ...addBtn, background: '#1D6F42' }}>
+            ↓ Export Excel
           </button>
           <input ref={importRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
         </div>

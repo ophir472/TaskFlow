@@ -13,6 +13,7 @@ import { Settings } from './components/Settings/Settings';
 import { CreateModal } from './components/CreateModal/CreateModal';
 import { Toast } from './components/Toast/Toast';
 import { getStoredHandle, storeHandle, clearStoredHandle, ensureWritePermission, writeBackup, getExportData, supportsAutoBackup } from './backup';
+import { Confetti } from './components/Confetti';
 
 export type SyncState = 'idle' | 'syncing' | 'saved';
 
@@ -24,11 +25,14 @@ export default function App() {
   const view = useStore(s => s.view);
   const setView = useStore(s => s.setView);
   const themeId = useStore(s => s.themeId);
+  const promotionsToday = useStore(s => s.promotionsToday);
   const setTriggerTagForId = useStore(s => s.setTriggerTagForId);
   const checkDailyReset = useStore(s => s.checkDailyReset);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const confettiFiredAt = useRef<number>(0);
   const [syncState, setSyncState] = useState<SyncState>('idle');
   const [focusSearchTrigger, setFocusSearchTrigger] = useState(0);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,6 +116,15 @@ export default function App() {
     });
     return unsub;
   }, []);
+
+  // Fire confetti once when the 3rd task/subtask is completed today
+  useEffect(() => {
+    if (promotionsToday === 3 && confettiFiredAt.current !== 3) {
+      confettiFiredAt.current = 3;
+      setShowConfetti(true);
+    }
+    if (promotionsToday < 3) confettiFiredAt.current = 0; // reset on daily rollover
+  }, [promotionsToday]);
 
   // Hash-based routing: URL → view on load and on back/forward
   // Only the first segment matters for view (e.g. "feed/taskId/sub/subId" → view="feed")
@@ -198,6 +211,7 @@ export default function App() {
         />
       )}
       <Toast text={toast} />
+      {showConfetti && <Confetti onDone={() => setShowConfetti(false)} />}
     </div>
   );
 }
