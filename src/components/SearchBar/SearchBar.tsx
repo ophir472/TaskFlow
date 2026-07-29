@@ -20,6 +20,7 @@ export function SearchBar({ onPin, onQuickCreate, inputRef: externalRef }: Props
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
   const [dropUp, setDropUp] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
   const internalRef = useRef<HTMLInputElement>(null);
   const inputRef = externalRef ?? internalRef;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -32,6 +33,8 @@ export function SearchBar({ onPin, onQuickCreate, inputRef: externalRef }: Props
     return false;
   }).slice(0, 6);
   const open = focused && q.length > 0;
+  // Reset highlight when results change
+  useEffect(() => { setHighlightIdx(-1); }, [q]);
 
   useEffect(() => {
     if (open && containerRef.current) {
@@ -61,8 +64,28 @@ export function SearchBar({ onPin, onQuickCreate, inputRef: externalRef }: Props
           onChange={e => setQuery(e.target.value)}
           onFocus={() => setFocused(true)}
           onKeyDown={e => {
-            if (e.key === 'Escape') { setQuery(''); setFocused(false); }
-            if (e.key === 'Enter' && q.length > 0) handleCreate();
+            if (e.key === 'Escape') { setQuery(''); setFocused(false); setHighlightIdx(-1); }
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              // results + 1 create row; wrap from last → first
+              const total = results.length + 1;
+              setHighlightIdx(i => i < total - 1 ? i + 1 : 0);
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              const total = results.length + 1;
+              setHighlightIdx(i => i > 0 ? i - 1 : total - 1);
+            }
+            if (e.key === 'Enter' && q.length > 0) {
+              if (e.shiftKey) {
+                // Shift+Enter: always create regardless of navigation
+                handleCreate();
+              } else if (highlightIdx >= 0 && highlightIdx < results.length && results[highlightIdx]) {
+                handleSelect(results[highlightIdx]);
+              } else {
+                handleCreate();
+              }
+            }
           }}
           placeholder="Search items or type to quick-add a task…"
           style={{
@@ -88,11 +111,11 @@ export function SearchBar({ onPin, onQuickCreate, inputRef: externalRef }: Props
           boxShadow: dropUp ? '0 -4px 20px rgba(0,0,0,0.12)' : '0 4px 20px rgba(0,0,0,0.12)',
           overflow: 'hidden',
         }}>
-          {results.map(item => (
+          {results.map((item, idx) => (
             <div key={item.id} onMouseDown={e => { e.preventDefault(); handleSelect(item); }}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', cursor: 'pointer', borderBottom: '1px solid var(--t-brd2)' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'var(--t-surf)')}>
+              onMouseEnter={() => setHighlightIdx(idx)}
+              onMouseLeave={() => setHighlightIdx(-1)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', cursor: 'pointer', borderBottom: '1px solid var(--t-brd2)', background: highlightIdx === idx ? 'var(--t-surf2)' : 'var(--t-surf)' }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14, color: 'var(--t-txt)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</div>
                 {item.kind === 'task' && (item as Task).requester && (
@@ -105,9 +128,9 @@ export function SearchBar({ onPin, onQuickCreate, inputRef: externalRef }: Props
             </div>
           ))}
           <div onMouseDown={e => { e.preventDefault(); handleCreate(); }}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 16px', cursor: 'pointer', color: 'var(--t-acc)', borderTop: results.length > 0 ? '1px solid var(--t-brd2)' : 'none', background: results.length === 0 ? 'var(--t-acc-bg)' : 'var(--t-surf)' }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-acc-bg)')}
-            onMouseLeave={e => (e.currentTarget.style.background = results.length === 0 ? 'var(--t-acc-bg)' : 'var(--t-surf)')}>
+            onMouseEnter={() => setHighlightIdx(results.length)}
+            onMouseLeave={() => setHighlightIdx(-1)}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 16px', cursor: 'pointer', color: 'var(--t-acc)', borderTop: results.length > 0 ? '1px solid var(--t-brd2)' : 'none', background: highlightIdx === results.length ? 'var(--t-acc-bg)' : 'var(--t-surf)' }}>
             <span style={{ fontSize: 18, fontWeight: 700, lineHeight: 1 }}>+</span>
             <span style={{ fontSize: 14, fontWeight: 500 }}>Create task "<span style={{ fontStyle: 'italic' }}>{query.trim()}</span>"</span>
             <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--t-acc-dk)', background: 'var(--t-acc-bg)', padding: '2px 7px', borderRadius: 6, flexShrink: 0 }}>↵ Enter</span>
