@@ -66,6 +66,9 @@ export function Table() {
   const [reqFilter, setReqFilter] = useState('');
   const [projFilter, setProjFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
+  const [minScore, setMinScore] = useState('');
+  const [quickFilters, setQuickFilters] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -190,12 +193,27 @@ export function Table() {
   }
 
   // Filter rows
+  const todayStart = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); })();
   let rows = items.filter(it => {
     if (it.archived) return false;
     if (reqFilter && (it as Task).requester !== reqFilter) return false;
     if (projFilter && (it as Task).project !== projFilter) return false;
     if (typeFilter && it.kind !== typeFilter) return false;
     if (statusFilter && it.kind === 'task' && it.status !== statusFilter) return false;
+    // Tag priority filter
+    if (tagFilter && it.kind === 'task') {
+      const t = it as Task;
+      if (tagFilter === 'urgent' && !t.urgent) return false;
+      if (tagFilter === 'important' && !t.important) return false;
+      if (tagFilter === 'quick' && !t.quick) return false;
+      if (tagFilter === 'noTag' && !t.noTag) return false;
+    }
+    // Quick filters
+    if (minScore !== '' && scoreItem(it) < Number(minScore)) return false;
+    if (quickFilters.has('createdToday') && it.createdAt < todayStart) return false;
+    if (quickFilters.has('updatedToday') && it.updatedAt < todayStart) return false;
+    if (quickFilters.has('forToday') && !(it.kind === 'task' && (it as Task).forToday)) return false;
+    if (quickFilters.has('untagged') && !(it.kind === 'task' && !(it as Task).urgent && !(it as Task).important && !(it as Task).quick && !(it as Task).noTag)) return false;
     return true;
   });
 
@@ -404,6 +422,36 @@ export function Table() {
           <option value="waiting">Waiting</option>
           <option value="done">Done</option>
         </select>
+        <select value={tagFilter} onChange={e => setTagFilter(e.target.value)} style={selectSt}>
+          <option value="">All tags</option>
+          <option value="urgent">Urgent</option>
+          <option value="important">Important</option>
+          <option value="quick">Quick</option>
+          <option value="noTag">None of these</option>
+        </select>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--t-muted)', whiteSpace: 'nowrap' }}>
+          Score ≥
+          <input type="number" min="0" value={minScore} onChange={e => setMinScore(e.target.value)} placeholder="—"
+            style={{ width: 50, fontSize: 12, padding: '5px 6px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)' }} />
+        </div>
+
+        {/* Quick filter chips */}
+        {([
+          { key: 'createdToday', label: 'Created today' },
+          { key: 'updatedToday', label: 'Updated today' },
+          { key: 'forToday', label: 'Marked today' },
+          { key: 'untagged', label: 'Untagged' },
+        ] as const).map(({ key, label }) => {
+          const active = quickFilters.has(key);
+          return (
+            <button key={key}
+              onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; })}
+              style={{ fontSize: 12, padding: '5px 11px', borderRadius: 20, border: `1px solid ${active ? 'var(--t-acc)' : 'var(--t-brd)'}`, background: active ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: active ? 'var(--t-acc-dk)' : 'var(--t-txt2)', cursor: 'pointer', fontWeight: active ? 600 : 400, whiteSpace: 'nowrap' }}>
+              {active ? '✓ ' : ''}{label}
+            </button>
+          );
+        })}
 
         {items.some(it => it.kind === 'task' && (it as Task).manuallyMoved) && (
           <button onClick={resetManualOrder}
