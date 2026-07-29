@@ -16,8 +16,6 @@ interface Props {
 
 export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const items = useStore(s => s.items);
-  const snoozesToday = useStore(s => s.snoozesToday);
-  const snoozeLimit = useStore(s => s.snoozeLimit);
   const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);
 
@@ -40,7 +38,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const continueItem = useStore(s => s.continueItem);
   const holdItem = useStore(s => s.holdItem);
   const rescheduleReminder = useStore(s => s.rescheduleReminder);
-  const snoozeItem = useStore(s => s.snoozeItem);
   const completeItem = useStore(s => s.completeItem);
   const createItem = useStore(s => s.createItem);
 
@@ -256,12 +253,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     setTriggerTagForId(id);
   };
 
-  const handleSnooze = () => {
-    if (!current) return;
-    const ok = snoozeItem(current.id);
-    if (ok) { setDisplayId(null); setTagEditMode(false); }
-    else onToast('Snooze limit reached for today');
-  };
 
   const handleComplete = () => {
     if (!current) return;
@@ -328,8 +319,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const holdButtonLabel = isReminder ? 'Remind me again' : 'Hold';
   const holdPanelLabel = isReminder ? 'Schedule next reminder' : 'When should this come back?';
   const completeLabel = isResponsibility ? 'Complete (reschedule)' : 'Complete';
-  const canSnooze = !isReminder;
-  const snoozeDisabled = snoozesToday >= snoozeLimit;
   const holdConfirmDisabled = isReminder && !holdSchedule;
 
   const queuePos = queue.length > 1
@@ -607,11 +596,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
           <button onClick={() => { setHoldOpen(o => !o); setHoldNote(''); setHoldSchedule(null); }} style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9 }}>
             {holdButtonLabel}
           </button>
-          {canSnooze && (
-            <button onClick={handleSnooze} disabled={snoozeDisabled} style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9, opacity: snoozeDisabled ? 0.45 : 1 }}>
-              Snooze
-            </button>
-          )}
           <div style={{ flex: 1 }} />
           <button onClick={handleComplete} style={{ border: 'none', background: 'var(--t-success)', color: 'white', fontSize: 14, fontWeight: 600, padding: '11px 20px', borderRadius: 9 }}>
             {completeLabel}

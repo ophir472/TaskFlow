@@ -19,9 +19,7 @@ export function Sidebar({ onNewItem, syncState }: Props) {
   const setView = useStore(s => s.setView);
   const collapsed = useStore(s => s.sidebarCollapsed);
   const setSidebarCollapsed = useStore(s => s.setSidebarCollapsed);
-  const snoozesToday = useStore(s => s.snoozesToday);
   const promotionsToday = useStore(s => s.promotionsToday);
-  const snoozeLimit = useStore(s => s.snoozeLimit);
   const promotionGoal = useStore(s => s.promotionGoal);
 
   const pieCount = Math.min(promotionsToday, promotionGoal);
@@ -142,12 +140,6 @@ export function Sidebar({ onNewItem, syncState }: Props) {
             </div>
           )}
         </div>
-        {!collapsed && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--t-muted)' }}>
-            <span>Snoozes today</span>
-            <span style={{ fontWeight: 600, color: 'var(--t-txt2)' }}>{snoozesToday}/{snoozeLimit}</span>
-          </div>
-        )}
 
         {/* Sync indicator — always visible */}
         <div style={{

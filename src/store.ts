@@ -3,7 +3,6 @@ import { persist } from 'zustand/middleware';
 import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig } from './types';
 import { midnight } from './engine';
 
-const SNOOZE_LIMIT = 2;
 const PROMOTION_GOAL = 3;
 
 export type View = 'feed' | 'kanban' | 'table' | 'archive' | 'settings';
@@ -13,13 +12,11 @@ interface AppState {
   requesters: string[];
   projects: string[];
   customFields: CustomField[];
-  snoozesToday: number;
   promotionsToday: number;
   dailyResetAt: number;
   view: View;
   sidebarCollapsed: boolean;
   history: ChangeRecord[];
-  snoozeLimit: number;
   promotionGoal: number;
   displayId: string | null;
   triggerTagForId: string | null;
@@ -43,7 +40,6 @@ interface AppState {
   continueItem: (id: string) => void;
   holdItem: (id: string, toCheck: string, schedule?: ScheduleSpec) => void;
   rescheduleReminder: (id: string, schedule: ScheduleSpec) => void;
-  snoozeItem: (id: string) => boolean;
   completeItem: (id: string) => 'archived' | 'rescheduled' | null;
   createItem: (item: Item) => void;
   archiveItem: (id: string) => void;
@@ -76,13 +72,11 @@ export const useStore = create<AppState>()(
       requesters: [],
       projects: [],
       customFields: [],
-      snoozesToday: 0,
       promotionsToday: 0,
       dailyResetAt: midnight(),
       view: 'feed',
       sidebarCollapsed: false,
       history: [],
-      snoozeLimit: SNOOZE_LIMIT,
       promotionGoal: PROMOTION_GOAL,
       displayId: null,
       triggerTagForId: null,
@@ -194,17 +188,6 @@ export const useStore = create<AppState>()(
         history: pushHistory(s.history, { ts: Date.now(), type: 'reschedule', id })
       })),
 
-      snoozeItem: (id) => {
-        const s = get();
-        if (s.snoozesToday >= s.snoozeLimit) return false;
-        set(st => ({
-          snoozesToday: st.snoozesToday + 1,
-          items: st.items.map(it => it.id === id ? { ...it, bumpedAt: Date.now(), updatedAt: Date.now() } as Item : it),
-          history: pushHistory(st.history, { ts: Date.now(), type: 'snooze', id })
-        }));
-        return true;
-      },
-
       completeItem: (id) => {
         const item = get().items.find(it => it.id === id);
         if (!item) return null;
@@ -280,7 +263,7 @@ export const useStore = create<AppState>()(
       checkDailyReset: () => {
         const { dailyResetAt } = get();
         if (Date.now() >= dailyResetAt) {
-          set({ snoozesToday: 0, promotionsToday: 0, dailyResetAt: midnight() });
+          set({ promotionsToday: 0, dailyResetAt: midnight() });
         }
       },
     }),
