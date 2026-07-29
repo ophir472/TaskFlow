@@ -209,6 +209,24 @@ export function Archive() {
               <option value="done">Done</option>
             </select>
 
+            {selCount > 0 && (
+              <>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--t-acc-dk)' }}>{selCount} selected</span>
+                <button onClick={() => setSelected(new Set())}
+                  style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', cursor: 'pointer' }}>
+                  Clear
+                </button>
+                <button onClick={bulkRestore}
+                  style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--t-acc)', color: 'white', cursor: 'pointer' }}>
+                  ↩ Restore {selCount}
+                </button>
+                <button onClick={bulkDelete}
+                  style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--t-urgent)', color: 'white', cursor: 'pointer' }}>
+                  ✕ Delete {selCount}
+                </button>
+              </>
+            )}
+
             <div style={{ marginLeft: 'auto', position: 'relative' }} ref={colPickerRef}>
               <button onClick={() => setColPickerOpen(o => !o)}
                 style={{ fontSize: 13, padding: '7px 12px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', cursor: 'pointer', color: 'var(--t-txt2)', fontWeight: 500 }}>
@@ -228,26 +246,6 @@ export function Archive() {
               )}
             </div>
           </div>
-
-          {/* Bulk action bar */}
-          {selCount > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'var(--t-acc-bg)', border: '1px solid var(--t-acc)', borderRadius: 9 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--t-acc-dk)' }}>{selCount} selected</span>
-              <button onClick={() => setSelected(new Set())}
-                style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', cursor: 'pointer' }}>
-                Clear
-              </button>
-              <div style={{ flex: 1 }} />
-              <button onClick={bulkRestore}
-                style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--t-acc)', color: 'white', cursor: 'pointer' }}>
-                ↩ Restore {selCount}
-              </button>
-              <button onClick={bulkDelete}
-                style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--t-urgent)', color: 'white', cursor: 'pointer' }}>
-                ✕ Delete {selCount}
-              </button>
-            </div>
-          )}
 
           {/* Table */}
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden' }}>
