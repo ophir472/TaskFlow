@@ -158,6 +158,37 @@ export function supportsAutoBackup(): boolean {
   return typeof window !== 'undefined' && 'showSaveFilePicker' in window;
 }
 
+/**
+ * Opens a file picker for the user to select a backup JSON file.
+ * When the File System Access API is available (Chromium), also requests
+ * write permission so the file becomes the auto-backup target automatically.
+ * Returns the parsed backup data, or null if the user cancelled.
+ */
+export async function pickAndRegisterRestoreFile(): Promise<Record<string, unknown> | null> {
+  // File System Access API path — can obtain a writable handle
+  if (typeof window !== 'undefined' && 'showOpenFilePicker' in window) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [handle]: FileSystemFileHandle[] = await (window as any).showOpenFilePicker({
+        types: [{ description: 'TaskFlow backup', accept: { 'application/json': ['.json'] } }],
+      });
+
+      // Request write permission so this file becomes the ongoing backup target
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const perm = await (handle as any).requestPermission({ mode: 'readwrite' });
+        if (perm === 'granted') await storeHandle(handle);
+      } catch { /* write permission denied — still restore, just no auto-backup */ }
+
+      const file = await handle.getFile();
+      return JSON.parse(await file.text()) as Record<string, unknown>;
+    } catch {
+      return null; // user cancelled
+    }
+  }
+  return null; // API not available — caller should fall back to <input type="file">
+}
+
 export async function readBackupFile(handle: FileSystemFileHandle): Promise<Record<string, unknown>> {
   const file = await handle.getFile();
   const text = await file.text();

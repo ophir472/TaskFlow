@@ -12,7 +12,7 @@ import { Archive } from './components/Archive/Archive';
 import { Settings } from './components/Settings/Settings';
 import { CreateModal } from './components/CreateModal/CreateModal';
 import { Toast } from './components/Toast/Toast';
-import { getStoredHandle, storeHandle, clearStoredHandle, ensureWritePermission, writeBackup, getExportData, supportsAutoBackup, readBackupFile, restoreFromData } from './backup';
+import { getStoredHandle, storeHandle, clearStoredHandle, ensureWritePermission, writeBackup, getExportData, supportsAutoBackup, readBackupFile, restoreFromData, pickAndRegisterRestoreFile } from './backup';
 import { Confetti } from './components/Confetti';
 
 export type SyncState = 'idle' | 'syncing' | 'saved';
@@ -61,6 +61,14 @@ export default function App() {
 
   function handleAutoRestore() {
     if (foundBackupData) restoreFromData(foundBackupData);
+  }
+
+  async function handlePickRestore() {
+    // Try the File System Access API first (registers file as backup automatically)
+    const data = await pickAndRegisterRestoreFile();
+    if (data) { restoreFromData(data); return; }
+    // Fall back to plain <input type="file"> (no auto-backup registration)
+    restoreFileRef.current?.click();
   }
 
   function handleManualRestore(e: React.ChangeEvent<HTMLInputElement>) {
@@ -282,10 +290,11 @@ export default function App() {
                 </button>
               ) : (
                 <>
-                  <button onClick={() => restoreFileRef.current?.click()}
+                  <button onClick={handlePickRestore}
                     style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 14, fontWeight: 600, padding: '12px 22px', borderRadius: 10, cursor: 'pointer' }}>
                     ↑ Select backup file…
                   </button>
+                  {/* Fallback for browsers without File System Access API */}
                   <input ref={restoreFileRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleManualRestore} />
                 </>
               )}

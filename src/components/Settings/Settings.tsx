@@ -3,7 +3,7 @@ import { useStore } from '../../store';
 import { nextId } from '../../engine';
 import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
-import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload } from '../../backup';
+import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload, pickAndRegisterRestoreFile } from '../../backup';
 import type { JiraConfig } from '../../types';
 
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
@@ -70,6 +70,17 @@ export function Settings({ backupFileName, lastBackedUp, onSetBackupFile, onClea
   function handleExport() {
     const date = new Date().toISOString().slice(0, 10);
     triggerDownload(`taskflow-backup-${date}.json`);
+  }
+
+  async function handleImportClick() {
+    const data = await pickAndRegisterRestoreFile();
+    if (data) {
+      if (!confirm('This will overwrite all current data. Continue?')) return;
+      restoreFromData(data);
+      return;
+    }
+    // Fallback for browsers without File System Access API
+    importRef.current?.click();
   }
 
   function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -139,7 +150,7 @@ export function Settings({ backupFileName, lastBackedUp, onSetBackupFile, onClea
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: supportsAutoBackup() ? 20 : 0 }}>
           <button onClick={handleExport} style={addBtn}>↓ Export JSON</button>
-          <button onClick={() => importRef.current?.click()}
+          <button onClick={handleImportClick}
             style={{ ...addBtn, background: 'var(--t-surf2)', color: 'var(--t-txt2)', border: '1px solid var(--t-brd)' }}>
             ↑ Import JSON
           </button>
