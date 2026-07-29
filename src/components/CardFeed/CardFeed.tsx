@@ -585,21 +585,13 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                 const sInp: React.CSSProperties = { ...inp, flex: 1, fontSize: 13, padding: '7px 9px', borderRadius: 7 };
                 return (
                   <div>
-                    {/* Section header */}
-                    {editingLabel === 'jiraSection'
-                      ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
-                          onBlur={() => { updateItem(current.id, { jiraLabel: labelValue.trim() || undefined }); setEditingLabel(null); }}
-                          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
-                          style={{ ...fl, border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 5 }} />
-                      : <div style={{ ...fl, cursor: 'text' }} title="Click to rename" onClick={() => { setEditingLabel('jiraSection'); setLabelValue(t.jiraLabel || 'Jira'); }}>{t.jiraLabel || 'Jira'}</div>
-                    }
                     {/* Primary ticket */}
                     {editingLabel === 'jiraLink:primary'
                       ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
                           onBlur={() => { updateItem(current.id, { jiraLinkLabel: labelValue.trim() || undefined }); setEditingLabel(null); }}
                           onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
                           style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 4 }} />
-                      : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel('jiraLink:primary'); setLabelValue(t.jiraLinkLabel || 'Ticket'); }}>{t.jiraLinkLabel || 'Ticket'}</div>
+                      : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel('jiraLink:primary'); setLabelValue(t.jiraLinkLabel || 'Jira ticket'); }}>{t.jiraLinkLabel || 'Jira ticket'}</div>
                     }
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
                       <input value={t.jiraLink} onChange={e => updateItem(current.id, { jiraLink: e.target.value })} placeholder="PROJ-1234" style={sInp} />
@@ -619,7 +611,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                               onBlur={() => { const ls = [...(t.extraJiraLinkLabels ?? [])]; ls[i] = labelValue.trim(); updateItem(current.id, { extraJiraLinkLabels: ls }); setEditingLabel(null); }}
                               onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
                               style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 4 }} />
-                          : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel(`jiraLink:${i}`); setLabelValue(t.extraJiraLinkLabels?.[i] || `Ticket ${i + 2}`); }}>{t.extraJiraLinkLabels?.[i] || `Ticket ${i + 2}`}</div>
+                          : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel(`jiraLink:${i}`); setLabelValue(t.extraJiraLinkLabels?.[i] || `Jira ticket ${i + 2}`); }}>{t.extraJiraLinkLabels?.[i] || `Jira ticket ${i + 2}`}</div>
                         }
                         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                           <input value={link} style={sInp} placeholder="PROJ-1234"
@@ -632,7 +624,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                     {t.jiraLink && (
                       <button onClick={() => updateItem(current.id, { extraJiraLinks: [...(t.extraJiraLinks ?? []), ''], extraJiraLinkLabels: [...(t.extraJiraLinkLabels ?? []), ''] })}
                         style={{ marginTop: 8, width: '100%', border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, fontWeight: 500, padding: '5px 0', borderRadius: 6, cursor: 'pointer' }}>
-                        + Add another {t.jiraLabel || 'Jira'}
+                        + Add another Jira ticket
                       </button>
                     )}
                   </div>
@@ -644,19 +636,12 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                 const sInp: React.CSSProperties = { ...inp, flex: 1, fontSize: 13, padding: '7px 9px', borderRadius: 7 };
                 return (
                   <div>
-                    {editingLabel === 'itsmSection'
-                      ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
-                          onBlur={() => { updateItem(current.id, { itsmLabel: labelValue.trim() || undefined }); setEditingLabel(null); }}
-                          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
-                          style={{ ...fl, border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 5 }} />
-                      : <div style={{ ...fl, cursor: 'text' }} title="Click to rename" onClick={() => { setEditingLabel('itsmSection'); setLabelValue(t.itsmLabel || 'ITSM'); }}>{t.itsmLabel || 'ITSM'}</div>
-                    }
                     {editingLabel === 'itsmTicket:primary'
                       ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
                           onBlur={() => { updateItem(current.id, { itsmTicketLabel: labelValue.trim() || undefined }); setEditingLabel(null); }}
                           onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
                           style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 4 }} />
-                      : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel('itsmTicket:primary'); setLabelValue(t.itsmTicketLabel || 'Ticket'); }}>{t.itsmTicketLabel || 'Ticket'}</div>
+                      : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel('itsmTicket:primary'); setLabelValue(t.itsmTicketLabel || 'ITSM ticket'); }}>{t.itsmTicketLabel || 'ITSM ticket'}</div>
                     }
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
                       <input value={t.itsmTicket ?? ''} onChange={e => updateItem(current.id, { itsmTicket: e.target.value })} placeholder="INC0001234" style={sInp} />
@@ -669,7 +654,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                               onBlur={() => { const ls = [...(t.extraItsmTicketLabels ?? [])]; ls[i] = labelValue.trim(); updateItem(current.id, { extraItsmTicketLabels: ls }); setEditingLabel(null); }}
                               onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
                               style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 4 }} />
-                          : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel(`itsmTicket:${i}`); setLabelValue(t.extraItsmTicketLabels?.[i] || `Ticket ${i + 2}`); }}>{t.extraItsmTicketLabels?.[i] || `Ticket ${i + 2}`}</div>
+                          : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel(`itsmTicket:${i}`); setLabelValue(t.extraItsmTicketLabels?.[i] || `ITSM ticket ${i + 2}`); }}>{t.extraItsmTicketLabels?.[i] || `ITSM ticket ${i + 2}`}</div>
                         }
                         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                           <input value={ticket} style={sInp} placeholder="INC0001234"
@@ -682,7 +667,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                     {t.itsmTicket && (
                       <button onClick={() => updateItem(current.id, { extraItsmTickets: [...(t.extraItsmTickets ?? []), ''], extraItsmTicketLabels: [...(t.extraItsmTicketLabels ?? []), ''] })}
                         style={{ marginTop: 8, width: '100%', border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, fontWeight: 500, padding: '5px 0', borderRadius: 6, cursor: 'pointer' }}>
-                        + Add another {t.itsmLabel || 'ITSM'}
+                        + Add another ITSM ticket
                       </button>
                     )}
                   </div>
@@ -695,14 +680,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                 const ticketLblEdSt: React.CSSProperties = { ...ticketLblSt, border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%' };
                 return (
                   <div>
-                    {/* Section header */}
-                    {editingLabel === 'generalLink'
-                      ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
-                          onBlur={() => { updateItem(current.id, { generalLinkLabel: labelValue.trim() || undefined }); setEditingLabel(null); }}
-                          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
-                          style={{ ...fl, border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 5 }} />
-                      : <div style={{ ...fl, cursor: 'text' }} title="Click to rename" onClick={() => { setEditingLabel('generalLink'); setLabelValue(t.generalLinkLabel || 'General link'); }}>{t.generalLinkLabel || 'General link'}</div>
-                    }
                     {/* Primary link */}
                     {editingLabel === 'generalLink:primary'
                       ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
