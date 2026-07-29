@@ -74,7 +74,11 @@ export interface Task {
   manuallyMoved?: boolean;
   extraJiraLinks?: string[];
   jiraLabel?: string;
+  jiraLinkLabel?: string;
+  extraJiraLinkLabels?: string[];
   itsmLabel?: string;
+  itsmTicketLabel?: string;
+  extraItsmTicketLabels?: string[];
   generalLinkLabel?: string;
   itsmTicket?: string;
   extraItsmTickets?: string[];
