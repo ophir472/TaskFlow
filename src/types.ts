@@ -80,6 +80,8 @@ export interface Task {
   itsmTicketLabel?: string;
   extraItsmTicketLabels?: string[];
   generalLinkLabel?: string;
+  extraGeneralLinks?: string[];
+  extraGeneralLinkLabels?: string[];
   itsmTicket?: string;
   extraItsmTickets?: string[];
   toCheck: string;

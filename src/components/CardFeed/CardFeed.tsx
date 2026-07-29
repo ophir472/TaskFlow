@@ -689,20 +689,57 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                 );
               })()}
 
-              <div>
-                {editingLabel === 'generalLink' ? (
-                  <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
-                    onBlur={() => { updateItem(current.id, { generalLinkLabel: labelValue.trim() || undefined }); setEditingLabel(null); }}
-                    onKeyDown={e => { if (e.key === 'Enter') { updateItem(current.id, { generalLinkLabel: labelValue.trim() || undefined }); setEditingLabel(null); } if (e.key === 'Escape') setEditingLabel(null); }}
-                    style={{ ...fl, border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 5 }} />
-                ) : (
-                  <div style={{ ...fl, cursor: 'text' }} title="Click to rename"
-                    onClick={() => { setEditingLabel('generalLink'); setLabelValue(t.generalLinkLabel || 'General link'); }}>
-                    {t.generalLinkLabel || 'General link'}
+              {(() => {
+                const sInp: React.CSSProperties = { ...inp, flex: 1, fontSize: 13, padding: '7px 9px', borderRadius: 7 };
+                const ticketLblSt: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 };
+                const ticketLblEdSt: React.CSSProperties = { ...ticketLblSt, border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%' };
+                return (
+                  <div>
+                    {/* Section header */}
+                    {editingLabel === 'generalLink'
+                      ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
+                          onBlur={() => { updateItem(current.id, { generalLinkLabel: labelValue.trim() || undefined }); setEditingLabel(null); }}
+                          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
+                          style={{ ...fl, border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 5 }} />
+                      : <div style={{ ...fl, cursor: 'text' }} title="Click to rename" onClick={() => { setEditingLabel('generalLink'); setLabelValue(t.generalLinkLabel || 'General link'); }}>{t.generalLinkLabel || 'General link'}</div>
+                    }
+                    {/* Primary link */}
+                    {editingLabel === 'generalLink:primary'
+                      ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
+                          onBlur={() => { updateItem(current.id, {}); setEditingLabel(null); }}
+                          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
+                          style={ticketLblEdSt} />
+                      : <div style={ticketLblSt} title="Click to rename" onClick={() => { setEditingLabel('generalLink:primary'); setLabelValue('Link'); }}>Link</div>
+                    }
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                      <input value={t.generalLink} onChange={e => updateItem(current.id, { generalLink: e.target.value })} placeholder="Any URL or ref" style={sInp} />
+                      {t.generalLink && <a href={t.generalLink.startsWith('http') ? t.generalLink : `https://${t.generalLink}`} target="_blank" rel="noreferrer" style={{ fontSize: 16, color: 'var(--t-acc)', textDecoration: 'none', flexShrink: 0 }} title="Open link">↗</a>}
+                    </div>
+                    {/* Extra links */}
+                    {(t.extraGeneralLinks ?? []).map((link, i) => (
+                      <div key={i} style={{ marginTop: 6 }}>
+                        {editingLabel === `generalLink:${i}`
+                          ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
+                              onBlur={() => { const ls = [...(t.extraGeneralLinkLabels ?? [])]; ls[i] = labelValue.trim(); updateItem(current.id, { extraGeneralLinkLabels: ls }); setEditingLabel(null); }}
+                              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
+                              style={ticketLblEdSt} />
+                          : <div style={ticketLblSt} title="Click to rename" onClick={() => { setEditingLabel(`generalLink:${i}`); setLabelValue(t.extraGeneralLinkLabels?.[i] || `Link ${i + 2}`); }}>{t.extraGeneralLinkLabels?.[i] || `Link ${i + 2}`}</div>
+                        }
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                          <input value={link} style={sInp} placeholder="Any URL or ref"
+                            onChange={e => { const n = [...(t.extraGeneralLinks ?? [])]; n[i] = e.target.value; updateItem(current.id, { extraGeneralLinks: n }); }}
+                            onBlur={() => { const links = t.extraGeneralLinks ?? []; const labels = t.extraGeneralLinkLabels ?? []; const pairs = links.map((l, j) => ({ l, lb: labels[j] ?? '' })).filter(p => p.l.trim()); updateItem(current.id, { extraGeneralLinks: pairs.map(p => p.l), extraGeneralLinkLabels: pairs.map(p => p.lb) }); }} />
+                          {link && <a href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noreferrer" style={{ fontSize: 16, color: 'var(--t-acc)', textDecoration: 'none', flexShrink: 0 }} title="Open link">↗</a>}
+                        </div>
+                      </div>
+                    ))}
+                    <button onClick={() => updateItem(current.id, { extraGeneralLinks: [...(t.extraGeneralLinks ?? []), ''], extraGeneralLinkLabels: [...(t.extraGeneralLinkLabels ?? []), ''] })}
+                      style={{ marginTop: 8, width: '100%', border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, fontWeight: 500, padding: '5px 0', borderRadius: 6, cursor: 'pointer' }}>
+                      + Add another {t.generalLinkLabel || 'link'}
+                    </button>
                   </div>
-                )}
-                <input value={t.generalLink} onChange={e => updateItem(current.id, { generalLink: e.target.value })} placeholder="Any URL or ref" style={{ ...inp, fontSize: 13, padding: '7px 9px', borderRadius: 7 }} />
-              </div>
+                );
+              })()}
             </div>
             </div>
 

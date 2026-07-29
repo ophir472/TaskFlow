@@ -120,6 +120,8 @@ function normalizeItem(item: any): any {
     itsmTicketLabel: undefined,
     extraItsmTicketLabels: [],
     generalLinkLabel: undefined,
+    extraGeneralLinks: [],
+    extraGeneralLinkLabels: [],
     itsmTicket: '',
     extraItsmTickets: [],
     notes: item.notes ?? '',
