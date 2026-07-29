@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig } from './types';
+import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig } from './types';
 import { midnight } from './engine';
 
 const PROMOTION_GOAL = 3;
@@ -24,6 +24,7 @@ interface AppState {
   customAccent: string | null;
   customBg: string | null;
   jiraConfig: JiraConfig | null;
+  itsmConfig: ItsmConfig | null;
   taskOrder: string[];
   tableVisibleCols: string[] | null;
   archiveVisibleCols: string[] | null;
@@ -60,6 +61,7 @@ interface AppState {
   setView: (v: View) => void;
   setSidebarCollapsed: (v: boolean) => void;
   setJiraConfig: (config: JiraConfig | null) => void;
+  setItsmConfig: (config: ItsmConfig | null) => void;
   setTaskOrder: (order: string[]) => void;
   resetManualOrder: () => void;
   setTableVisibleCols: (cols: string[]) => void;
@@ -92,6 +94,7 @@ export const useStore = create<AppState>()(
       customAccent: null,
       customBg: null,
       jiraConfig: null,
+      itsmConfig: null,
       taskOrder: [],
       tableVisibleCols: null,
       archiveVisibleCols: null,
@@ -262,6 +265,7 @@ export const useStore = create<AppState>()(
       setView: (v) => set({ view: v }),
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
       setJiraConfig: (config) => set({ jiraConfig: config }),
+      setItsmConfig: (config) => set({ itsmConfig: config }),
       setTaskOrder: (order) => set({ taskOrder: order }),
       setTableVisibleCols: (cols) => set({ tableVisibleCols: cols }),
       setArchiveVisibleCols: (cols) => set({ archiveVisibleCols: cols }),

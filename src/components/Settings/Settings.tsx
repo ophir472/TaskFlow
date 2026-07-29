@@ -4,7 +4,7 @@ import { nextId } from '../../engine';
 import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
 import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload, pickAndRegisterRestoreFile } from '../../backup';
-import type { JiraConfig } from '../../types';
+import type { JiraConfig, ItsmConfig } from '../../types';
 
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
 const listItem: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 12px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 8, fontSize: 14, color: 'var(--t-txt)' };
@@ -56,6 +56,8 @@ export function Settings({ backupFileName, lastBackedUp, onSetBackupFile, onClea
   const themeId = useStore(s => s.themeId);
   const jiraConfig = useStore(s => s.jiraConfig);
   const setJiraConfig = useStore(s => s.setJiraConfig);
+  const itsmConfig = useStore(s => s.itsmConfig);
+  const setItsmConfig = useStore(s => s.setItsmConfig);
   const [page, setPage] = useState<'main' | 'appearance'>('main');
 
   const [jira, setJira] = useState<JiraConfig>(() => jiraConfig ?? {
@@ -64,6 +66,11 @@ export function Settings({ backupFileName, lastBackedUp, onSetBackupFile, onClea
 
   function saveJira() {
     setJiraConfig(jira.host && jira.username && jira.apiToken && jira.projectKey ? jira : null);
+  }
+
+  const [itsm, setItsm] = useState<ItsmConfig>(() => itsmConfig ?? { host: '' });
+  function saveItsm() {
+    setItsmConfig(itsm.host ? itsm : null);
   }
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -226,6 +233,36 @@ export function Settings({ backupFileName, lastBackedUp, onSetBackupFile, onClea
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'oklch(0.5 0.14 150)' }}>
                   <span>✓ Connected · {jiraConfig.host} / {jiraConfig.projectKey}</span>
                   <span onClick={() => { setJiraConfig(null); setJira({ host: '', username: '', apiToken: '', projectKey: '', component: '', defaultAssigneeId: '' }); }}
+                    style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 16 }}>×</span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ITSM (ServiceNow) */}
+      {(() => {
+        const fi: React.CSSProperties = { fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', width: '100%', boxSizing: 'border-box' as const };
+        const fl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 5 };
+        const field = (label: string, el: React.ReactNode) => (
+          <div><div style={fl}>{label}</div>{el}</div>
+        );
+        return (
+          <div style={card}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 4 }}>ITSM Integration</div>
+            <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: 16 }}>
+              ServiceNow or any ITSM tool. Tickets open at: https://HOST/incident.do?sysparm_query=number=TICKET
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+              {field('Host', <input value={itsm.host} onChange={e => setItsm(i => ({ ...i, host: e.target.value }))} placeholder="mycompany.service-now.com" style={fi} />)}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button onClick={saveItsm} style={addBtn}>Save</button>
+              {itsmConfig && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'oklch(0.5 0.14 150)' }}>
+                  <span>✓ Connected · {itsmConfig.host}</span>
+                  <span onClick={() => { setItsmConfig(null); setItsm({ host: '' }); }}
                     style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 16 }}>×</span>
                 </div>
               )}

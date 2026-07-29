@@ -50,6 +50,10 @@ export interface JiraConfig {
   defaultAssigneeId: string;
 }
 
+export interface ItsmConfig {
+  host: string;
+}
+
 export interface Task {
   id: string;
   kind: 'task';
@@ -69,6 +73,10 @@ export interface Task {
   forToday: boolean;
   manuallyMoved?: boolean;
   extraJiraLinks?: string[];
+  jiraLabel?: string;
+  itsmLabel?: string;
+  itsmTicket?: string;
+  extraItsmTickets?: string[];
   toCheck: string;
   holdSchedule?: ScheduleSpec;
   priorityBoost: boolean;

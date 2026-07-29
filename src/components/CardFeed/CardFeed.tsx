@@ -27,6 +27,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
 
   const customFields = useStore(s => s.customFields);
   const jiraConfig = useStore(s => s.jiraConfig);
+  const itsmConfig = useStore(s => s.itsmConfig);
   const taskOrder = useStore(s => s.taskOrder);
   const sidebarCollapsed = useStore(s => s.sidebarCollapsed);
   const updateItem = useStore(s => s.updateItem);
@@ -47,6 +48,8 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const [creatingJira, setCreatingJira] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
   const [cardMenuOpen, setCardMenuOpen] = useState(false);
+  const [editingLabel, setEditingLabel] = useState<'jira' | 'itsm' | null>(null);
+  const [labelValue, setLabelValue] = useState('');
   const cardMenuRef = useRef<HTMLDivElement>(null);
   const prevHadSubtask = useRef(false);
   const [holdNote, setHoldNote] = useState('');
@@ -578,7 +581,17 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                 </select>
               </div>
               <div>
-                <div style={fl}>Jira</div>
+                {editingLabel === 'jira' ? (
+                  <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
+                    onBlur={() => { updateItem(current.id, { jiraLabel: labelValue.trim() || undefined }); setEditingLabel(null); }}
+                    onKeyDown={e => { if (e.key === 'Enter') { updateItem(current.id, { jiraLabel: labelValue.trim() || undefined }); setEditingLabel(null); } if (e.key === 'Escape') setEditingLabel(null); }}
+                    style={{ ...fl, border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 5 }} />
+                ) : (
+                  <div style={{ ...fl, cursor: 'text' }} title="Click to rename"
+                    onClick={() => { setEditingLabel('jira'); setLabelValue(t.jiraLabel || 'Jira'); }}>
+                    {t.jiraLabel || 'Jira'}
+                  </div>
+                )}
                 {/* Primary Jira field */}
                 <input value={t.jiraLink} onChange={e => updateItem(current.id, { jiraLink: e.target.value })} placeholder="PROJ-1234" style={{ ...inp, fontSize: 13, padding: '7px 9px', borderRadius: 7 }} />
                 {t.jiraLink ? (
@@ -625,10 +638,65 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                   <button
                     onClick={() => updateItem(current.id, { extraJiraLinks: [...(t.extraJiraLinks ?? []), ''] })}
                     style={{ marginTop: 8, width: '100%', border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, fontWeight: 500, padding: '5px 0', borderRadius: 6, cursor: 'pointer' }}>
-                    + Add another Jira
+                    + Add another {t.jiraLabel || 'Jira'}
                   </button>
                 )}
               </div>
+
+              {/* ITSM tickets — always shown (same as Jira) */}
+              {(
+                <div>
+                  {editingLabel === 'itsm' ? (
+                    <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
+                      onBlur={() => { updateItem(current.id, { itsmLabel: labelValue.trim() || undefined }); setEditingLabel(null); }}
+                      onKeyDown={e => { if (e.key === 'Enter') { updateItem(current.id, { itsmLabel: labelValue.trim() || undefined }); setEditingLabel(null); } if (e.key === 'Escape') setEditingLabel(null); }}
+                      style={{ ...fl, border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 5 }} />
+                  ) : (
+                    <div style={{ ...fl, cursor: 'text' }} title="Click to rename"
+                      onClick={() => { setEditingLabel('itsm'); setLabelValue(t.itsmLabel || 'ITSM'); }}>
+                      {t.itsmLabel || 'ITSM'}
+                    </div>
+                  )}
+                  <input value={t.itsmTicket ?? ''} onChange={e => updateItem(current.id, { itsmTicket: e.target.value })} placeholder="INC0001234" style={{ ...inp, fontSize: 13, padding: '7px 9px', borderRadius: 7 }} />
+                  {t.itsmTicket && (
+                    <a href={`https://${itsmConfig?.host ?? ''}/incident.do?sysparm_query=number=${t.itsmTicket}`} target="_blank" rel="noreferrer"
+                      style={{ display: 'block', marginTop: 4, fontSize: 12, color: 'var(--t-acc)', textDecoration: 'none', fontWeight: 500 }}>
+                      ↗ Open {t.itsmTicket}
+                    </a>
+                  )}
+                  {t.itsmTicket && (t.extraItsmTickets ?? []).map((ticket, i) => (
+                    <div key={i} style={{ marginTop: 8 }}>
+                      <input
+                        value={ticket}
+                        onChange={e => {
+                          const next = [...(t.extraItsmTickets ?? [])];
+                          next[i] = e.target.value;
+                          updateItem(current.id, { extraItsmTickets: next });
+                        }}
+                        onBlur={() => {
+                          const cleaned = (t.extraItsmTickets ?? []).filter(x => x.trim());
+                          updateItem(current.id, { extraItsmTickets: cleaned });
+                        }}
+                        placeholder="INC0001234"
+                        style={{ ...inp, fontSize: 13, padding: '7px 9px', borderRadius: 7 }}
+                      />
+                      {ticket && (
+                        <a href={`https://${itsmConfig?.host ?? ''}/incident.do?sysparm_query=number=${ticket}`} target="_blank" rel="noreferrer"
+                          style={{ display: 'block', marginTop: 4, fontSize: 12, color: 'var(--t-acc)', textDecoration: 'none', fontWeight: 500 }}>
+                          ↗ Open {ticket}
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                  {t.itsmTicket && (
+                    <button onClick={() => updateItem(current.id, { extraItsmTickets: [...(t.extraItsmTickets ?? []), ''] })}
+                      style={{ marginTop: 8, width: '100%', border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, fontWeight: 500, padding: '5px 0', borderRadius: 6, cursor: 'pointer' }}>
+                      + Add another {t.itsmLabel || 'ITSM'}
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div>
                 <div style={fl}>General link</div>
                 <input value={t.generalLink} onChange={e => updateItem(current.id, { generalLink: e.target.value })} placeholder="Any URL or ref" style={{ ...inp, fontSize: 13, padding: '7px 9px', borderRadius: 7 }} />

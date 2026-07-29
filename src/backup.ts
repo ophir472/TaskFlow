@@ -91,6 +91,7 @@ export function triggerDownload(filename: string): void {
 const STATE_DEFAULTS: Record<string, unknown> = {
   taskOrder: [],
   jiraConfig: null,
+  itsmConfig: null,
   tableVisibleCols: null,
   archiveVisibleCols: null,
   tableColWidths: {},
@@ -112,6 +113,10 @@ function normalizeItem(item: any): any {
     description: '',
     forToday: false,
     extraJiraLinks: [],
+    jiraLabel: undefined,
+    itsmLabel: undefined,
+    itsmTicket: '',
+    extraItsmTickets: [],
     notes: item.notes ?? '',
     blockers: item.blockers ?? '',
     generalLink: item.generalLink ?? '',
