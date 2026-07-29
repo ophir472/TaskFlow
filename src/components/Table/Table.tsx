@@ -384,7 +384,10 @@ export function Table() {
                 ))}
                 <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                   {it.kind === 'task' && (it as Task).manuallyMoved && (
-                    <span onClick={() => updateItem(it.id, { manuallyMoved: false })}
+                    <span onClick={() => {
+                      updateItem(it.id, { manuallyMoved: false });
+                      setTaskOrder(taskOrder.filter(id => id !== it.id));
+                    }}
                       style={{ fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
                       title="Reset to auto-sort">↺</span>
                   )}
