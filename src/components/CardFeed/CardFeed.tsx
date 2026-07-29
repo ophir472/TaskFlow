@@ -46,6 +46,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
 
   const [creatingJira, setCreatingJira] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
+  const prevHadSubtask = useRef(false);
   const [holdNote, setHoldNote] = useState('');
   const [holdSchedule, setHoldSchedule] = useState<ScheduleSpec | null>(null);
   const [subtaskPanel, setSubtaskPanel] = useState<{ parentId: string; subId: string } | null>(null);
@@ -104,6 +105,50 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
       }
     }
   }, [current?.id]);
+
+  // On mount: restore card/subtask from URL
+  useEffect(() => {
+    const parts = window.location.hash.slice(1).split('/');
+    if (parts[0] !== 'feed') return;
+    if (parts[1]) {
+      setDisplayId(parts[1]);
+      if (parts[2] === 'sub' && parts[3]) setSubtaskPanel({ parentId: parts[1], subId: parts[3] });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Back/forward within feed: restore card/subtask from URL
+  useEffect(() => {
+    function onHashChange() {
+      const parts = window.location.hash.slice(1).split('/');
+      if (parts[0] !== 'feed') return;
+      setDisplayId(parts[1] || null);
+      if (parts[1] && parts[2] === 'sub' && parts[3]) {
+        setSubtaskPanel({ parentId: parts[1], subId: parts[3] });
+        setFullPageSubtask(null);
+      } else {
+        setSubtaskPanel(null);
+        setFullPageSubtask(null);
+      }
+    }
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // State → URL: keep hash in sync with current card/subtask
+  useEffect(() => {
+    if (window.location.hash.slice(1).split('/')[0] !== 'feed') return;
+    const panel = subtaskPanel ?? fullPageSubtask;
+    let hash = 'feed';
+    if (panel) hash = `feed/${panel.parentId}/sub/${panel.subId}`;
+    else if (displayId) hash = `feed/${displayId}`;
+
+    if (window.location.hash.slice(1) !== hash) {
+      const openingSubtask = panel !== null && !prevHadSubtask.current;
+      if (openingSubtask) history.pushState(null, '', '#' + hash);
+      else history.replaceState(null, '', '#' + hash);
+    }
+    prevHadSubtask.current = panel !== null;
+  }, [displayId, subtaskPanel, fullPageSubtask]);
 
   // Focus search bar when triggered from outside (cmd+f)
   useEffect(() => {

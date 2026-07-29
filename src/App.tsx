@@ -114,10 +114,11 @@ export default function App() {
   }, []);
 
   // Hash-based routing: URL → view on load and on back/forward
+  // Only the first segment matters for view (e.g. "feed/taskId/sub/subId" → view="feed")
   useEffect(() => {
     function syncFromHash() {
-      const hash = window.location.hash.slice(1) as View;
-      if (VALID_VIEWS.includes(hash)) setView(hash);
+      const seg = window.location.hash.slice(1).split('/')[0] as View;
+      if (VALID_VIEWS.includes(seg)) setView(seg);
       else if (!window.location.hash) setView('feed');
     }
     syncFromHash();
@@ -125,10 +126,10 @@ export default function App() {
     return () => window.removeEventListener('hashchange', syncFromHash);
   }, [setView]);
 
-  // View → URL: keep hash in sync when view changes via sidebar/code
+  // View → URL: only update when switching views; preserve sub-path within same view
   useEffect(() => {
-    const hash = window.location.hash.slice(1);
-    if (hash !== view) window.location.hash = view;
+    const currentSeg = window.location.hash.slice(1).split('/')[0];
+    if (currentSeg !== view) window.location.hash = view;
   }, [view]);
 
   // Apply theme CSS variables
