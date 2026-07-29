@@ -40,10 +40,14 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const holdItem = useStore(s => s.holdItem);
   const rescheduleReminder = useStore(s => s.rescheduleReminder);
   const completeItem = useStore(s => s.completeItem);
+  const archiveItem = useStore(s => s.archiveItem);
+  const deleteItem = useStore(s => s.deleteItem);
   const createItem = useStore(s => s.createItem);
 
   const [creatingJira, setCreatingJira] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
+  const [cardMenuOpen, setCardMenuOpen] = useState(false);
+  const cardMenuRef = useRef<HTMLDivElement>(null);
   const prevHadSubtask = useRef(false);
   const [holdNote, setHoldNote] = useState('');
   const [holdSchedule, setHoldSchedule] = useState<ScheduleSpec | null>(null);
@@ -263,6 +267,29 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     else if (result === 'archived') onToast('Archived');
   };
 
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (cardMenuRef.current && !cardMenuRef.current.contains(e.target as Node)) setCardMenuOpen(false);
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, []);
+
+  function handleCardArchive() {
+    if (!current) return;
+    archiveItem(current.id);
+    setDisplayId(null);
+    setCardMenuOpen(false);
+  }
+
+  function handleCardDelete() {
+    if (!current) return;
+    if (!confirm('Permanently delete this task?')) return;
+    deleteItem(current.id);
+    setDisplayId(null);
+    setCardMenuOpen(false);
+  }
+
   async function handleCreateJira() {
     if (!jiraConfig || !t || !current) return;
     setCreatingJira(true);
@@ -390,6 +417,31 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
               {queueTier === 'scored' && (
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t-muted)', whiteSpace: 'nowrap' }}>Score {score.toFixed(0)}</span>
               )}
+              {/* 3-dot menu */}
+              <div ref={cardMenuRef} style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setCardMenuOpen(o => !o)}
+                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 18, color: 'var(--t-muted)', padding: '2px 6px', borderRadius: 6, lineHeight: 1 }}
+                  title="More options">
+                  ⋯
+                </button>
+                {cardMenuOpen && (
+                  <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.14)', minWidth: 150, zIndex: 30, overflow: 'hidden' }}>
+                    <button onClick={handleCardArchive}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', border: 'none', background: 'transparent', fontSize: 14, color: 'var(--t-txt)', cursor: 'pointer' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      ⊙ Archive
+                    </button>
+                    <button onClick={handleCardDelete}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', border: 'none', background: 'transparent', fontSize: 14, color: 'var(--t-urgent)', cursor: 'pointer' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-urgent-bg)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      ✕ Delete
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <textarea
