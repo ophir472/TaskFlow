@@ -38,6 +38,10 @@ const STD_COLS: ColDef[] = [
 
 const selectSt: React.CSSProperties = { fontSize: 13, padding: '7px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)' };
 const EDITABLE_COLS = new Set(['title', 'requester', 'project', 'status', 'jira']);
+const DEFAULT_COL_WIDTHS: Record<string, number> = {
+  title: 200, type: 110, requester: 120, project: 120,
+  status: 130, jira: 90, tags: 150, score: 65, created: 95, updated: 95,
+};
 
 // ── Component ───────────────────────────────────────────────────
 
@@ -71,6 +75,38 @@ export function Table() {
   const [editValue, setEditValue] = useState('');
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
   const [modalTaskId, setModalTaskId] = useState<string | null>(null);
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+    try { const s = localStorage.getItem('taskflow-table-col-widths'); if (s) return JSON.parse(s); } catch {}
+    return {};
+  });
+  const resizeRef = useRef<{ colKey: string; startX: number; startWidth: number } | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('taskflow-table-col-widths', JSON.stringify(colWidths));
+  }, [colWidths]);
+
+  function startColResize(e: React.MouseEvent, colKey: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startWidth = colWidths[colKey] ?? DEFAULT_COL_WIDTHS[colKey] ?? 130;
+    resizeRef.current = { colKey, startX: e.clientX, startWidth };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    function onMove(ev: MouseEvent) {
+      if (!resizeRef.current) return;
+      const newW = Math.max(50, resizeRef.current.startWidth + (ev.clientX - resizeRef.current.startX));
+      setColWidths(prev => ({ ...prev, [resizeRef.current!.colKey]: newW }));
+    }
+    function onUp() {
+      resizeRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
   const rowsRef = useRef<Item[]>([]);
   const focusedIdxRef = useRef(-1);
 
@@ -395,7 +431,7 @@ export function Table() {
       </div>
 
       {/* Table */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden', tableLayout: 'fixed' }}>
         <thead>
           <tr style={{ background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd)' }}>
             <th style={{ ...th, width: 40, cursor: 'default' }} onClick={e => e.stopPropagation()}>
@@ -404,12 +440,19 @@ export function Table() {
             <th style={{ ...th, width: 36, cursor: 'default', textAlign: 'right' }}>#</th>
             <th style={{ ...th, width: 60, cursor: 'default', textAlign: 'center' }}>Today</th>
             <th style={{ ...th, width: 28, cursor: 'default' }} />
-            {cols.map(col => (
-              <th key={col.key} onClick={() => handleSortClick(col.key)}
-                style={{ ...th, textAlign: col.align ?? 'left' }}>
-                {col.label}{sortIcon(col.key)}
-              </th>
-            ))}
+            {cols.map(col => {
+              const colW = colWidths[col.key] ?? DEFAULT_COL_WIDTHS[col.key] ?? 130;
+              return (
+                <th key={col.key} onClick={() => handleSortClick(col.key)}
+                  style={{ ...th, textAlign: col.align ?? 'left', width: colW, position: 'relative', overflow: 'hidden' }}>
+                  {col.label}{sortIcon(col.key)}
+                  <div onMouseDown={e => startColResize(e, col.key)}
+                    style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 5, cursor: 'col-resize', zIndex: 1 }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-acc)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')} />
+                </th>
+              );
+            })}
             <th style={{ ...th, width: 40, cursor: 'default' }}></th>
           </tr>
         </thead>
