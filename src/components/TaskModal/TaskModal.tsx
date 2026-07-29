@@ -3,14 +3,19 @@ import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { scoreItem } from '../../engine';
 
-interface Props { taskId: string; onClose: () => void }
+interface Props {
+  taskId: string;
+  allIds?: string[];        // ordered list for keyboard navigation
+  onNavigate?: (id: string) => void;
+  onClose: () => void;
+}
 
 const fl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 };
 const inp: React.CSSProperties = { width: '100%', fontSize: 14, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', boxSizing: 'border-box' };
 const ta: React.CSSProperties = { ...inp, resize: 'vertical' as const, fontFamily: 'inherit' };
 const sel: React.CSSProperties = { width: '100%', fontSize: 13, padding: '7px 8px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)' };
 
-export function TaskModal({ taskId, onClose }: Props) {
+export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
   const items = useStore(s => s.items);
   const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);
@@ -36,11 +41,21 @@ export function TaskModal({ taskId, onClose }: Props) {
 
   useEffect(() => { autoResizeTitle(); }, [autoResizeTitle]);
 
+  const idx = allIds ? allIds.indexOf(taskId) : -1;
+  const canPrev = idx > 0;
+  const canNext = allIds ? idx < allIds.length - 1 : false;
+
   useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      if (e.key === 'Escape') { onClose(); return; }
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.key === 'ArrowLeft' && canPrev && allIds && onNavigate) onNavigate(allIds[idx - 1]);
+      if (e.key === 'ArrowRight' && canNext && allIds && onNavigate) onNavigate(allIds[idx + 1]);
+    }
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [taskId, idx, canPrev, canNext, allIds, onNavigate, onClose]);
 
   if (!task) return null;
 
@@ -68,7 +83,18 @@ export function TaskModal({ taskId, onClose }: Props) {
               <span style={{ fontSize: 12, color: 'var(--t-muted)' }}>Score {score.toFixed(0)}</span>
               {task.archived && <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 20, background: 'var(--t-urgent-bg)', color: 'var(--t-urgent)' }}>ARCHIVED</span>}
             </div>
-            <span onClick={onClose} style={{ cursor: 'pointer', fontSize: 20, color: 'var(--t-muted)', lineHeight: 1, padding: '2px 6px' }}>×</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {allIds && allIds.length > 1 && (
+                <>
+                  <button onClick={() => canPrev && onNavigate?.(allIds[idx - 1])} disabled={!canPrev}
+                    style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, padding: '4px 10px', borderRadius: 7, cursor: canPrev ? 'pointer' : 'default', opacity: canPrev ? 1 : 0.35 }}>←</button>
+                  <span style={{ fontSize: 12, color: 'var(--t-muted)', minWidth: 40, textAlign: 'center' }}>{idx + 1} / {allIds.length}</span>
+                  <button onClick={() => canNext && onNavigate?.(allIds[idx + 1])} disabled={!canNext}
+                    style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, padding: '4px 10px', borderRadius: 7, cursor: canNext ? 'pointer' : 'default', opacity: canNext ? 1 : 0.35 }}>→</button>
+                </>
+              )}
+              <span onClick={onClose} style={{ cursor: 'pointer', fontSize: 20, color: 'var(--t-muted)', lineHeight: 1, padding: '2px 6px', marginLeft: 4 }}>×</span>
+            </div>
           </div>
           <textarea
             ref={titleRef}

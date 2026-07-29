@@ -449,7 +449,7 @@ export function Archive() {
         </>
       )}
     </div>
-    {modalTaskId && <TaskModal taskId={modalTaskId} onClose={() => setModalTaskId(null)} />}
+    {modalTaskId && <TaskModal taskId={modalTaskId} allIds={rows.map(r => r.id)} onNavigate={setModalTaskId} onClose={() => setModalTaskId(null)} />}
     </>
   );
 }

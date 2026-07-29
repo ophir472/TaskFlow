@@ -557,7 +557,7 @@ export function Table() {
       </table>
       <div style={{ fontSize: 12, color: 'var(--t-muted)' }}>{rows.length} item{rows.length !== 1 ? 's' : ''}</div>
     </div>
-    {modalTaskId && <TaskModal taskId={modalTaskId} onClose={() => setModalTaskId(null)} />}
+    {modalTaskId && <TaskModal taskId={modalTaskId} allIds={rows.map(r => r.id)} onNavigate={setModalTaskId} onClose={() => setModalTaskId(null)} />}
     </>
   );
 }
