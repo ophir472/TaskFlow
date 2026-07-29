@@ -364,7 +364,7 @@ export function Table() {
                   {rows.indexOf(it) + 1}
                 </td>
                 <td style={{ ...td, width: 40 }} onClick={() => toggleRow(it.id)}>
-                  <input type="checkbox" checked={isSelected} onChange={() => toggleRow(it.id)} style={{ cursor: 'pointer', width: 15, height: 15 }} />
+                  <input type="checkbox" checked={isSelected} onChange={() => toggleRow(it.id)} onClick={e => e.stopPropagation()} style={{ cursor: 'pointer', width: 15, height: 15 }} />
                 </td>
                 <td style={{ ...td, width: 60, textAlign: 'center' }}>
                   {it.kind === 'task' && (
