@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../../store';
 import { scoreItem, nextId } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
-import type { Task, ScheduleSpec } from '../../types';
+import type { Item, Task, ScheduleSpec } from '../../types';
 import { SubtaskPanel } from '../SubtaskPanel/SubtaskPanel';
 import { SubtaskFullPage } from '../SubtaskPanel/SubtaskFullPage';
 import { SchedulePicker } from '../SchedulePicker/SchedulePicker';
@@ -75,10 +75,17 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const todayItems = activeItems.filter(it => it.kind === 'task' && (it as Task).forToday);
   const scope = todayItems.length > 0 ? todayItems : activeItems;
   const orderMap = new Map(taskOrder.map((id, i) => [id, i]));
+  const untagged = (it: Item) =>
+    it.kind === 'task' && !(it as Task).urgent && !(it as Task).important &&
+    !(it as Task).quick && !(it as Task).noTag;
   const queue = [...scope].sort((a, b) => {
     const aT = a.kind === 'task' && (a as Task).forToday ? 0 : 1;
     const bT = b.kind === 'task' && (b as Task).forToday ? 0 : 1;
     if (aT !== bT) return aT - bT;
+    // Untagged tasks surface first within each today/non-today group
+    const aU = untagged(a) ? 0 : 1;
+    const bU = untagged(b) ? 0 : 1;
+    if (aU !== bU) return aU - bU;
     const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : Infinity;
     const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : Infinity;
     if (ai !== bi) return ai - bi;
@@ -113,6 +120,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     if (current.kind === 'task') {
       const t = current as Task;
       if (!t.urgent && !t.important && !t.quick && !t.noTag) {
+        setDisplayId(current.id); // pin the card so queue re-sorts don't move us away
         setTagEditMode(true);
       }
     }
@@ -168,14 +176,33 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     searchRef.current?.focus();
   }, [focusSearchTrigger]);
 
-  const handleContinue = () => {
+  const handleContinue = useCallback(() => {
     if (!current || queue.length <= 1) return;
     continueItem(current.id);
     setTagEditMode(false);
     setHoldOpen(false);
     const idx = queue.findIndex(it => it.id === current.id);
     setDisplayId(queue[(idx + 1) % queue.length].id);
-  };
+  }, [current, queue, continueItem, setDisplayId]);
+
+  // Enter → Continue, Shift+Enter → go back (when no input/textarea is focused)
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Enter') return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      e.preventDefault();
+      if (e.shiftKey) {
+        if (!current || queue.length <= 1) return;
+        const idx = queue.findIndex(it => it.id === current.id);
+        setDisplayId(queue[(idx - 1 + queue.length) % queue.length].id);
+      } else {
+        handleContinue();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [handleContinue, current, queue, setDisplayId]);
 
   const handleHoldConfirm = () => {
     if (!current) return;
@@ -200,10 +227,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   };
 
   const handleQuickCreate = (title: string) => {
-    // Pin whatever is currently showing BEFORE the new task enters the queue,
-    // otherwise it jumps to queue[0] and displaces the card the user is on.
-    if (current) setDisplayId(current.id);
-
     const now = Date.now();
     const id = nextId('t');
     createItem({
@@ -213,7 +236,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
       toCheck: '', priorityBoost: false, subtasks: [],
       bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false,
     });
-    onToast(`"${title}" added to backlog`);
+    setTriggerTagForId(id);
   };
 
   const handleSnooze = () => {
