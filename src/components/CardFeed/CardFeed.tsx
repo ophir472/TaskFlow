@@ -150,12 +150,17 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   }, [current?.id]);
 
   // On mount: restore card/subtask from URL
+  // URL scheme: #feed/taskId/sub/subId  → panel
+  //             #feed/taskId/full/subId → full-page (persists across refresh)
   useEffect(() => {
     const parts = window.location.hash.slice(1).split('/');
     if (parts[0] !== 'feed') return;
     if (parts[1]) {
       setDisplayId(parts[1]);
-      if (parts[2] === 'sub' && parts[3]) setSubtaskPanel({ parentId: parts[1], subId: parts[3] });
+      if (parts[3]) {
+        if (parts[2] === 'full') setFullPageSubtask({ parentId: parts[1], subId: parts[3] });
+        else if (parts[2] === 'sub') setSubtaskPanel({ parentId: parts[1], subId: parts[3] });
+      }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -165,9 +170,9 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
       const parts = window.location.hash.slice(1).split('/');
       if (parts[0] !== 'feed') return;
       setDisplayId(parts[1] || null);
-      if (parts[1] && parts[2] === 'sub' && parts[3]) {
-        setSubtaskPanel({ parentId: parts[1], subId: parts[3] });
-        setFullPageSubtask(null);
+      if (parts[1] && parts[3]) {
+        if (parts[2] === 'full') { setFullPageSubtask({ parentId: parts[1], subId: parts[3] }); setSubtaskPanel(null); }
+        else if (parts[2] === 'sub') { setSubtaskPanel({ parentId: parts[1], subId: parts[3] }); setFullPageSubtask(null); }
       } else {
         setSubtaskPanel(null);
         setFullPageSubtask(null);
@@ -177,20 +182,20 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // State → URL: keep hash in sync with current card/subtask
+  // State → URL: full-page uses 'full' segment, panel uses 'sub'
   useEffect(() => {
     if (window.location.hash.slice(1).split('/')[0] !== 'feed') return;
-    const panel = subtaskPanel ?? fullPageSubtask;
     let hash = 'feed';
-    if (panel) hash = `feed/${panel.parentId}/sub/${panel.subId}`;
+    if (fullPageSubtask) hash = `feed/${fullPageSubtask.parentId}/full/${fullPageSubtask.subId}`;
+    else if (subtaskPanel) hash = `feed/${subtaskPanel.parentId}/sub/${subtaskPanel.subId}`;
     else if (displayId) hash = `feed/${displayId}`;
 
     if (window.location.hash.slice(1) !== hash) {
-      const openingSubtask = panel !== null && !prevHadSubtask.current;
-      if (openingSubtask) history.pushState(null, '', '#' + hash);
+      const opening = (!!fullPageSubtask || !!subtaskPanel) && !prevHadSubtask.current;
+      if (opening) history.pushState(null, '', '#' + hash);
       else history.replaceState(null, '', '#' + hash);
     }
-    prevHadSubtask.current = panel !== null;
+    prevHadSubtask.current = !!(fullPageSubtask || subtaskPanel);
   }, [displayId, subtaskPanel, fullPageSubtask]);
 
   // Focus search bar when triggered from outside (cmd+f)
