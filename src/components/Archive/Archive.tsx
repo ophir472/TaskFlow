@@ -260,7 +260,6 @@ export function Archive() {
                     {col.label}{sortIcon(col.key)}
                   </th>
                 ))}
-                <th style={{ ...th, width: 80, cursor: 'default' }}></th>
               </tr>
             </thead>
             <tbody>
@@ -280,20 +279,12 @@ export function Archive() {
                         {String(col.getValue(it) || '—')}
                       </td>
                     ))}
-                    <td onClick={e => e.stopPropagation()} style={{ ...td, textAlign: 'right' }}>
-                      <span onClick={() => unarchiveItem(it.id)}
-                        style={{ fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
-                        title="Restore">↩</span>
-                      <span onClick={() => { if (confirm('Permanently delete?')) deleteItem(it.id); }}
-                        style={{ fontSize: 12, color: 'var(--t-urgent)', cursor: 'pointer', fontWeight: 500 }}
-                        title="Delete">✕</span>
-                    </td>
                   </tr>
                 );
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={cols.length + 2} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
+                  <td colSpan={cols.length + 1} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
                 </tr>
               )}
             </tbody>

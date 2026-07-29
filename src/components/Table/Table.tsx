@@ -381,22 +381,17 @@ export function Table() {
                     {String(col.getValue(it) || '—')}
                   </td>
                 ))}
-                <td onClick={e => e.stopPropagation()} style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  {it.kind === 'task' && (it as Task).manuallyMoved && (
+                {it.kind === 'task' && (it as Task).manuallyMoved && (
+                  <td onClick={e => e.stopPropagation()} style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     <span onClick={() => {
                       updateItem(it.id, { manuallyMoved: false });
                       setTaskOrder(taskOrder.filter(id => id !== it.id));
                     }}
-                      style={{ fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
+                      style={{ fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', fontWeight: 500 }}
                       title="Reset to auto-sort">↺</span>
-                  )}
-                  <span onClick={() => { if (confirm('Archive this item?')) archiveItem(it.id); }}
-                    style={{ fontSize: 12, color: 'var(--t-muted)', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
-                    title="Archive">⊙</span>
-                  <span onClick={() => { if (confirm('Permanently delete?')) deleteItem(it.id); }}
-                    style={{ fontSize: 12, color: 'var(--t-urgent)', cursor: 'pointer', fontWeight: 500 }}
-                    title="Delete">✕</span>
-                </td>
+                  </td>
+                )}
+                {!(it.kind === 'task' && (it as Task).manuallyMoved) && <td />}
               </tr>
             );
           })}
