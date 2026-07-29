@@ -558,7 +558,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
               {customFields.filter(f => f.showInCard).map(f => (
                 <div key={f.id}>
                   <div style={fl}>{f.name}</div>
-                  <input value={t.customValues?.[f.id] ?? ''} onChange={e => updateItemCustomValue(current.id, f.id, e.target.value)} style={inp} />
+                  <textarea value={t.customValues?.[f.id] ?? ''} onChange={e => updateItemCustomValue(current.id, f.id, e.target.value)} rows={3} style={ta} />
                 </div>
               ))}
             </div>
