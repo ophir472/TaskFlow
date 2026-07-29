@@ -70,6 +70,7 @@ export function Table() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
+  const [frozenRowIds, setFrozenRowIds] = useState<string[] | null>(null);
   const [colPickerOpen, setColPickerOpen] = useState(false);
   const colPickerRef = useRef<HTMLDivElement>(null);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -203,7 +204,15 @@ export function Table() {
     it.kind === 'task' && !(it as Task).urgent && !(it as Task).important &&
     !(it as Task).quick && !(it as Task).noTag;
 
-  if (sort) {
+  // While editing tags: freeze the row order so score changes don't move rows around
+  if (frozenRowIds) {
+    const frozenMap = new Map(frozenRowIds.map((id, i) => [id, i]));
+    rows = [...rows].sort((a, b) => {
+      const ai = frozenMap.has(a.id) ? frozenMap.get(a.id)! : Infinity;
+      const bi = frozenMap.has(b.id) ? frozenMap.get(b.id)! : Infinity;
+      return ai - bi;
+    });
+  } else if (sort) {
     // Temporary column sort — manual positions not preserved
     const col = allCols.find(c => c.key === sort.key);
     if (col) {
@@ -551,7 +560,7 @@ export function Table() {
                                 </button>
                               );
                             })}
-                            <button onClick={() => setEditCell(null)}
+                            <button onClick={() => { setFrozenRowIds(null); setEditCell(null); }}
                               style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, border: 'none', background: 'var(--t-acc)', color: 'white', cursor: 'pointer', fontWeight: 600 }}>
                               Done
                             </button>
@@ -560,7 +569,10 @@ export function Table() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                             <span style={{ color: 'var(--t-txt2)', fontSize: 13.5 }}>{String(col.getValue(it) || '—')}</span>
                             {t && (
-                              <span onClick={() => setEditCell({ rowId: it.id, colKey: 'tags' })}
+                              <span onClick={() => {
+                                setFrozenRowIds(rows.map(r => r.id)); // freeze order during tag edit
+                                setEditCell({ rowId: it.id, colKey: 'tags' });
+                              }}
                                 style={{ fontSize: 12, color: 'var(--t-muted)', cursor: 'pointer', opacity: hoveredCell === tagKey ? 1 : 0, transition: 'opacity 0.1s' }}
                                 title="Edit tags">✎</span>
                             )}
