@@ -75,6 +75,7 @@ export interface Task {
   extraJiraLinks?: string[];
   jiraLabel?: string;
   itsmLabel?: string;
+  generalLinkLabel?: string;
   itsmTicket?: string;
   extraItsmTickets?: string[];
   toCheck: string;

@@ -48,7 +48,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const [creatingJira, setCreatingJira] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
   const [cardMenuOpen, setCardMenuOpen] = useState(false);
-  const [editingLabel, setEditingLabel] = useState<'jira' | 'itsm' | null>(null);
+  const [editingLabel, setEditingLabel] = useState<'jira' | 'itsm' | 'generalLink' | null>(null);
   const [labelValue, setLabelValue] = useState('');
   const cardMenuRef = useRef<HTMLDivElement>(null);
   const prevHadSubtask = useRef(false);
@@ -698,7 +698,17 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
               )}
 
               <div>
-                <div style={fl}>General link</div>
+                {editingLabel === 'generalLink' ? (
+                  <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
+                    onBlur={() => { updateItem(current.id, { generalLinkLabel: labelValue.trim() || undefined }); setEditingLabel(null); }}
+                    onKeyDown={e => { if (e.key === 'Enter') { updateItem(current.id, { generalLinkLabel: labelValue.trim() || undefined }); setEditingLabel(null); } if (e.key === 'Escape') setEditingLabel(null); }}
+                    style={{ ...fl, border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 5 }} />
+                ) : (
+                  <div style={{ ...fl, cursor: 'text' }} title="Click to rename"
+                    onClick={() => { setEditingLabel('generalLink'); setLabelValue(t.generalLinkLabel || 'General link'); }}>
+                    {t.generalLinkLabel || 'General link'}
+                  </div>
+                )}
                 <input value={t.generalLink} onChange={e => updateItem(current.id, { generalLink: e.target.value })} placeholder="Any URL or ref" style={{ ...inp, fontSize: 13, padding: '7px 9px', borderRadius: 7 }} />
               </div>
             </div>

@@ -115,6 +115,7 @@ function normalizeItem(item: any): any {
     extraJiraLinks: [],
     jiraLabel: undefined,
     itsmLabel: undefined,
+    generalLinkLabel: undefined,
     itsmTicket: '',
     extraItsmTickets: [],
     notes: item.notes ?? '',
