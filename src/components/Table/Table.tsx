@@ -46,6 +46,7 @@ export function Table() {
   const customFields = useStore(s => s.customFields);
   const taskOrder = useStore(s => s.taskOrder);
   const setTaskOrder = useStore(s => s.setTaskOrder);
+  const resetManualOrder = useStore(s => s.resetManualOrder);
   const updateItem = useStore(s => s.updateItem);
   const archiveItem = useStore(s => s.archiveItem);
   const deleteItem = useStore(s => s.deleteItem);
@@ -130,8 +131,13 @@ export function Table() {
     return true;
   });
 
-  // Sort: column sort (with today secondary) OR unified today→manual→score
+  const isManual = (it: Item) => it.kind === 'task' && !!(it as Task).manuallyMoved;
+  const isUntaggedTask = (it: Item) =>
+    it.kind === 'task' && !(it as Task).urgent && !(it as Task).important &&
+    !(it as Task).quick && !(it as Task).noTag;
+
   if (sort) {
+    // Temporary column sort — manual positions not preserved
     const col = allCols.find(c => c.key === sort.key);
     if (col) {
       rows = [...rows].sort((a, b) => {
@@ -147,17 +153,36 @@ export function Table() {
       return aT - bT;
     });
   } else {
-    // Always: today first → manual order → score fallback
-    const orderMap = new Map(taskOrder.map((id, i) => [id, i]));
-    rows = [...rows].sort((a, b) => {
+    // Merge: manual tasks hold their exact positions; auto tasks fill remaining slots by score
+    const itemMap = new Map(rows.map(it => [it.id, it]));
+    const manualIds = new Set(rows.filter(isManual).map(it => it.id));
+
+    const autoSorted = rows.filter(it => !manualIds.has(it.id)).sort((a, b) => {
       const aT = a.kind === 'task' && (a as Task).forToday ? 0 : 1;
       const bT = b.kind === 'task' && (b as Task).forToday ? 0 : 1;
       if (aT !== bT) return aT - bT;
-      const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : Infinity;
-      const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : Infinity;
-      if (ai !== bi) return ai - bi;
+      const aU = isUntaggedTask(a) ? 0 : 1;
+      const bU = isUntaggedTask(b) ? 0 : 1;
+      if (aU !== bU) return aU - bU;
       return scoreItem(b) - scoreItem(a);
     });
+
+    // Slot list: taskOrder positions first, then new tasks not yet in taskOrder
+    const inRows = new Set(rows.map(it => it.id));
+    const slotIds = [
+      ...taskOrder.filter(id => inRows.has(id)),
+      ...rows.filter(it => !taskOrder.includes(it.id)).map(it => it.id),
+    ];
+
+    let autoPtr = 0;
+    rows = [];
+    for (const id of slotIds) {
+      if (manualIds.has(id)) {
+        rows.push(itemMap.get(id)!);
+      } else if (autoPtr < autoSorted.length) {
+        rows.push(autoSorted[autoPtr++]);
+      }
+    }
   }
 
   function handleDrop(targetId: string) {
@@ -167,11 +192,13 @@ export function Table() {
     const from = newIds.indexOf(dragId);
     const to = newIds.indexOf(targetId);
     newIds.splice(from, 1);
-    newIds.splice(to, 0, dragId);
-    // Preserve tasks not currently visible (due to filters) at end of order
+    // When dragging down, removal shifts every index below `from` up by 1,
+    // so adjust `to` to land the item before the drop target (not after).
+    newIds.splice(to > from ? to - 1 : to, 0, dragId);
     const notVisible = taskOrder.filter(id => !ids.includes(id));
     setTaskOrder([...newIds, ...notVisible]);
-    setSort(null); // lock into manual mode
+    updateItem(dragId, { manuallyMoved: true });
+    setSort(null);
     setDragId(null);
     setDragOverId(null);
   }
@@ -242,10 +269,10 @@ export function Table() {
           <option value="done">Done</option>
         </select>
 
-        {taskOrder.length > 0 && (
-          <button onClick={() => setTaskOrder([])}
+        {items.some(it => it.kind === 'task' && (it as Task).manuallyMoved) && (
+          <button onClick={resetManualOrder}
             style={{ fontSize: 12, padding: '6px 11px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-muted)', cursor: 'pointer' }}>
-            ↺ Reset order
+            ↺ Reset all to auto
           </button>
         )}
 
@@ -355,7 +382,12 @@ export function Table() {
                     {String(col.getValue(it) || '—')}
                   </td>
                 ))}
-                <td style={{ ...td, textAlign: 'right' }}>
+                <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  {it.kind === 'task' && (it as Task).manuallyMoved && (
+                    <span onClick={() => updateItem(it.id, { manuallyMoved: false })}
+                      style={{ fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
+                      title="Reset to auto-sort">↺</span>
+                  )}
                   <span onClick={() => { if (confirm('Archive this item?')) archiveItem(it.id); }}
                     style={{ fontSize: 12, color: 'var(--t-muted)', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
                     title="Archive">⊙</span>

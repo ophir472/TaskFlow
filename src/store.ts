@@ -61,6 +61,7 @@ interface AppState {
   setSidebarCollapsed: (v: boolean) => void;
   setJiraConfig: (config: JiraConfig | null) => void;
   setTaskOrder: (order: string[]) => void;
+  resetManualOrder: () => void;
   checkDailyReset: () => void;
 }
 
@@ -267,6 +268,14 @@ export const useStore = create<AppState>()(
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
       setJiraConfig: (config) => set({ jiraConfig: config }),
       setTaskOrder: (order) => set({ taskOrder: order }),
+      resetManualOrder: () => set(s => ({
+        taskOrder: [],
+        items: s.items.map(it =>
+          it.kind === 'task' && it.manuallyMoved
+            ? { ...it, manuallyMoved: false, updatedAt: Date.now() }
+            : it
+        ),
+      })),
 
       checkDailyReset: () => {
         const { dailyResetAt } = get();

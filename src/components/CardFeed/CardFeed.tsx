@@ -74,23 +74,40 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   });
   const todayItems = activeItems.filter(it => it.kind === 'task' && (it as Task).forToday);
   const scope = todayItems.length > 0 ? todayItems : activeItems;
-  const orderMap = new Map(taskOrder.map((id, i) => [id, i]));
   const untagged = (it: Item) =>
     it.kind === 'task' && !(it as Task).urgent && !(it as Task).important &&
     !(it as Task).quick && !(it as Task).noTag;
-  const queue = [...scope].sort((a, b) => {
+
+  // Merge: manual tasks hold their exact positions; auto tasks fill remaining slots by score
+  const scopeMap = new Map(scope.map(it => [it.id, it]));
+  const manualIds = new Set(scope.filter(it => it.kind === 'task' && (it as Task).manuallyMoved).map(it => it.id));
+
+  const autoSorted = scope.filter(it => !manualIds.has(it.id)).sort((a, b) => {
     const aT = a.kind === 'task' && (a as Task).forToday ? 0 : 1;
     const bT = b.kind === 'task' && (b as Task).forToday ? 0 : 1;
     if (aT !== bT) return aT - bT;
-    // Untagged tasks surface first within each today/non-today group
     const aU = untagged(a) ? 0 : 1;
     const bU = untagged(b) ? 0 : 1;
     if (aU !== bU) return aU - bU;
-    const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : Infinity;
-    const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : Infinity;
-    if (ai !== bi) return ai - bi;
     return scoreItem(b) - scoreItem(a);
   });
+
+  const inScope = new Set(scope.map(it => it.id));
+  const slotIds = [
+    ...taskOrder.filter(id => inScope.has(id)),
+    ...scope.filter(it => !taskOrder.includes(it.id)).map(it => it.id),
+  ];
+
+  let autoPtr = 0;
+  const queue: Item[] = [];
+  for (const id of slotIds) {
+    if (manualIds.has(id)) {
+      const item = scopeMap.get(id);
+      if (item) queue.push(item);
+    } else if (autoPtr < autoSorted.length) {
+      queue.push(autoSorted[autoPtr++]);
+    }
+  }
 
   // If displayId has left the queue (completed/archived/held), fall back to queue[0].
   const displayItem = queue.find(it => it.id === displayId) ?? queue[0] ?? null;

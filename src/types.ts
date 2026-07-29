@@ -67,6 +67,7 @@ export interface Task {
   quick: boolean;
   noTag: boolean;
   forToday: boolean;
+  manuallyMoved?: boolean;
   toCheck: string;
   holdSchedule?: ScheduleSpec;
   priorityBoost: boolean;
