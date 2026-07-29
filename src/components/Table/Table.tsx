@@ -463,28 +463,49 @@ export function Table() {
                 {cols.map(col => {
                   const isEditable = it.kind === 'task' && (EDITABLE_COLS.has(col.key) || col.key.startsWith('cf_'));
                   const isEditing = editCell?.rowId === it.id && editCell?.colKey === col.key;
-                  // Tags column: inline chip multi-select (no edit mode needed)
-                  if (col.key === 'tags' && it.kind === 'task') {
-                    const t = it as Task;
-                    const chips = [
+                  // Tags column: pencil to edit, chips appear only in edit mode
+                  if (col.key === 'tags') {
+                    const tagKey = `${it.id}:tags`;
+                    const isEditingTags = editCell?.rowId === it.id && editCell?.colKey === 'tags';
+                    const tagChips = [
                       { key: 'urgent' as const, label: 'Urgent', color: 'var(--t-urgent)', bg: 'var(--t-urgent-bg)' },
                       { key: 'important' as const, label: 'Important', color: 'var(--t-important)', bg: 'var(--t-important-bg)' },
                       { key: 'quick' as const, label: 'Quick', color: 'var(--t-quick)', bg: 'var(--t-quick-bg)' },
                       { key: 'noTag' as const, label: 'None', color: 'var(--t-muted)', bg: 'var(--t-surf2)' },
                     ];
+                    const t = it.kind === 'task' ? it as Task : null;
                     return (
-                      <td key={col.key} onClick={e => e.stopPropagation()} style={{ ...td }}>
-                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                          {chips.map(({ key, label, color, bg }) => {
-                            const active = key === 'noTag' ? t.noTag : t[key];
-                            return (
-                              <button key={key} onClick={() => toggleTag(it.id, key)}
-                                style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, border: `1px solid ${active ? color : 'var(--t-brd)'}`, background: active ? bg : 'transparent', color: active ? color : 'var(--t-muted)', cursor: 'pointer', fontWeight: active ? 700 : 400 }}>
-                                {label}
-                              </button>
-                            );
-                          })}
-                        </div>
+                      <td key={col.key}
+                        onMouseEnter={() => setHoveredCell(tagKey)}
+                        onMouseLeave={() => setHoveredCell(null)}
+                        onClick={e => e.stopPropagation()}
+                        style={{ ...td }}>
+                        {isEditingTags && t ? (
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                            {tagChips.map(({ key, label, color, bg }) => {
+                              const active = key === 'noTag' ? t.noTag : t[key];
+                              return (
+                                <button key={key} onClick={() => toggleTag(it.id, key)}
+                                  style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, border: `1px solid ${active ? color : 'var(--t-brd)'}`, background: active ? bg : 'transparent', color: active ? color : 'var(--t-muted)', cursor: 'pointer', fontWeight: active ? 700 : 400, whiteSpace: 'nowrap' }}>
+                                  {label}
+                                </button>
+                              );
+                            })}
+                            <button onClick={() => setEditCell(null)}
+                              style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, border: 'none', background: 'var(--t-acc)', color: 'white', cursor: 'pointer', fontWeight: 600 }}>
+                              Done
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span style={{ color: 'var(--t-txt2)', fontSize: 13.5 }}>{String(col.getValue(it) || '—')}</span>
+                            {t && (
+                              <span onClick={() => setEditCell({ rowId: it.id, colKey: 'tags' })}
+                                style={{ fontSize: 12, color: 'var(--t-muted)', cursor: 'pointer', opacity: hoveredCell === tagKey ? 1 : 0, transition: 'opacity 0.1s' }}
+                                title="Edit tags">✎</span>
+                            )}
+                          </div>
+                        )}
                       </td>
                     );
                   }
