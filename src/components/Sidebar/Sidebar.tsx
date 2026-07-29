@@ -42,6 +42,7 @@ export function Sidebar({ onNewItem, syncState }: Props) {
         transition: 'width 0.15s ease, padding 0.15s ease',
         boxSizing: 'border-box', overflow: 'hidden',
         cursor: 'pointer',
+        position: 'sticky', top: 0, height: '100vh', alignSelf: 'flex-start',
       }}
     >
 
