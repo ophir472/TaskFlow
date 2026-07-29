@@ -46,6 +46,8 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const createItem = useStore(s => s.createItem);
 
   const [creatingJira, setCreatingJira] = useState(false);
+  const [subDragId, setSubDragId] = useState<string | null>(null);
+  const [subDragOverId, setSubDragOverId] = useState<string | null>(null);
   const [holdOpen, setHoldOpen] = useState(false);
   const [cardMenuOpen, setCardMenuOpen] = useState(false);
   const [editingLabel, setEditingLabel] = useState<string | null>(null);
@@ -518,14 +520,53 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                   Subtasks {t.subtasks.length > 0 && `(${t.subtasks.filter(s => s.done).length}/${t.subtasks.length})`}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {t.subtasks.map(sub => (
-                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', border: '1px solid var(--t-brd2)', borderRadius: 9, background: 'var(--t-surf2)' }}>
-                      <input type="checkbox" checked={sub.done} onChange={() => toggleSubtaskDone(current.id, sub.id)} style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }} />
-                      <div onClick={() => setSubtaskPanel({ parentId: current.id, subId: sub.id })} style={{ flex: 1, fontSize: 14, cursor: 'pointer', textDecoration: sub.done ? 'line-through' : 'none', color: sub.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{sub.title}</div>
-                      <div onClick={() => toggleSubtaskNext(current.id, sub.id)} style={{ cursor: 'pointer', fontSize: 15, color: sub.isNext ? 'var(--t-amber)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Next up">★</div>
-                      <div onClick={() => deleteSubtask(current.id, sub.id)} style={{ cursor: 'pointer', fontSize: 14, color: 'var(--t-muted)', userSelect: 'none', flexShrink: 0 }} title="Remove">×</div>
-                    </div>
-                  ))}
+                  {t.subtasks.map(sub => {
+                    const isDragging = subDragId === sub.id;
+                    const isOver = subDragOverId === sub.id;
+                    return (
+                      <div key={sub.id}
+                        draggable
+                        onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setSubDragId(sub.id); }}
+                        onDragOver={e => { e.preventDefault(); if (sub.id !== subDragId) setSubDragOverId(sub.id); }}
+                        onDrop={e => {
+                          e.preventDefault();
+                          if (!subDragId || subDragId === sub.id) return;
+                          const subs = [...t.subtasks];
+                          const from = subs.findIndex(s => s.id === subDragId);
+                          const to = subs.findIndex(s => s.id === sub.id);
+                          const [moved] = subs.splice(from, 1);
+                          subs.splice(to > from ? to - 1 : to, 0, moved);
+                          updateItem(current.id, { subtasks: subs });
+                          setSubDragId(null); setSubDragOverId(null);
+                        }}
+                        onDragEnd={() => { setSubDragId(null); setSubDragOverId(null); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', border: '1px solid var(--t-brd2)', borderRadius: 9, background: 'var(--t-surf2)', opacity: isDragging ? 0.4 : 1, borderTop: isOver ? '2px solid var(--t-acc)' : undefined, cursor: 'grab' }}>
+                        <span style={{ fontSize: 14, color: 'var(--t-brd)', flexShrink: 0, userSelect: 'none' }}>⠿</span>
+                        <input type="checkbox" checked={sub.done} onChange={() => toggleSubtaskDone(current.id, sub.id)} onClick={e => e.stopPropagation()} style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }} />
+                        <div onClick={() => setSubtaskPanel({ parentId: current.id, subId: sub.id })} style={{ flex: 1, fontSize: 14, cursor: 'pointer', textDecoration: sub.done ? 'line-through' : 'none', color: sub.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{sub.title}</div>
+                        <div onClick={() => toggleSubtaskNext(current.id, sub.id)} style={{ cursor: 'pointer', fontSize: 15, color: sub.isNext ? 'var(--t-amber)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Next up">★</div>
+                        <div onClick={() => deleteSubtask(current.id, sub.id)} style={{ cursor: 'pointer', fontSize: 14, color: 'var(--t-muted)', userSelect: 'none', flexShrink: 0 }} title="Remove">×</div>
+                      </div>
+                    );
+                  })}
+                  {/* Bottom drop zone — lets the last subtask be reachable */}
+                  {subDragId && (
+                    <div
+                      onDragOver={e => { e.preventDefault(); setSubDragOverId('__bottom__'); }}
+                      onDragLeave={() => setSubDragOverId(null)}
+                      onDrop={e => {
+                        e.preventDefault();
+                        if (!subDragId) return;
+                        const subs = [...t.subtasks];
+                        const from = subs.findIndex(s => s.id === subDragId);
+                        const [moved] = subs.splice(from, 1);
+                        subs.push(moved);
+                        updateItem(current.id, { subtasks: subs });
+                        setSubDragId(null); setSubDragOverId(null);
+                      }}
+                      style={{ height: 20, borderTop: subDragOverId === '__bottom__' ? '2px solid var(--t-acc)' : '2px solid transparent' }}
+                    />
+                  )}
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input value={newSubtask} onChange={e => setNewSubtask(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter' && newSubtask.trim()) { addSubtask(current.id, newSubtask.trim()); setNewSubtask(''); } if (e.key === 'Escape') setNewSubtask(''); }}
