@@ -68,6 +68,7 @@ export interface Task {
   noTag: boolean;
   forToday: boolean;
   manuallyMoved?: boolean;
+  extraJiraLinks?: string[];
   toCheck: string;
   holdSchedule?: ScheduleSpec;
   priorityBoost: boolean;

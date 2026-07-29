@@ -579,22 +579,55 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
               </div>
               <div>
                 <div style={fl}>Jira</div>
+                {/* Primary Jira field */}
                 <input value={t.jiraLink} onChange={e => updateItem(current.id, { jiraLink: e.target.value })} placeholder="PROJ-1234" style={{ ...inp, fontSize: 13, padding: '7px 9px', borderRadius: 7 }} />
                 {t.jiraLink ? (
-                  <a
-                    href={`https://${jiraConfig?.host ?? ''}/browse/${t.jiraLink}`}
-                    target="_blank" rel="noreferrer"
-                    style={{ display: 'block', marginTop: 6, fontSize: 12, color: 'var(--t-acc)', textDecoration: 'none', fontWeight: 500 }}>
+                  <a href={`https://${jiraConfig?.host ?? ''}/browse/${t.jiraLink}`} target="_blank" rel="noreferrer"
+                    style={{ display: 'block', marginTop: 4, fontSize: 12, color: 'var(--t-acc)', textDecoration: 'none', fontWeight: 500 }}>
                     ↗ Open {t.jiraLink}
                   </a>
                 ) : jiraConfig ? (
-                  <button
-                    onClick={handleCreateJira}
-                    disabled={creatingJira}
+                  <button onClick={handleCreateJira} disabled={creatingJira}
                     style={{ marginTop: 6, width: '100%', border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 12, fontWeight: 600, padding: '6px 0', borderRadius: 6, cursor: creatingJira ? 'wait' : 'pointer', opacity: creatingJira ? 0.6 : 1 }}>
                     {creatingJira ? 'Creating…' : '+ Create in Jira'}
                   </button>
                 ) : null}
+
+                {/* Extra Jira links — shown when primary is filled */}
+                {t.jiraLink && (t.extraJiraLinks ?? []).map((link, i) => (
+                  <div key={i} style={{ marginTop: 8 }}>
+                    <input
+                      value={link}
+                      onChange={e => {
+                        const next = [...(t.extraJiraLinks ?? [])];
+                        next[i] = e.target.value;
+                        updateItem(current.id, { extraJiraLinks: next });
+                      }}
+                      onBlur={() => {
+                        // Remove empty entries on blur
+                        const cleaned = (t.extraJiraLinks ?? []).filter(l => l.trim());
+                        updateItem(current.id, { extraJiraLinks: cleaned });
+                      }}
+                      placeholder="PROJ-1234"
+                      style={{ ...inp, fontSize: 13, padding: '7px 9px', borderRadius: 7 }}
+                    />
+                    {link && (
+                      <a href={`https://${jiraConfig?.host ?? ''}/browse/${link}`} target="_blank" rel="noreferrer"
+                        style={{ display: 'block', marginTop: 4, fontSize: 12, color: 'var(--t-acc)', textDecoration: 'none', fontWeight: 500 }}>
+                        ↗ Open {link}
+                      </a>
+                    )}
+                  </div>
+                ))}
+
+                {/* Add another Jira button */}
+                {t.jiraLink && (
+                  <button
+                    onClick={() => updateItem(current.id, { extraJiraLinks: [...(t.extraJiraLinks ?? []), ''] })}
+                    style={{ marginTop: 8, width: '100%', border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, fontWeight: 500, padding: '5px 0', borderRadius: 6, cursor: 'pointer' }}>
+                    + Add another Jira
+                  </button>
+                )}
               </div>
               <div>
                 <div style={fl}>General link</div>

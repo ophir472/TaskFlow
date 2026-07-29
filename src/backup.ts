@@ -111,6 +111,7 @@ function normalizeItem(item: any): any {
   return {
     description: '',
     forToday: false,
+    extraJiraLinks: [],
     notes: item.notes ?? '',
     blockers: item.blockers ?? '',
     generalLink: item.generalLink ?? '',
