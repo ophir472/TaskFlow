@@ -290,3 +290,16 @@ export const useStore = create<AppState>()(
     { name: 'taskflow-store', version: 2 }
   )
 );
+
+// ── Multi-tab sync ─────────────────────────────────────────────────
+// Without this, two tabs each hold their own in-memory state. When one tab
+// writes to localStorage, the other tab's next write clobbers it with stale
+// data — silently destroying work. This listener rehydrates the store when
+// any other tab writes, keeping all tabs in sync.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'taskflow-store') {
+      useStore.persist.rehydrate();
+    }
+  });
+}
