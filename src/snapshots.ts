@@ -705,11 +705,29 @@ function buildTitleMap(logs: LogRecord[]): Map<string, string> {
 // in a notes textarea fires 5 separate item:update events with fields=["notes"];
 // this treats them as a single "edit" so the summary count matches user intent.
 // Preserves original log data on disk; only affects display.
+//
+// First step: filter out noise events (multi-tab rehydrates, UI events, etc.)
+// that would otherwise interleave with edits and break the coalescing. This
+// matters especially in multi-tab scenarios where each keystroke's localStorage
+// write triggers a store:rehydrate log in every other tab.
+const COALESCE_DATA_EVENTS = new Set([
+  'item:create', 'item:delete', 'item:archive', 'item:unarchive', 'item:update',
+  'item:complete', 'item:hold', 'item:continue',
+  'subtask:create', 'subtask:delete', 'subtask:update',
+  'subtask:toggle-done', 'subtask:toggle-next',
+  'tag:toggle', 'item:custom-value', 'reminder:reschedule', 'item:import',
+]);
+
 function coalesceRapidEdits(events: LogRecord[]): LogRecord[] {
+  // Keep only actual data events — everything else is noise (navigation,
+  // rehydrate, clicks, mounts, integrity checks, etc.) and shouldn't split
+  // an edit burst into separate "edits".
+  const filtered = events.filter(e => COALESCE_DATA_EVENTS.has(e.event));
+
   const result: LogRecord[] = [];
   let last: LogRecord | null = null;
   const sameFields = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
-  for (const e of events) {
+  for (const e of filtered) {
     if (last) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const d = (e.data ?? {}) as any;
@@ -725,7 +743,6 @@ function coalesceRapidEdits(events: LogRecord[]): LogRecord[] {
         e.event === 'item:custom-value' && last.event === 'item:custom-value' &&
         d.itemId === p.itemId && d.fieldId === p.fieldId;
       if (isSameItemFieldEdit || isSameSubtaskFieldEdit || isSameCustomValueEdit) {
-        // Replace last with this newer event so we keep the most recent patch value
         result[result.length - 1] = e;
         last = e;
         continue;
