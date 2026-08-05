@@ -125,7 +125,15 @@ function parseSnapshotTime(filename: string): number | null {
  * Returns true if written, false if skipped (no change or no dir).
  */
 export async function writeSnapshot(): Promise<boolean> {
-  if (isPreviewMode()) return false; // preview tabs never write
+  if (isPreviewMode()) return false;
+  // Cross-tab lock: only one tab at a time is inside this block. Fixes the
+  // race where two tabs both call writeSnapshot simultaneously and both write
+  // near-identical files (visible as multiple snapshots at the same millisecond
+  // with "no changes" summaries between them).
+  return withLock('taskflow-snapshot-write', () => writeSnapshotInner());
+}
+
+async function writeSnapshotInner(): Promise<boolean> {
   const handle = await getSnapshotDir();
   if (!handle) return false;
   if (!(await ensureDirPermissionTracked(handle))) return false;
@@ -133,27 +141,22 @@ export async function writeSnapshot(): Promise<boolean> {
   const raw = localStorage.getItem('taskflow-store') ?? '{}';
   const stripped = stripUiFields(raw);
 
-  // Compare with UI-only fields stripped — navigation changes view/sidebar/displayId
-  // but doesn't change actual data. Skip write if only UI state changed.
+  // Skip if only UI-only fields (view/sidebar/displayId) changed.
   if (stripped === lastSnapshotRaw) return false;
 
-  // Also skip if no user-facing data changes have been logged since the last snapshot.
-  // Prevents creating snapshots that would show "no changes" in the summary.
+  // CLAIM the in-memory marker synchronously — BEFORE any await. This prevents
+  // a second call from passing the check while the first is still awaiting.
+  lastSnapshotRaw = stripped;
+
+  // Skip if no user-facing data changes have been logged since the last snapshot.
   // Uses dataEvents (not totalEvents) so navigation/rehydrate noise doesn't count.
+  // Because we hold the cross-tab lock, no other tab can have written since we
+  // read the newest snapshot time.
   const lastSnapshotTime = await getNewestSnapshotTime(handle);
   if (lastSnapshotTime !== null) {
     const summary = await summarizeRange(lastSnapshotTime, Date.now());
-    if (summary.dataEvents === 0) {
-      lastSnapshotRaw = stripped; // record so we don't keep re-checking
-      return false;
-    }
+    if (summary.dataEvents === 0) return false;
   }
-
-  // CLAIM the marker synchronously BEFORE any async work. Prevents duplicate
-  // writes when writeSnapshot is called twice in quick succession (e.g. React
-  // StrictMode double-mount, or two hashchange listeners racing). The second
-  // call sees the same stripped value and skips.
-  lastSnapshotRaw = stripped;
 
   const content = JSON.stringify({
     savedAt: new Date().toISOString(),
@@ -165,13 +168,30 @@ export async function writeSnapshot(): Promise<boolean> {
     const writable = await fileHandle.createWritable();
     await writable.write(content);
     await writable.close();
-    // Fire-and-forget prune
     pruneOldSnapshots(handle).catch(() => { /* ignore */ });
     return true;
   } catch (e) {
     logError('writeSnapshot failed', e);
     return false;
   }
+}
+
+// Web Locks API wrapper — serializes execution across tabs on the same origin.
+// If Web Locks isn't available (unlikely in Chromium), falls through to a
+// per-tab-only queue via a chained promise.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const _lockFallback: Record<string, Promise<any>> = {};
+async function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const anyNav = navigator as any;
+  if (anyNav.locks && typeof anyNav.locks.request === 'function') {
+    return anyNav.locks.request(name, { mode: 'exclusive' }, () => fn());
+  }
+  // Fallback: at least serialize within this tab
+  const prev = _lockFallback[name] ?? Promise.resolve();
+  const next = prev.then(() => fn(), () => fn());
+  _lockFallback[name] = next.catch(() => {});
+  return next;
 }
 
 // ── Live file (current.json) ────────────────────────────────────────
@@ -182,7 +202,11 @@ const LIVE_FILENAME = 'current.json';
 let lastLiveRaw: string | null = null;
 
 export async function writeLiveFile(): Promise<boolean> {
-  if (isPreviewMode()) return false; // preview tabs never write
+  if (isPreviewMode()) return false;
+  return withLock('taskflow-live-write', () => writeLiveFileInner());
+}
+
+async function writeLiveFileInner(): Promise<boolean> {
   const handle = await getSnapshotDir();
   if (!handle) return false;
   if (!(await ensureDirPermissionTracked(handle))) return false;
@@ -190,10 +214,7 @@ export async function writeLiveFile(): Promise<boolean> {
   const raw = localStorage.getItem('taskflow-store') ?? '{}';
   const stripped = stripUiFields(raw);
 
-  // Compare with UI-only fields stripped so navigation doesn't rewrite the file
   if (stripped === lastLiveRaw) return false;
-
-  // CLAIM synchronously to prevent duplicate concurrent writes (see writeSnapshot)
   lastLiveRaw = stripped;
 
   const content = JSON.stringify({
@@ -497,7 +518,14 @@ async function ensureCurrentLogFilename(handle: any): Promise<string> {
 
 async function flushLogs(): Promise<void> {
   if (logBuffer.length === 0) return;
-  if (isPreviewMode()) { logBuffer.length = 0; return; } // preview never writes
+  if (isPreviewMode()) { logBuffer.length = 0; return; }
+  // Serialize log writes across tabs. Without this, two tabs both do
+  // seek(fileSize) at the same position and one overwrites the other's data.
+  return withLock('taskflow-log-write', () => flushLogsInner());
+}
+
+async function flushLogsInner(): Promise<void> {
+  if (logBuffer.length === 0) return;
   const handle = await getSnapshotDir();
   if (!handle) { logBuffer.length = 0; return; } // no dir configured — drop
   if (!(await ensureDirPermissionTracked(handle))) return;
