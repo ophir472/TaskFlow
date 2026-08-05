@@ -362,14 +362,17 @@ export const useStore = create<AppState>()(
     {
       name: 'taskflow-store',
       version: 2,
-      // In preview mode: persist to sessionStorage (per-tab, discarded on close)
-      // so the preview can't affect the real localStorage or other tabs.
-      // Use the CACHED preview flag — never re-check URL, because browsing
-      // inside the preview changes the URL and would flip storage to localStorage.
       storage: createJSONStorage(() => IS_PREVIEW_MODE ? sessionStorage : localStorage),
-      // In preview mode, skip auto-hydration. main.tsx seeds sessionStorage
-      // asynchronously (needs to read from disk), then manually rehydrates.
       skipHydration: IS_PREVIEW_MODE,
+      // UI-only fields: kept in-memory per-tab, NOT persisted. Otherwise every
+      // tab's navigation state would sync to every other tab (via localStorage
+      // + storage event), making per-tab navigation impossible.
+      // Each tab restores its own view/displayId from the URL hash on mount.
+      partialize: (state) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { view, displayId, triggerTagForId, ...rest } = state;
+        return rest;
+      },
     }
   )
 );
