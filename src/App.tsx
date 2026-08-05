@@ -304,7 +304,7 @@ export default function App() {
   }, [setView]);
 
   return (
-    <div style={{ display: 'flex', width: '100%', minHeight: '100vh', background: 'var(--t-bg)', flexDirection: 'column' }}>
+    <div style={{ display: 'flex', width: '100%', minHeight: '100vh', background: 'var(--t-bg)', flexDirection: 'column', overflowX: 'hidden' }}>
       {/* Preview mode banner (blue, always at top when in preview) */}
       {inPreview && previewInfo && (
         <div style={{ padding: '10px 20px', background: '#4b7bec', color: 'white', fontSize: 14, borderBottom: '1px solid rgba(0,0,0,0.15)', zIndex: 100 }}>

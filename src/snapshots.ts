@@ -701,9 +701,46 @@ function buildTitleMap(logs: LogRecord[]): Map<string, string> {
   return map;
 }
 
+// Collapse consecutive edit events on the same field into one. Typing "hello"
+// in a notes textarea fires 5 separate item:update events with fields=["notes"];
+// this treats them as a single "edit" so the summary count matches user intent.
+// Preserves original log data on disk; only affects display.
+function coalesceRapidEdits(events: LogRecord[]): LogRecord[] {
+  const result: LogRecord[] = [];
+  let last: LogRecord | null = null;
+  const sameFields = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+  for (const e of events) {
+    if (last) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const d = (e.data ?? {}) as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const p = (last.data ?? {}) as any;
+      const isSameItemFieldEdit =
+        e.event === 'item:update' && last.event === 'item:update' &&
+        d.id === p.id && sameFields(d.fields, p.fields);
+      const isSameSubtaskFieldEdit =
+        e.event === 'subtask:update' && last.event === 'subtask:update' &&
+        d.parentId === p.parentId && d.subId === p.subId && sameFields(d.fields, p.fields);
+      const isSameCustomValueEdit =
+        e.event === 'item:custom-value' && last.event === 'item:custom-value' &&
+        d.itemId === p.itemId && d.fieldId === p.fieldId;
+      if (isSameItemFieldEdit || isSameSubtaskFieldEdit || isSameCustomValueEdit) {
+        // Replace last with this newer event so we keep the most recent patch value
+        result[result.length - 1] = e;
+        last = e;
+        continue;
+      }
+    }
+    result.push(e);
+    last = e;
+  }
+  return result;
+}
+
 // Summarize log events in the range (fromTime, toTime]
 export async function summarizeRange(fromTime: number, toTime: number): Promise<ChangeSummary> {
-  const logs = await readAllLogs();
+  const rawLogs = await readAllLogs();
+  const logs = coalesceRapidEdits(rawLogs);
   const s = emptySummary();
   const titleMap = buildTitleMap(logs);
   const titleFor = (id: string | undefined): string => (id && titleMap.get(id)) || '(unknown)';
