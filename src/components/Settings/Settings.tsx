@@ -4,8 +4,9 @@ import { nextId } from '../../engine';
 import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
 import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload, pickAndRegisterRestoreFile } from '../../backup';
-import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log, trashSnapshot, summarizeRange, formatSummary } from '../../snapshots';
+import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log, trashSnapshot, summarizeRange, formatSummary, getDebugMode, setDebugMode } from '../../snapshots';
 import type { SnapshotEntry, ChangeSummary } from '../../snapshots';
+import { useLogMount } from '../../useLogMount';
 import type { JiraConfig, ItsmConfig } from '../../types';
 
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
@@ -38,6 +39,7 @@ function ManagedList({ title, items, onAdd, onRemove }: { title: string; items: 
 }
 
 export function Settings() {
+  useLogMount('Settings');
   const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);
   const customFields = useStore(s => s.customFields);
@@ -74,6 +76,7 @@ export function Settings() {
   const [snapshots, setSnapshots] = useState<SnapshotEntry[]>([]);
   const [loadingSnaps, setLoadingSnaps] = useState(false);
   const [summaries, setSummaries] = useState<Record<string, ChangeSummary>>({});
+  const [debugEnabled, setDebugEnabled] = useState(getDebugMode());
 
   useEffect(() => {
     getSnapshotDir().then(h => { if (h) setSnapDirName(h.name); });
@@ -319,6 +322,31 @@ export function Settings() {
         ) : (
           <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>Auto-backup requires Chrome or Edge.</div>
         )}
+      </div>
+
+      {/* Debug logging */}
+      <div style={card}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 6 }}>Debug Logging</div>
+        <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: 14 }}>
+          When on, every user interaction (clicks, keyboard shortcuts), component mount/unmount,
+          and internal function call is written to the log file. Useful for reproducing weird behavior.
+          Files rotate at 10,000 lines and use true append writes (fast). Errors are always logged
+          regardless of this setting.
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', fontSize: 14 }}>
+          <input
+            type="checkbox"
+            checked={debugEnabled}
+            onChange={e => { setDebugMode(e.target.checked); setDebugEnabled(e.target.checked); }}
+            style={{ width: 18, height: 18, cursor: 'pointer' }}
+          />
+          <span style={{ fontWeight: 500 }}>Enable verbose debug logging</span>
+          {debugEnabled && (
+            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 12, background: '#ff8a3d', color: 'white', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Active
+            </span>
+          )}
+        </label>
       </div>
 
       {/* Jira */}

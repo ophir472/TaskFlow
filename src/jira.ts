@@ -1,4 +1,5 @@
 import type { JiraConfig } from './types';
+import { log } from './snapshots';
 
 function buildDescription(description: string, requestedBy: string) {
   const content: object[] = [];
@@ -44,15 +45,24 @@ export async function createJiraIssue(
     },
   };
 
-  const res = await fetch(`https://${host}/rest/api/3/issue`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${auth}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  const url = `https://${host}/rest/api/3/issue`;
+  log('jira:fetch-start', { url, projectKey: config.projectKey, summary: fields.summary });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    log('jira:fetch-network-error', { url, error: err instanceof Error ? err.message : String(err) });
+    throw err;
+  }
+  log('jira:fetch-complete', { url, status: res.status });
 
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
@@ -61,6 +71,7 @@ export async function createJiraIssue(
       if (err.errorMessages?.length) msg = err.errorMessages[0];
       else if (err.errors) msg = Object.values(err.errors).join(', ');
     } catch { /* ignore */ }
+    log('jira:fetch-http-error', { url, status: res.status, message: msg });
     throw new Error(msg);
   }
 

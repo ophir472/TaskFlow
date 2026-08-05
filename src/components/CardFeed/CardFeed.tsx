@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../../store';
+import { useLogMount } from '../../useLogMount';
 import { scoreItem, nextId } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
 import type { Item, Task, ScheduleSpec } from '../../types';
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function CardFeed({ onToast, focusSearchTrigger }: Props) {
+  useLogMount('CardFeed');
   const items = useStore(s => s.items);
   const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);

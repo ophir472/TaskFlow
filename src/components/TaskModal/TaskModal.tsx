@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../../store';
+import { useLogMount } from '../../useLogMount';
 import type { Task } from '../../types';
 import { scoreItem } from '../../engine';
 
@@ -16,6 +17,7 @@ const ta: React.CSSProperties = { ...inp, resize: 'vertical' as const, fontFamil
 const sel: React.CSSProperties = { width: '100%', fontSize: 13, padding: '7px 8px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)' };
 
 export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
+  useLogMount('TaskModal');
   const items = useStore(s => s.items);
   const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);

@@ -13,7 +13,7 @@ import { Settings } from './components/Settings/Settings';
 import { CreateModal } from './components/CreateModal/CreateModal';
 import { Toast } from './components/Toast/Toast';
 import { restoreFromData, pickAndRegisterRestoreFile } from './backup';
-import { writeSnapshot, writeLiveFile, log, getTabId, listSnapshots, readSnapshot, getSnapshotDir, subscribePermission, requestDirPermission, runIntegrityCheck, isPreviewMode, summarizeRange, formatSummary } from './snapshots';
+import { writeSnapshot, writeLiveFile, log, logDebug, getDebugMode, getTabId, listSnapshots, readSnapshot, getSnapshotDir, subscribePermission, requestDirPermission, runIntegrityCheck, isPreviewMode, summarizeRange, formatSummary } from './snapshots';
 import type { IntegrityResult, ChangeSummary } from './snapshots';
 import { Confetti } from './components/Confetti';
 
@@ -141,6 +141,63 @@ export default function App() {
 
   // Subscribe to permission changes → show banner
   useEffect(() => subscribePermission(setPermError), []);
+
+  // Global handlers: errors always logged; clicks/keys only in debug mode
+  useEffect(() => {
+    // Uncaught exceptions
+    function onError(e: ErrorEvent) {
+      log('error:uncaught', {
+        message: e.message, filename: e.filename, line: e.lineno, col: e.colno,
+        stack: e.error?.stack,
+      });
+    }
+    // Unhandled promise rejections
+    function onRejection(e: PromiseRejectionEvent) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const reason: any = e.reason;
+      log('error:promise-rejection', {
+        reason: String(reason),
+        stack: reason instanceof Error ? reason.stack : undefined,
+      });
+    }
+    // User clicks (capture phase to catch before React handlers)
+    function onClick(e: MouseEvent) {
+      if (!getDebugMode()) return;
+      const el = e.target as HTMLElement | null;
+      if (!el || !el.tagName) return;
+      logDebug('ui:click', {
+        tag: el.tagName,
+        text: (el.textContent || '').slice(0, 60).trim(),
+        id: el.id || undefined,
+        cls: typeof el.className === 'string' ? el.className.slice(0, 100) : undefined,
+        role: el.getAttribute('role') || undefined,
+        title: el.getAttribute('title') || undefined,
+      });
+    }
+    // Meaningful key events (modifiers, nav keys) — skip individual letters
+    function onKey(e: KeyboardEvent) {
+      if (!getDebugMode()) return;
+      const isModifier = e.metaKey || e.ctrlKey || e.altKey;
+      const isNav = ['Enter', 'Escape', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
+      if (!isModifier && !isNav) return;
+      const target = e.target as HTMLElement;
+      logDebug('ui:key', {
+        key: e.key,
+        mods: [e.metaKey && 'meta', e.ctrlKey && 'ctrl', e.altKey && 'alt', e.shiftKey && 'shift'].filter(Boolean),
+        target: target?.tagName,
+      });
+    }
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    document.addEventListener('click', onClick, true);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+      document.removeEventListener('click', onClick, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, []);
 
   // In preview mode: compute change summary vs the previous snapshot
   useEffect(() => {

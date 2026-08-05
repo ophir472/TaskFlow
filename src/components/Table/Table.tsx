@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
+import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { scoreItem } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
@@ -46,6 +47,7 @@ const DEFAULT_COL_WIDTHS: Record<string, number> = {
 // ── Component ───────────────────────────────────────────────────
 
 export function Table() {
+  useLogMount('Table');
   const items = useStore(s => s.items);
   const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
+import { useLogMount } from '../../useLogMount';
 import { nextId } from '../../engine';
 import type { Item, ScheduleSpec } from '../../types';
 import { SchedulePicker } from '../SchedulePicker/SchedulePicker';
@@ -20,6 +21,7 @@ const inp: React.CSSProperties = { width: '100%', fontSize: 14, padding: '9px 11
 const sel: React.CSSProperties = { ...inp };
 
 export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: Props) {
+  useLogMount('CreateModal');
   const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);
   const createItem = useStore(s => s.createItem);

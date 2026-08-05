@@ -376,6 +376,36 @@ interface LogEntry {
   data?: any;
 }
 
+// ── Debug mode ────────────────────────────────────────────────────
+// When enabled, logDebug() calls are recorded. When disabled, they're no-ops.
+// Persisted in localStorage so it survives reloads.
+
+let _debugMode = typeof window !== 'undefined' && localStorage.getItem('taskflow-debug') === 'true';
+
+export function getDebugMode(): boolean { return _debugMode; }
+
+export function setDebugMode(on: boolean): void {
+  _debugMode = on;
+  if (typeof window !== 'undefined') {
+    if (on) localStorage.setItem('taskflow-debug', 'true');
+    else localStorage.removeItem('taskflow-debug');
+  }
+  log('debug-mode:set', { enabled: on });
+}
+
+// Cross-tab sync of debug mode
+if (typeof window !== 'undefined' && !IS_PREVIEW_MODE) {
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'taskflow-debug') _debugMode = e.newValue === 'true';
+  });
+}
+
+// Log a verbose event that's gated by debug mode. Free when debug is off.
+export function logDebug(event: string, data?: unknown): void {
+  if (!_debugMode) return;
+  log(event, data);
+}
+
 const logBuffer: LogEntry[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -390,6 +420,80 @@ export function logError(event: string, err: unknown): void {
   log(event, msg);
 }
 
+// ── Log rotation + true append ────────────────────────────────────
+// Each day's logs are split into files of MAX_LINES_PER_LOG lines.
+// Filename: log-YYYY-MM-DD-NNN.jsonl (NNN = 001, 002, ...)
+// Legacy format `log-YYYY-MM-DD.jsonl` is still read by readAllLogs.
+
+const MAX_LINES_PER_LOG = 10_000;
+
+let currentLogFilename: string | null = null;
+let currentLogDate: string | null = null;
+let currentLogLines = 0;
+
+function logFilenameFor(date: string, part: number): string {
+  return `log-${date}-${String(part).padStart(3, '0')}.jsonl`;
+}
+
+// Find the newest partition for a given date. Returns null if no logs exist.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function findLatestPart(handle: any, date: string): Promise<{ part: number; lines: number } | null> {
+  let maxPart = 0;
+  let found = false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for await (const [name, entry] of handle.entries()) {
+    if (entry.kind !== 'file') continue;
+    const m = name.match(/^log-(\d{4}-\d{2}-\d{2})(?:-(\d{3}))?\.jsonl$/);
+    if (!m || m[1] !== date) continue;
+    // Legacy format (no part number) counts as part 0
+    const part = m[2] ? parseInt(m[2]) : 0;
+    if (part >= maxPart) { maxPart = part; found = true; }
+  }
+  if (!found) return null;
+  // Count lines in the latest partition
+  const latestName = maxPart === 0
+    ? `log-${date}.jsonl`
+    : logFilenameFor(date, maxPart);
+  try {
+    const fh = await handle.getFileHandle(latestName);
+    const text = await (await fh.getFile()).text();
+    const lines = text.split('\n').filter((l: string) => l.trim()).length;
+    return { part: maxPart, lines };
+  } catch {
+    return null;
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function ensureCurrentLogFilename(handle: any): Promise<string> {
+  const today = new Date().toISOString().slice(0, 10);
+  // Reset on date rollover
+  if (currentLogDate !== today) {
+    currentLogFilename = null;
+    currentLogDate = today;
+    currentLogLines = 0;
+  }
+  // First flush of the session (or after rollover): scan for existing files
+  if (currentLogFilename === null) {
+    const latest = await findLatestPart(handle, today);
+    if (latest === null) {
+      currentLogFilename = logFilenameFor(today, 1);
+      currentLogLines = 0;
+    } else if (latest.lines >= MAX_LINES_PER_LOG) {
+      // Latest is full — roll to next partition
+      currentLogFilename = logFilenameFor(today, latest.part + 1);
+      currentLogLines = 0;
+    } else {
+      // Append to existing (respect legacy naming if part=0)
+      currentLogFilename = latest.part === 0
+        ? `log-${today}.jsonl`
+        : logFilenameFor(today, latest.part);
+      currentLogLines = latest.lines;
+    }
+  }
+  return currentLogFilename;
+}
+
 async function flushLogs(): Promise<void> {
   if (logBuffer.length === 0) return;
   if (isPreviewMode()) { logBuffer.length = 0; return; } // preview never writes
@@ -397,18 +501,26 @@ async function flushLogs(): Promise<void> {
   if (!handle) { logBuffer.length = 0; return; } // no dir configured — drop
   if (!(await ensureDirPermissionTracked(handle))) return;
 
-  const today = new Date().toISOString().slice(0, 10);
-  const filename = `log-${today}.jsonl`;
   const entries = logBuffer.splice(0);
   const text = entries.map(e => JSON.stringify(e)).join('\n') + '\n';
 
   try {
+    // Rotate if adding these entries would exceed the line cap
+    if (currentLogLines + entries.length > MAX_LINES_PER_LOG && currentLogLines > 0) {
+      currentLogFilename = null; // triggers a fresh scan → next partition
+    }
+    const filename = await ensureCurrentLogFilename(handle);
+
+    // TRUE APPEND: use createWritable({keepExistingData:true}) + seek(fileSize).
+    // O(new content) instead of O(entire file). Critical for perf as logs grow.
     const fh = await handle.getFileHandle(filename, { create: true });
-    // Read existing, append, rewrite (browsers don't support true append)
-    const existing = await (await fh.getFile()).text().catch(() => '');
-    const writable = await fh.createWritable();
-    await writable.write(existing + text);
+    const existingSize = (await fh.getFile()).size;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const writable = await fh.createWritable({ keepExistingData: true } as any);
+    await writable.seek(existingSize);
+    await writable.write(text);
     await writable.close();
+    currentLogLines += entries.length;
   } catch {
     // put back into buffer for next attempt
     logBuffer.unshift(...entries);
@@ -528,7 +640,8 @@ async function readAllLogs(): Promise<LogRecord[]> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for await (const [name, entry] of (handle as any).entries()) {
       if (entry.kind !== 'file') continue;
-      if (!/^log-\d{4}-\d{2}-\d{2}\.jsonl$/.test(name)) continue;
+      // Match both legacy (log-YYYY-MM-DD.jsonl) and rotated (log-YYYY-MM-DD-NNN.jsonl)
+      if (!/^log-\d{4}-\d{2}-\d{2}(?:-\d{3})?\.jsonl$/.test(name)) continue;
       try {
         const text = await (await entry.getFile()).text();
         for (const line of text.split('\n')) {
