@@ -17,6 +17,7 @@ interface Props {
 export function Sidebar({ onNewItem, syncState }: Props) {
   const view = useStore(s => s.view);
   const setView = useStore(s => s.setView);
+  const setDisplayId = useStore(s => s.setDisplayId);
   const collapsed = useStore(s => s.sidebarCollapsed);
   const setSidebarCollapsed = useStore(s => s.setSidebarCollapsed);
   const promotionsToday = useStore(s => s.promotionsToday);
@@ -44,12 +45,16 @@ export function Sidebar({ onNewItem, syncState }: Props) {
       }}
     >
 
-      {/* Top: logo / collapse toggle */}
-      <div style={{
-        display: 'flex', alignItems: 'center',
-        justifyContent: collapsed ? 'center' : 'space-between',
-        paddingBottom: 18,
-      }}>
+      {/* Top: logo — clicking navigates to the top of the card feed */}
+      <div
+        onClick={e => { e.stopPropagation(); setDisplayId(null); setView('feed'); }}
+        title="Go to card feed"
+        style={{
+          display: 'flex', alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          paddingBottom: 18,
+          cursor: 'pointer',
+        }}>
         {collapsed ? (
           <div style={{
             width: 28, height: 28, borderRadius: 7,
