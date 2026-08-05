@@ -141,30 +141,48 @@ function normalizeItem(item: any): any {
 }
 
 export function restoreFromData(data: Record<string, unknown>): void {
-  const { exportedAt: _, ...raw } = data;
+  // Defensive: log intent BEFORE any destructive action so we have a trail if things fail.
+  import('./snapshots').then(m => m.log('restore:start', { hasState: !!data.state, exportedAt: data.exportedAt }));
 
-  // The Zustand persist format is { state: {...}, version: N }
-  // Old backups might not wrap in `state`, handle both
-  const backupState = (raw.state && typeof raw.state === 'object')
-    ? raw.state as Record<string, unknown>
-    : raw;
+  try {
+    const { exportedAt: _, ...raw } = data;
 
-  // Normalize: inject defaults for missing fields, then apply backup on top
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const items = Array.isArray((backupState as any).items)
+    // The Zustand persist format is { state: {...}, version: N }
+    // Old backups might not wrap in `state`, handle both
+    const backupState = (raw.state && typeof raw.state === 'object')
+      ? raw.state as Record<string, unknown>
+      : raw;
+
+    // Normalize: inject defaults for missing fields, then apply backup on top
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ? (backupState as any).items.map(normalizeItem)
-    : [];
+    const items = Array.isArray((backupState as any).items)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ? (backupState as any).items.map(normalizeItem)
+      : [];
 
-  const normalizedState = {
-    ...STATE_DEFAULTS,
-    ...backupState,
-    items,
-  };
+    const normalizedState = {
+      ...STATE_DEFAULTS,
+      ...backupState,
+      items,
+    };
 
-  // Always write the current schema version so Zustand doesn't discard the state
-  localStorage.setItem('taskflow-store', JSON.stringify({ state: normalizedState, version: 2 }));
-  window.location.reload();
+    // Always write the current schema version so Zustand doesn't discard the state
+    localStorage.setItem('taskflow-store', JSON.stringify({ state: normalizedState, version: 2 }));
+
+    // Log restore completion + count of imported items so the integrity check
+    // knows this is not "data loss" — user intentionally replaced state.
+    import('./snapshots').then(m => m.log('item:import', { count: items.length, source: 'restore' }));
+    import('./snapshots').then(m => m.log('restore:complete', { itemCount: items.length }));
+
+    // Give the async log flushes a tick to reach disk before reload
+    setTimeout(() => window.location.reload(), 100);
+  } catch (err) {
+    // If anything above threw, DON'T reload. Log and re-throw so caller can react.
+    const msg = err instanceof Error ? err.message : String(err);
+    import('./snapshots').then(m => m.log('restore:failed', { error: msg }));
+    alert('Restore failed: ' + msg + '\nYour current data has not been changed.');
+    throw err;
+  }
 }
 
 export function supportsAutoBackup(): boolean {

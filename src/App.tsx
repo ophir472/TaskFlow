@@ -13,7 +13,8 @@ import { Settings } from './components/Settings/Settings';
 import { CreateModal } from './components/CreateModal/CreateModal';
 import { Toast } from './components/Toast/Toast';
 import { restoreFromData, pickAndRegisterRestoreFile } from './backup';
-import { writeSnapshot, log, getTabId, listSnapshots, readSnapshot, getSnapshotDir } from './snapshots';
+import { writeSnapshot, writeLiveFile, log, getTabId, listSnapshots, readSnapshot, getSnapshotDir, subscribePermission, requestDirPermission, runIntegrityCheck } from './snapshots';
+import type { IntegrityResult } from './snapshots';
 import { Confetti } from './components/Confetti';
 
 export type SyncState = 'idle' | 'syncing' | 'saved';
@@ -101,13 +102,17 @@ export default function App() {
   const [focusSearchTrigger, setFocusSearchTrigger] = useState(0);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const liveWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [permError, setPermError] = useState<string | null>(null);
+  const [integrityAlert, setIntegrityAlert] = useState<IntegrityResult | null>(null);
 
   const toastTimer = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(t => (t === msg ? null : t)), 2500);
   }, []);
 
-  // Sync indicator (visual feedback only; actual persistence is via Zustand + snapshots)
+  // Sync indicator + debounced live-file write on every store change
   useEffect(() => {
     const unsub = useStore.subscribe(() => {
       setSyncState('syncing');
@@ -115,9 +120,44 @@ export default function App() {
       if (idleTimer.current) clearTimeout(idleTimer.current);
       syncTimer.current = setTimeout(() => setSyncState('saved'), 500);
       idleTimer.current = setTimeout(() => setSyncState('idle'), 2000);
+
+      // Debounced live-file write (500ms). Skipped silently if no snapshot dir configured.
+      if (liveWriteTimer.current) clearTimeout(liveWriteTimer.current);
+      liveWriteTimer.current = setTimeout(() => {
+        writeLiveFile().catch(() => { /* logged internally */ });
+      }, 500);
     });
     return unsub;
   }, []);
+
+  // Subscribe to permission changes → show banner
+  useEffect(() => subscribePermission(setPermError), []);
+
+  // Run integrity check on mount
+  useEffect(() => {
+    // Snapshot the items array once on mount so a growing/shrinking state
+    // during the async check doesn't skew the result.
+    const currentItems = useStore.getState().items;
+    runIntegrityCheck(currentItems).then(result => {
+      if (result && result.suspectedLoss) {
+        setIntegrityAlert(result);
+      }
+    }).catch(err => log('integrity-check:failed', String(err)));
+  }, []);
+
+  async function handleGrantPermission() {
+    const ok = await requestDirPermission();
+    if (ok) setPermError(null);
+  }
+
+  async function handleRestoreLatest() {
+    const list = await listSnapshots();
+    if (list.length === 0) { alert('No snapshots available to restore.'); return; }
+    if (!confirm(`Restore from newest snapshot (${new Date(list[0].time).toLocaleString()})?\nCurrent state will be replaced.`)) return;
+    const data = await readSnapshot(list[0].filename);
+    if (!data) { alert('Failed to read snapshot.'); return; }
+    restoreFromData(data);
+  }
 
   // Fire confetti once when the 3rd task/subtask is completed today
   useEffect(() => {
@@ -184,7 +224,36 @@ export default function App() {
   }, [setView]);
 
   return (
-    <div style={{ display: 'flex', width: '100%', minHeight: '100vh', background: 'var(--t-bg)' }}>
+    <div style={{ display: 'flex', width: '100%', minHeight: '100vh', background: 'var(--t-bg)', flexDirection: 'column' }}>
+      {/* Persistent alert banners */}
+      {permError && (
+        <div style={{ padding: '10px 20px', background: '#ff8a3d', color: '#231a10', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid rgba(0,0,0,0.1)', zIndex: 100 }}>
+          <span>⚠️ {permError}</span>
+          <button onClick={handleGrantPermission}
+            style={{ marginLeft: 'auto', border: 'none', background: '#231a10', color: 'white', fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 6, cursor: 'pointer' }}>
+            Grant access
+          </button>
+        </div>
+      )}
+      {integrityAlert && (
+        <div style={{ padding: '10px 20px', background: '#ff8a3d', color: '#231a10', fontSize: 14, display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid rgba(0,0,0,0.1)', zIndex: 100, flexWrap: 'wrap' }}>
+          <span>
+            ⚠️ <b>Possible data loss detected.</b> Expected {integrityAlert.expectedItems} items, found {integrityAlert.actualItems}
+            {integrityAlert.subtaskDelta < 0 && ` · Expected ${integrityAlert.expectedSubtasks} subtasks, found ${integrityAlert.actualSubtasks}`}
+            . Check Settings → Version History for details.
+          </span>
+          <button onClick={handleRestoreLatest}
+            style={{ border: 'none', background: '#231a10', color: 'white', fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 6, cursor: 'pointer' }}>
+            Restore latest snapshot
+          </button>
+          <button onClick={() => setIntegrityAlert(null)}
+            style={{ border: '1px solid rgba(0,0,0,0.3)', background: 'transparent', color: '#231a10', fontSize: 13, fontWeight: 500, padding: '6px 12px', borderRadius: 6, cursor: 'pointer' }}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+    <div style={{ display: 'flex', width: '100%', flex: 1, minHeight: 0 }}>
       <Sidebar onNewItem={() => setCreateOpen(true)} syncState={syncState} />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -210,6 +279,8 @@ export default function App() {
           }}
         />
       )}
+    </div>{/* end sidebar+content wrapper */}
+
       <Toast text={toast} />
       {showConfetti && <Confetti onDone={() => setShowConfetti(false)} />}
 

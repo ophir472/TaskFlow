@@ -100,7 +100,7 @@ function parseSnapshotTime(filename: string): number | null {
 export async function writeSnapshot(): Promise<boolean> {
   const handle = await getSnapshotDir();
   if (!handle) return false;
-  if (!(await ensureDirPermission(handle))) return false;
+  if (!(await ensureDirPermissionTracked(handle))) return false;
 
   const raw = localStorage.getItem('taskflow-store') ?? '{}';
   const content = JSON.stringify({
@@ -126,6 +126,91 @@ export async function writeSnapshot(): Promise<boolean> {
   }
 }
 
+// ── Live file (current.json) ────────────────────────────────────────
+// Written on every store change (debounced). Provides continuous protection
+// between navigation-triggered snapshots.
+
+const LIVE_FILENAME = 'current.json';
+let lastLiveContent: string | null = null;
+
+export async function writeLiveFile(): Promise<boolean> {
+  const handle = await getSnapshotDir();
+  if (!handle) return false;
+  if (!(await ensureDirPermissionTracked(handle))) return false;
+
+  const raw = localStorage.getItem('taskflow-store') ?? '{}';
+  const content = JSON.stringify({
+    savedAt: new Date().toISOString(),
+    ...JSON.parse(raw),
+  }, null, 2);
+
+  if (content === lastLiveContent) return false;
+
+  try {
+    const fh = await handle.getFileHandle(LIVE_FILENAME, { create: true });
+    const writable = await fh.createWritable();
+    await writable.write(content);
+    await writable.close();
+    lastLiveContent = content;
+    return true;
+  } catch (e) {
+    logError('writeLiveFile failed', e);
+    return false;
+  }
+}
+
+export async function readLiveFile(): Promise<Record<string, unknown> | null> {
+  const handle = await getSnapshotDir();
+  if (!handle) return null;
+  try {
+    const fh = await handle.getFileHandle(LIVE_FILENAME);
+    const file = await fh.getFile();
+    return JSON.parse(await file.text());
+  } catch { return null; }
+}
+
+// ── Permission state ────────────────────────────────────────────────
+
+type PermListener = (err: string | null) => void;
+const permListeners = new Set<PermListener>();
+let currentPermError: string | null = null;
+
+export function subscribePermission(l: PermListener): () => void {
+  permListeners.add(l);
+  l(currentPermError);
+  return () => { permListeners.delete(l); };
+}
+
+function setPermError(err: string | null) {
+  if (currentPermError === err) return;
+  currentPermError = err;
+  permListeners.forEach(l => l(err));
+}
+
+// Wrap the original permission check to publish errors
+const _originalEnsurePerm = ensureDirPermission;
+export async function ensureDirPermissionTracked(handle: Handle): Promise<boolean> {
+  const ok = await _originalEnsurePerm(handle);
+  if (ok) setPermError(null);
+  else setPermError('Snapshot folder permission has been revoked. Grant access to resume backups.');
+  return ok;
+}
+
+// Explicitly request permission on user activation (button click)
+export async function requestDirPermission(): Promise<boolean> {
+  const handle = await getSnapshotDir();
+  if (!handle) return false;
+  try {
+    const req = await handle.requestPermission({ mode: 'readwrite' });
+    const ok = req === 'granted';
+    setPermError(ok ? null : 'Permission still denied.');
+    return ok;
+  } catch {
+    setPermError('Failed to request permission.');
+    return false;
+  }
+}
+
 export interface SnapshotEntry {
   filename: string;
   time: number;      // epoch ms
@@ -136,7 +221,7 @@ export interface SnapshotEntry {
 export async function listSnapshots(): Promise<SnapshotEntry[]> {
   const handle = await getSnapshotDir();
   if (!handle) return [];
-  if (!(await ensureDirPermission(handle))) return [];
+  if (!(await ensureDirPermissionTracked(handle))) return [];
 
   const entries: SnapshotEntry[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -240,3 +325,138 @@ if (typeof window !== 'undefined') {
 }
 
 export function getTabId(): string { return TAB_ID; }
+
+// ── Log reading ─────────────────────────────────────────────────────
+
+interface LogRecord extends LogEntry { _time: number }
+
+async function readAllLogs(): Promise<LogRecord[]> {
+  const handle = await getSnapshotDir();
+  if (!handle) return [];
+  if (!(await ensureDirPermissionTracked(handle))) return [];
+
+  const all: LogRecord[] = [];
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for await (const [name, entry] of (handle as any).entries()) {
+      if (entry.kind !== 'file') continue;
+      if (!/^log-\d{4}-\d{2}-\d{2}\.jsonl$/.test(name)) continue;
+      try {
+        const text = await (await entry.getFile()).text();
+        for (const line of text.split('\n')) {
+          if (!line.trim()) continue;
+          try {
+            const e = JSON.parse(line) as LogEntry;
+            all.push({ ...e, _time: Date.parse(e.ts) });
+          } catch { /* skip corrupt line */ }
+        }
+      } catch { /* skip unreadable file */ }
+    }
+  } catch { /* dir issue */ }
+  all.sort((a, b) => a._time - b._time);
+  return all;
+}
+
+// ── Integrity check ────────────────────────────────────────────────
+// Detects data loss by comparing what user actions logged (create/delete)
+// against what actually exists in the store.
+
+export interface IntegrityResult {
+  timestamp: number;
+  isFirstRun: boolean;
+  baselineItems: number;
+  baselineSubtasks: number;
+  itemsCreated: number;
+  itemsDeleted: number;
+  itemsImported: number;
+  subtasksCreated: number;
+  subtasksDeleted: number;
+  expectedItems: number;
+  actualItems: number;
+  expectedSubtasks: number;
+  actualSubtasks: number;
+  itemDelta: number;         // negative = data loss
+  subtaskDelta: number;
+  suspectedLoss: boolean;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function countSubtasks(items: any[]): number {
+  return items.reduce((sum, it) => sum + (it.kind === 'task' ? (it.subtasks?.length ?? 0) : 0), 0);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function runIntegrityCheck(currentItems: any[]): Promise<IntegrityResult | null> {
+  const handle = await getSnapshotDir();
+  if (!handle) return null;
+
+  const logs = await readAllLogs();
+  const actualItems = currentItems.length;
+  const actualSubtasks = countSubtasks(currentItems);
+
+  // Find latest baseline (either 'integrity-check' or 'integrity-check-initial')
+  const lastCheck = [...logs].reverse().find(e =>
+    e.event === 'integrity-check' || e.event === 'integrity-check-initial'
+  );
+
+  // First run: establish baseline from current state, don't alarm
+  if (!lastCheck) {
+    log('integrity-check-initial', {
+      baselineItems: actualItems,
+      baselineSubtasks: actualSubtasks,
+      note: 'Establishing baseline from current state; pre-existing items are not in create log.',
+    });
+    return {
+      timestamp: Date.now(), isFirstRun: true,
+      baselineItems: actualItems, baselineSubtasks: actualSubtasks,
+      itemsCreated: 0, itemsDeleted: 0, itemsImported: 0,
+      subtasksCreated: 0, subtasksDeleted: 0,
+      expectedItems: actualItems, actualItems,
+      expectedSubtasks: actualSubtasks, actualSubtasks,
+      itemDelta: 0, subtaskDelta: 0, suspectedLoss: false,
+    };
+  }
+
+  // Incremental: use baseline from last check + count events since
+  const baselineItems = Number(lastCheck.data?.baselineItems ?? 0);
+  const baselineSubtasks = Number(lastCheck.data?.baselineSubtasks ?? 0);
+  const since = lastCheck._time;
+  const newer = logs.filter(e => e._time > since);
+
+  const itemsCreated  = newer.filter(e => e.event === 'item:create').length;
+  const itemsDeleted  = newer.filter(e => e.event === 'item:delete').length;
+  const itemsImported = newer
+    .filter(e => e.event === 'item:import')
+    .reduce((sum, e) => sum + Number(e.data?.count ?? 0), 0);
+  const subtasksCreated = newer.filter(e => e.event === 'subtask:create').length;
+  const subtasksDeleted = newer.filter(e => e.event === 'subtask:delete').length;
+
+  const expectedItems = baselineItems + itemsCreated + itemsImported - itemsDeleted;
+  const expectedSubtasks = baselineSubtasks + subtasksCreated - subtasksDeleted;
+  const itemDelta = actualItems - expectedItems;
+  const subtaskDelta = actualSubtasks - expectedSubtasks;
+  const suspectedLoss = itemDelta < 0 || subtaskDelta < 0;
+
+  const result: IntegrityResult = {
+    timestamp: Date.now(), isFirstRun: false,
+    baselineItems: actualItems, baselineSubtasks: actualSubtasks,
+    itemsCreated, itemsDeleted, itemsImported,
+    subtasksCreated, subtasksDeleted,
+    expectedItems, actualItems, expectedSubtasks, actualSubtasks,
+    itemDelta, subtaskDelta, suspectedLoss,
+  };
+
+  // Write new checkpoint: use ACTUAL as the new baseline (regardless of drift).
+  // This resets accumulation so next check compares against known-good state.
+  log('integrity-check', {
+    baselineItems: actualItems,
+    baselineSubtasks: actualSubtasks,
+    prev: {
+      expectedItems, actualItems, itemDelta,
+      expectedSubtasks, actualSubtasks, subtaskDelta,
+      suspectedLoss,
+    },
+  });
+
+  return result;
+}

@@ -161,6 +161,7 @@ export const useStore = create<AppState>()(
 
       addSubtask: (parentId, title) => {
         const id = 's' + Date.now() + Math.random().toString(36).slice(2, 5);
+        import('./snapshots').then(m => m.log('subtask:create', { parentId, subId: id, title }));
         set(s => ({
           items: s.items.map(it =>
             it.id === parentId && it.kind === 'task'
@@ -171,14 +172,19 @@ export const useStore = create<AppState>()(
         }));
       },
 
-      deleteSubtask: (parentId, subId) => set(s => ({
+      deleteSubtask: (parentId, subId) => {
+        const parent = get().items.find(it => it.id === parentId);
+        const sub = parent?.kind === 'task' ? parent.subtasks.find(s => s.id === subId) : undefined;
+        import('./snapshots').then(m => m.log('subtask:delete', { parentId, subId, title: sub?.title, snapshot: sub }));
+        set(s => ({
         items: s.items.map(it =>
           it.id === parentId && it.kind === 'task'
             ? { ...it, subtasks: it.subtasks.filter(su => su.id !== subId), updatedAt: Date.now() }
             : it
         ),
         history: pushHistory(s.history, { ts: Date.now(), type: 'deleteSubtask', id: subId })
-      })),
+      }));
+      },
 
       continueItem: (id) => set(s => ({
         items: s.items.map(it => it.id === id ? { ...it, bumpedAt: Date.now(), updatedAt: Date.now() } as Item : it),
@@ -221,10 +227,13 @@ export const useStore = create<AppState>()(
         return 'archived';
       },
 
-      createItem: (item) => set(s => ({
-        items: [...s.items, item],
-        history: pushHistory(s.history, { ts: Date.now(), type: 'create', id: item.id })
-      })),
+      createItem: (item) => {
+        import('./snapshots').then(m => m.log('item:create', { id: item.id, kind: item.kind, title: item.title }));
+        set(s => ({
+          items: [...s.items, item],
+          history: pushHistory(s.history, { ts: Date.now(), type: 'create', id: item.id })
+        }));
+      },
 
       archiveItem: (id) => {
         const item = get().items.find(it => it.id === id);
