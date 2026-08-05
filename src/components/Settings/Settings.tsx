@@ -4,7 +4,7 @@ import { nextId } from '../../engine';
 import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
 import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload, pickAndRegisterRestoreFile } from '../../backup';
-import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log, trashSnapshot, summarizeRange, formatSummary, getDebugMode, setDebugMode } from '../../snapshots';
+import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log, trashSnapshot, summarizeRange, formatSummary, formatDetailed, getDebugMode, setDebugMode, subscribeSnapshots } from '../../snapshots';
 import type { SnapshotEntry, ChangeSummary } from '../../snapshots';
 import { useLogMount } from '../../useLogMount';
 import type { JiraConfig, ItsmConfig } from '../../types';
@@ -81,6 +81,10 @@ export function Settings() {
   useEffect(() => {
     getSnapshotDir().then(h => { if (h) setSnapDirName(h.name); });
     refreshSnapshots();
+    // Auto-refresh whenever a new snapshot is written (e.g. user navigated
+    // to Settings and the navigation itself triggered a snapshot write).
+    // Also handles background snapshot writes while Settings stays open.
+    return subscribeSnapshots(() => { refreshSnapshots(); });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function refreshSnapshots() {
@@ -296,6 +300,13 @@ export function Settings() {
                                 ? 'Initial snapshot'
                                 : (summary ? formatSummary(summary) : '…')}
                           </div>
+                          {summary && summary.details.length > 0 && (
+                            <div style={{ color: 'var(--t-muted)', fontSize: 11, marginTop: 3, lineHeight: 1.5 }}>
+                              {formatDetailed(summary).map((line, i) => (
+                                <div key={i} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {line}</div>
+                              ))}
+                            </div>
+                          )}
                           <div style={{ color: 'var(--t-muted)', fontSize: 11, marginTop: 1, opacity: 0.7 }}>{(s.size / 1024).toFixed(1)} KB · {s.filename}</div>
                         </div>
                         <button onClick={() => handlePreview(s)}

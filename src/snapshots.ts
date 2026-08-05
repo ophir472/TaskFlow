@@ -169,6 +169,7 @@ async function writeSnapshotInner(): Promise<boolean> {
     await writable.write(content);
     await writable.close();
     pruneOldSnapshots(handle).catch(() => { /* ignore */ });
+    notifySnapshotWritten();
     return true;
   } catch (e) {
     logError('writeSnapshot failed', e);
@@ -566,6 +567,29 @@ export function getTabId(): string { return TAB_ID; }
 
 // ── Change summaries ────────────────────────────────────────────────
 
+export interface ChangeDetail {
+  action: string;      // e.g. "edited", "archived", "tag toggled"
+  title: string;       // task title, or subtask parent title
+  extra?: string;      // e.g. "notes", "urgent", "for today"
+  parentTitle?: string;  // for subtask events — the parent task's title
+  subtaskTitle?: string; // for subtask events — the subtask's own title
+}
+
+// ── Snapshot-written pubsub ──────────────────────────────────────────
+// Fires whenever writeSnapshot successfully creates a new snapshot file.
+// Settings uses this to auto-refresh the version history list.
+type SnapshotListener = () => void;
+const snapshotListeners = new Set<SnapshotListener>();
+
+export function subscribeSnapshots(fn: SnapshotListener): () => void {
+  snapshotListeners.add(fn);
+  return () => { snapshotListeners.delete(fn); };
+}
+
+function notifySnapshotWritten(): void {
+  snapshotListeners.forEach(fn => { try { fn(); } catch { /* ignore */ } });
+}
+
 export interface ChangeSummary {
   itemsCreated: number;
   itemsDeleted: number;
@@ -583,6 +607,7 @@ export interface ChangeSummary {
   otherChanges: number;
   totalEvents: number;   // all events including noise (navigation, rehydrate)
   dataEvents: number;    // only user-facing data changes; use this for skip logic
+  details: ChangeDetail[]; // per-event descriptions with task titles
 }
 
 export function emptySummary(): ChangeSummary {
@@ -591,7 +616,30 @@ export function emptySummary(): ChangeSummary {
     itemsUpdated: 0, itemsCompleted: 0, itemsHeld: 0,
     subtasksCreated: 0, subtasksDeleted: 0, subtasksUpdated: 0, subtasksToggled: 0,
     tagsToggled: 0, customValueChanges: 0, otherChanges: 0, totalEvents: 0, dataEvents: 0,
+    details: [],
   };
+}
+
+// Format a detailed multi-line summary listing each change with task name.
+// Truncates to at most `maxDetails` entries.
+export function formatDetailed(s: ChangeSummary, maxDetails = 8): string[] {
+  const lines: string[] = [];
+  const shown = s.details.slice(0, maxDetails);
+  for (const d of shown) {
+    // Subtask events: render as `added subtask "Subtask" in task "Parent"`
+    if (d.parentTitle !== undefined) {
+      const subPart = d.subtaskTitle ? ` "${d.subtaskTitle}"` : '';
+      const fieldPart = d.extra ? ` (${d.extra})` : '';
+      lines.push(`${d.action}${subPart} in task "${d.parentTitle}"${fieldPart}`);
+    } else {
+      const extra = d.extra ? ` (${d.extra})` : '';
+      lines.push(`${d.action}: "${d.title}"${extra}`);
+    }
+  }
+  if (s.details.length > maxDetails) {
+    lines.push(`… and ${s.details.length - maxDetails} more`);
+  }
+  return lines;
 }
 
 // Format a short human-readable summary line
@@ -614,10 +662,42 @@ export function formatSummary(s: ChangeSummary): string {
   return parts.length ? parts.join(' · ') : 'no changes';
 }
 
+// Build a map from item ID → most recent known title. Uses:
+// 1. Titles from all create/delete/archive log events (historical)
+// 2. Current localStorage items (for still-existing items)
+function buildTitleMap(logs: LogRecord[]): Map<string, string> {
+  const map = new Map<string, string>();
+  // From logs (most recent title wins since logs are sorted asc)
+  for (const e of logs) {
+    if (!e.data) continue;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = e.data as any;
+    if (typeof d.id === 'string' && typeof d.title === 'string' && d.title) {
+      map.set(d.id, d.title);
+    }
+    if (typeof d.parentId === 'string' && typeof d.title === 'string' && d.title) {
+      map.set(d.parentId, d.title);
+    }
+  }
+  // Overlay with current state (freshest titles for still-existing items)
+  try {
+    const raw = localStorage.getItem('taskflow-store') ?? '{}';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = JSON.parse(raw)?.state?.items ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const it of items) {
+      if (it.id && it.title) map.set(it.id, it.title);
+    }
+  } catch { /* ignore */ }
+  return map;
+}
+
 // Summarize log events in the range (fromTime, toTime]
 export async function summarizeRange(fromTime: number, toTime: number): Promise<ChangeSummary> {
   const logs = await readAllLogs();
   const s = emptySummary();
+  const titleMap = buildTitleMap(logs);
+  const titleFor = (id: string | undefined): string => (id && titleMap.get(id)) || '(unknown)';
   const CATEGORIZED = new Set([
     'item:create', 'item:delete', 'item:archive', 'item:unarchive', 'item:update',
     'item:complete', 'item:hold', 'item:continue',
@@ -644,22 +724,67 @@ export async function summarizeRange(fromTime: number, toTime: number): Promise<
     if (e._time <= fromTime || e._time > toTime) continue;
     s.totalEvents++;
     if (DATA_EVENTS.has(e.event)) s.dataEvents++;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = (e.data ?? {}) as any;
     switch (e.event) {
-      case 'item:create': s.itemsCreated++; break;
-      case 'item:delete': s.itemsDeleted++; break;
-      case 'item:archive': s.itemsArchived++; break;
-      case 'item:unarchive': s.itemsUnarchived++; break;
-      case 'item:update': s.itemsUpdated++; break;
-      case 'item:complete': s.itemsCompleted++; break;
-      case 'item:hold': s.itemsHeld++; break;
-      case 'subtask:create': s.subtasksCreated++; break;
-      case 'subtask:delete': s.subtasksDeleted++; break;
-      case 'subtask:update': s.subtasksUpdated++; break;
-      case 'subtask:toggle-done': s.subtasksToggled++; break;
-      case 'tag:toggle': s.tagsToggled++; break;
-      case 'item:custom-value': s.customValueChanges++; break;
+      case 'item:create':
+        s.itemsCreated++;
+        s.details.push({ action: 'created', title: d.title || titleFor(d.id) });
+        break;
+      case 'item:delete':
+        s.itemsDeleted++;
+        s.details.push({ action: 'deleted', title: d.title || titleFor(d.id) });
+        break;
+      case 'item:archive':
+        s.itemsArchived++;
+        s.details.push({ action: 'archived', title: d.title || titleFor(d.id) });
+        break;
+      case 'item:unarchive':
+        s.itemsUnarchived++;
+        s.details.push({ action: 'restored', title: titleFor(d.id) });
+        break;
+      case 'item:update':
+        s.itemsUpdated++;
+        s.details.push({ action: 'edited', title: titleFor(d.id), extra: Array.isArray(d.fields) ? d.fields.join(', ') : undefined });
+        break;
+      case 'item:complete':
+        s.itemsCompleted++;
+        s.details.push({ action: 'completed', title: d.title || titleFor(d.id) });
+        break;
+      case 'item:hold':
+        s.itemsHeld++;
+        s.details.push({ action: 'held', title: titleFor(d.id), extra: d.toCheck || undefined });
+        break;
+      case 'subtask:create':
+        s.subtasksCreated++;
+        s.details.push({ action: 'added subtask', title: titleFor(d.parentId), parentTitle: titleFor(d.parentId), subtaskTitle: d.title });
+        break;
+      case 'subtask:delete':
+        s.subtasksDeleted++;
+        s.details.push({ action: 'removed subtask', title: titleFor(d.parentId), parentTitle: titleFor(d.parentId), subtaskTitle: d.title });
+        break;
+      case 'subtask:update':
+        s.subtasksUpdated++;
+        s.details.push({ action: 'edited subtask', title: titleFor(d.parentId), parentTitle: titleFor(d.parentId), extra: Array.isArray(d.fields) ? d.fields.join(', ') : undefined });
+        break;
+      case 'subtask:toggle-done':
+        s.subtasksToggled++;
+        s.details.push({ action: 'toggled subtask', title: titleFor(d.parentId), parentTitle: titleFor(d.parentId) });
+        break;
+      case 'tag:toggle':
+        s.tagsToggled++;
+        s.details.push({ action: 'tag toggled', title: titleFor(d.id), extra: d.key });
+        break;
+      case 'item:custom-value':
+        s.customValueChanges++;
+        s.details.push({ action: 'custom field edited', title: titleFor(d.itemId) });
+        break;
       default:
-        if (!CATEGORIZED.has(e.event)) { s.otherChanges++; s.dataEvents++; }
+        if (!CATEGORIZED.has(e.event)) {
+          s.otherChanges++;
+          s.dataEvents++;
+          s.details.push({ action: e.event, title: titleFor(d.id) });
+        }
     }
   }
   return s;

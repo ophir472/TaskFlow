@@ -400,7 +400,7 @@ export function Table() {
 
   return (
     <>
-    <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflow: 'auto' }}>
+    <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', overflowX: 'hidden' }}>
       {/* Filters + column picker */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={selectSt}>
