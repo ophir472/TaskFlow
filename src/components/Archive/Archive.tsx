@@ -299,7 +299,30 @@ export function Archive() {
 
   function commitEdit() { if (editCell) saveEdit(editValue, editCell.colKey, editCell.rowId); }
 
-  function openTask(id: string) { setModalTaskId(id); }
+  function openTask(id: string) {
+    window.location.hash = `archive/task/${id}`;
+  }
+  function closeTaskModal() {
+    const currentHash = window.location.hash.slice(1);
+    if (currentHash.startsWith('archive/task/')) history.back();
+    else window.location.hash = 'archive';
+  }
+  function navigateModal(nextId: string) {
+    history.replaceState(null, '', `#archive/task/${nextId}`);
+    setModalTaskId(nextId);
+  }
+
+  useEffect(() => {
+    function syncFromHash() {
+      const parts = window.location.hash.slice(1).split('/');
+      if (parts[0] !== 'archive') return;
+      if (parts[1] === 'task' && parts[2]) setModalTaskId(parts[2]);
+      else setModalTaskId(null);
+    }
+    syncFromHash();
+    window.addEventListener('hashchange', syncFromHash);
+    return () => window.removeEventListener('hashchange', syncFromHash);
+  }, []);
 
   return (
     <>
@@ -528,7 +551,7 @@ export function Archive() {
         </>
       )}
     </div>
-    {modalTaskId && <TaskModal taskId={modalTaskId} allIds={rows.map(r => r.id)} onNavigate={setModalTaskId} onClose={() => setModalTaskId(null)} />}
+    {modalTaskId && <TaskModal taskId={modalTaskId} allIds={rows.map(r => r.id)} onNavigate={navigateModal} onClose={closeTaskModal} />}
     </>
   );
 }

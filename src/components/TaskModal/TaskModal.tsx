@@ -72,35 +72,30 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [taskId, idx, canPrev, canNext, allIds, onNavigate, onClose]);
 
-  // Mouse back button (button 3) closes subtask view first, then modal.
-  // Uses `auxclick` which Chrome/Firefox fire for extra mouse buttons.
-  // Prefer this over history.pushState (which caused nav issues with StrictMode).
+  // URL-driven subId: parse from #{view}/task/{id}/sub/{subId}
+  // Uses hashchange (battle-tested in this app) rather than pushState/popstate.
   useEffect(() => {
-    function onAuxClick(e: MouseEvent) {
-      if (e.button !== 3) return; // 3 = back button on most mice
-      e.preventDefault();
-      e.stopPropagation();
-      if (subIdRef.current) setSubId(null);
-      else onClose();
+    function syncSubIdFromHash() {
+      const parts = window.location.hash.slice(1).split('/');
+      // parts: [view, 'task', taskId, 'sub', subId]
+      if (parts[3] === 'sub' && parts[4]) setSubId(parts[4]);
+      else setSubId(null);
     }
-    // mousedown is more reliable — some browsers intercept auxclick before it reaches us
-    function onMouseDown(e: MouseEvent) {
-      if (e.button !== 3) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (subIdRef.current) setSubId(null);
-      else onClose();
-    }
-    window.addEventListener('auxclick', onAuxClick);
-    window.addEventListener('mousedown', onMouseDown);
-    return () => {
-      window.removeEventListener('auxclick', onAuxClick);
-      window.removeEventListener('mousedown', onMouseDown);
-    };
-  }, [onClose]);
+    syncSubIdFromHash(); // initial
+    window.addEventListener('hashchange', syncSubIdFromHash);
+    return () => window.removeEventListener('hashchange', syncSubIdFromHash);
+  }, []);
 
-  function openSubtask(id: string) { setSubId(id); }
-  function closeSubtask() { setSubId(null); }
+  function openSubtask(id: string) {
+    // Push a new URL entry so browser back returns to task view
+    const parts = window.location.hash.slice(1).split('/');
+    const view = parts[0] || 'table';
+    window.location.hash = `${view}/task/${taskId}/sub/${id}`;
+  }
+  function closeSubtask() {
+    // Browser back: pops the /sub/{id} entry, restoring #{view}/task/{taskId}
+    history.back();
+  }
 
   if (!task) return null;
 

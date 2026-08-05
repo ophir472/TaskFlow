@@ -338,7 +338,37 @@ export function Table() {
 
   function commitEdit() { if (editCell) saveEdit(editValue, editCell.colKey, editCell.rowId); }
 
-  function openTask(id: string) { setModalTaskId(id); }
+  function openTask(id: string) {
+    // Push URL so browser back closes the modal
+    window.location.hash = `table/task/${id}`;
+  }
+  function closeTaskModal() {
+    // Go back to just #table via history.back so the browser-back-friendly URL
+    // history is preserved (open + close = round trip that pops out cleanly)
+    const currentHash = window.location.hash.slice(1);
+    if (currentHash.startsWith('table/task/')) history.back();
+    else window.location.hash = 'table';
+  }
+  function navigateModal(nextId: string) {
+    // Replace URL (no new history entry per arrow-key press) so the browser
+    // history stays clean: just "opened modal" → "closed modal", not one
+    // history entry per task navigated to.
+    history.replaceState(null, '', `#table/task/${nextId}`);
+    setModalTaskId(nextId);
+  }
+
+  // Sync modalTaskId from URL: #table/task/{id}
+  useEffect(() => {
+    function syncFromHash() {
+      const parts = window.location.hash.slice(1).split('/');
+      if (parts[0] !== 'table') return;
+      if (parts[1] === 'task' && parts[2]) setModalTaskId(parts[2]);
+      else setModalTaskId(null);
+    }
+    syncFromHash();
+    window.addEventListener('hashchange', syncFromHash);
+    return () => window.removeEventListener('hashchange', syncFromHash);
+  }, []);
 
   function handleDrop(targetId: string) {
     if (!dragId || dragId === targetId) return;
@@ -718,7 +748,7 @@ export function Table() {
       </table>
       <div style={{ fontSize: 12, color: 'var(--t-muted)' }}>{rows.length} item{rows.length !== 1 ? 's' : ''}</div>
     </div>
-    {modalTaskId && <TaskModal taskId={modalTaskId} allIds={rows.map(r => r.id)} onNavigate={setModalTaskId} onClose={() => setModalTaskId(null)} />}
+    {modalTaskId && <TaskModal taskId={modalTaskId} allIds={rows.map(r => r.id)} onNavigate={navigateModal} onClose={closeTaskModal} />}
     </>
   );
 }
