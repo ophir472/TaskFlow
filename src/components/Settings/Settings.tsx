@@ -4,8 +4,8 @@ import { nextId } from '../../engine';
 import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
 import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload, pickAndRegisterRestoreFile } from '../../backup';
-import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log } from '../../snapshots';
-import type { SnapshotEntry } from '../../snapshots';
+import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log, trashSnapshot, summarizeRange, formatSummary } from '../../snapshots';
+import type { SnapshotEntry, ChangeSummary } from '../../snapshots';
 import type { JiraConfig, ItsmConfig } from '../../types';
 
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
@@ -73,6 +73,7 @@ export function Settings() {
   const [snapDirName, setSnapDirName] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<SnapshotEntry[]>([]);
   const [loadingSnaps, setLoadingSnaps] = useState(false);
+  const [summaries, setSummaries] = useState<Record<string, ChangeSummary>>({});
 
   useEffect(() => {
     getSnapshotDir().then(h => { if (h) setSnapDirName(h.name); });
@@ -81,8 +82,35 @@ export function Settings() {
 
   async function refreshSnapshots() {
     setLoadingSnaps(true);
-    try { setSnapshots(await listSnapshots()); } catch { /* ignore */ }
+    try {
+      const list = await listSnapshots();
+      setSnapshots(list);
+      // Compute change summaries for each snapshot (change since previous)
+      const map: Record<string, ChangeSummary> = {};
+      // list is newest-first; the previous snapshot is at index+1
+      for (let i = 0; i < list.length; i++) {
+        const from = i < list.length - 1 ? list[i + 1].time : 0;
+        const to = list[i].time;
+        // eslint-disable-next-line no-await-in-loop
+        map[list[i].filename] = await summarizeRange(from, to);
+      }
+      setSummaries(map);
+    } catch { /* ignore */ }
     setLoadingSnaps(false);
+  }
+
+  async function handleTrash(entry: SnapshotEntry) {
+    if (!confirm(`Move snapshot from ${new Date(entry.time).toLocaleString()} to trash?\nIt will disappear from this list. The file will move to ${snapDirName}/trash/ (you can recover it manually).`)) return;
+    const ok = await trashSnapshot(entry.filename);
+    if (ok) await refreshSnapshots();
+    else alert('Failed to move snapshot to trash.');
+  }
+
+  function handlePreview(entry: SnapshotEntry) {
+    // Open in a new tab with the preview URL. sessionStorage in that tab
+    // will be seeded with the snapshot data by main.tsx.
+    const url = window.location.origin + window.location.pathname + '#preview/' + encodeURIComponent(entry.filename);
+    window.open(url, '_blank', 'noopener');
   }
 
   async function handlePickSnapDir() {
@@ -238,20 +266,36 @@ export function Settings() {
               ) : snapshots.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>No snapshots yet. Navigate between views to create some.</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 320, overflowY: 'auto', border: '1px solid var(--t-brd2)', borderRadius: 8 }}>
-                  {snapshots.map(s => (
-                    <div key={s.filename}
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', borderBottom: '1px solid var(--t-brd2)', fontSize: 13 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: 'var(--t-txt)', fontWeight: 500 }}>{new Date(s.time).toLocaleString()}</div>
-                        <div style={{ color: 'var(--t-muted)', fontSize: 11, marginTop: 1 }}>{(s.size / 1024).toFixed(1)} KB · {s.filename}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 420, overflowY: 'auto', border: '1px solid var(--t-brd2)', borderRadius: 8 }}>
+                  {snapshots.map(s => {
+                    const summary = summaries[s.filename];
+                    return (
+                      <div key={s.filename}
+                        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderBottom: '1px solid var(--t-brd2)', fontSize: 13 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: 'var(--t-txt)', fontWeight: 500 }}>{new Date(s.time).toLocaleString()}</div>
+                          <div style={{ color: 'var(--t-muted)', fontSize: 12, marginTop: 3 }}>
+                            {summary ? formatSummary(summary) : '…'}
+                          </div>
+                          <div style={{ color: 'var(--t-muted)', fontSize: 11, marginTop: 1, opacity: 0.7 }}>{(s.size / 1024).toFixed(1)} KB · {s.filename}</div>
+                        </div>
+                        <button onClick={() => handlePreview(s)}
+                          style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', cursor: 'pointer', fontWeight: 500 }}
+                          title="Open this version in a new tab (read-only)">
+                          👁 Preview
+                        </button>
+                        <button onClick={() => handleRestoreSnapshot(s)}
+                          style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', cursor: 'pointer', fontWeight: 500 }}>
+                          Restore
+                        </button>
+                        <button onClick={() => handleTrash(s)}
+                          style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-urgent)', cursor: 'pointer', fontWeight: 500 }}
+                          title="Move to trash">
+                          🗑
+                        </button>
                       </div>
-                      <button onClick={() => handleRestoreSnapshot(s)}
-                        style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', cursor: 'pointer', fontWeight: 500 }}>
-                        Restore
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </>

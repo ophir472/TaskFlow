@@ -4,6 +4,10 @@
 // RETENTION_DAYS are pruned. A per-day JSONL log file records every mutation
 // for forensic debugging.
 
+export function isPreviewMode(): boolean {
+  return typeof window !== 'undefined' && window.location.hash.startsWith('#preview/');
+}
+
 const IDB_NAME = 'taskflow-meta';
 const IDB_STORE = 'handles';
 const DIR_HANDLE_KEY = 'snapshotDir';
@@ -76,7 +80,7 @@ export async function pickSnapshotDir(): Promise<Handle | null> {
 
 // ── Snapshot writing ────────────────────────────────────────────────
 
-let lastSnapshotContent: string | null = null;
+let lastSnapshotRaw: string | null = null;
 
 function snapshotFilename(ts: number = Date.now()): string {
   // ISO timestamp with dashes-only so it's safe on all filesystems
@@ -98,25 +102,27 @@ function parseSnapshotTime(filename: string): number | null {
  * Returns true if written, false if skipped (no change or no dir).
  */
 export async function writeSnapshot(): Promise<boolean> {
+  if (isPreviewMode()) return false; // preview tabs never write
   const handle = await getSnapshotDir();
   if (!handle) return false;
   if (!(await ensureDirPermissionTracked(handle))) return false;
 
   const raw = localStorage.getItem('taskflow-store') ?? '{}';
+
+  // Compare raw state (excludes timestamp) so unchanged data doesn't produce a new file
+  if (raw === lastSnapshotRaw) return false;
+
   const content = JSON.stringify({
     savedAt: new Date().toISOString(),
     ...JSON.parse(raw),
   }, null, 2);
-
-  // Skip if identical to last snapshot we wrote this session
-  if (content === lastSnapshotContent) return false;
 
   try {
     const fileHandle = await handle.getFileHandle(snapshotFilename(), { create: true });
     const writable = await fileHandle.createWritable();
     await writable.write(content);
     await writable.close();
-    lastSnapshotContent = content;
+    lastSnapshotRaw = raw;
     // Fire-and-forget prune
     pruneOldSnapshots(handle).catch(() => { /* ignore */ });
     return true;
@@ -131,27 +137,30 @@ export async function writeSnapshot(): Promise<boolean> {
 // between navigation-triggered snapshots.
 
 const LIVE_FILENAME = 'current.json';
-let lastLiveContent: string | null = null;
+let lastLiveRaw: string | null = null;
 
 export async function writeLiveFile(): Promise<boolean> {
+  if (isPreviewMode()) return false; // preview tabs never write
   const handle = await getSnapshotDir();
   if (!handle) return false;
   if (!(await ensureDirPermissionTracked(handle))) return false;
 
   const raw = localStorage.getItem('taskflow-store') ?? '{}';
+
+  // Compare raw state (excludes timestamp) so unchanged data doesn't rewrite the file
+  if (raw === lastLiveRaw) return false;
+
   const content = JSON.stringify({
     savedAt: new Date().toISOString(),
     ...JSON.parse(raw),
   }, null, 2);
-
-  if (content === lastLiveContent) return false;
 
   try {
     const fh = await handle.getFileHandle(LIVE_FILENAME, { create: true });
     const writable = await fh.createWritable();
     await writable.write(content);
     await writable.close();
-    lastLiveContent = content;
+    lastLiveRaw = raw;
     return true;
   } catch (e) {
     logError('writeLiveFile failed', e);
@@ -168,6 +177,7 @@ export async function readLiveFile(): Promise<Record<string, unknown> | null> {
     return JSON.parse(await file.text());
   } catch { return null; }
 }
+
 
 // ── Permission state ────────────────────────────────────────────────
 
@@ -260,6 +270,34 @@ async function pruneOldSnapshots(handle: Handle): Promise<void> {
   }
 }
 
+/**
+ * Move a snapshot to the trash/ subfolder. Doesn't delete permanently —
+ * user can recover via Finder if needed.
+ */
+export async function trashSnapshot(filename: string): Promise<boolean> {
+  const handle = await getSnapshotDir();
+  if (!handle) return false;
+  if (!(await ensureDirPermissionTracked(handle))) return false;
+  try {
+    // Read the file first
+    const src = await handle.getFileHandle(filename);
+    const text = await (await src.getFile()).text();
+    // Write to trash/
+    const trashDir = await handle.getDirectoryHandle('trash', { create: true });
+    const dest = await trashDir.getFileHandle(filename, { create: true });
+    const writable = await dest.createWritable();
+    await writable.write(text);
+    await writable.close();
+    // Remove original
+    await handle.removeEntry(filename);
+    log('snapshot:trashed', { filename });
+    return true;
+  } catch (e) {
+    logError('trashSnapshot failed', e);
+    return false;
+  }
+}
+
 // ── Logging ─────────────────────────────────────────────────────────
 
 // Random per-tab identifier so multi-tab races become visible in logs
@@ -296,9 +334,10 @@ export function logError(event: string, err: unknown): void {
 
 async function flushLogs(): Promise<void> {
   if (logBuffer.length === 0) return;
+  if (isPreviewMode()) { logBuffer.length = 0; return; } // preview never writes
   const handle = await getSnapshotDir();
   if (!handle) { logBuffer.length = 0; return; } // no dir configured — drop
-  if (!(await ensureDirPermission(handle))) return;
+  if (!(await ensureDirPermissionTracked(handle))) return;
 
   const today = new Date().toISOString().slice(0, 10);
   const filename = `log-${today}.jsonl`;
@@ -325,6 +364,97 @@ if (typeof window !== 'undefined') {
 }
 
 export function getTabId(): string { return TAB_ID; }
+
+// ── Change summaries ────────────────────────────────────────────────
+
+export interface ChangeSummary {
+  itemsCreated: number;
+  itemsDeleted: number;
+  itemsArchived: number;
+  itemsUnarchived: number;
+  itemsUpdated: number;
+  itemsCompleted: number;
+  itemsHeld: number;
+  subtasksCreated: number;
+  subtasksDeleted: number;
+  subtasksUpdated: number;
+  subtasksToggled: number;
+  tagsToggled: number;
+  customValueChanges: number;
+  otherChanges: number;
+  totalEvents: number;
+}
+
+export function emptySummary(): ChangeSummary {
+  return {
+    itemsCreated: 0, itemsDeleted: 0, itemsArchived: 0, itemsUnarchived: 0,
+    itemsUpdated: 0, itemsCompleted: 0, itemsHeld: 0,
+    subtasksCreated: 0, subtasksDeleted: 0, subtasksUpdated: 0, subtasksToggled: 0,
+    tagsToggled: 0, customValueChanges: 0, otherChanges: 0, totalEvents: 0,
+  };
+}
+
+// Format a short human-readable summary line
+export function formatSummary(s: ChangeSummary): string {
+  const parts: string[] = [];
+  if (s.itemsCreated) parts.push(`+${s.itemsCreated} task${s.itemsCreated > 1 ? 's' : ''}`);
+  if (s.itemsDeleted) parts.push(`−${s.itemsDeleted} deleted`);
+  if (s.itemsArchived) parts.push(`${s.itemsArchived} archived`);
+  if (s.itemsUnarchived) parts.push(`${s.itemsUnarchived} restored`);
+  if (s.itemsCompleted) parts.push(`${s.itemsCompleted} completed`);
+  if (s.itemsHeld) parts.push(`${s.itemsHeld} held`);
+  if (s.subtasksCreated) parts.push(`+${s.subtasksCreated} subtask${s.subtasksCreated > 1 ? 's' : ''}`);
+  if (s.subtasksDeleted) parts.push(`−${s.subtasksDeleted} subtask${s.subtasksDeleted > 1 ? 's' : ''}`);
+  if (s.subtasksToggled) parts.push(`${s.subtasksToggled} subtask check${s.subtasksToggled > 1 ? 's' : ''}`);
+  if (s.itemsUpdated) parts.push(`${s.itemsUpdated} edit${s.itemsUpdated > 1 ? 's' : ''}`);
+  if (s.subtasksUpdated) parts.push(`${s.subtasksUpdated} subtask edit${s.subtasksUpdated > 1 ? 's' : ''}`);
+  if (s.tagsToggled) parts.push(`${s.tagsToggled} tag change${s.tagsToggled > 1 ? 's' : ''}`);
+  if (s.customValueChanges) parts.push(`${s.customValueChanges} custom field${s.customValueChanges > 1 ? 's' : ''}`);
+  if (s.otherChanges) parts.push(`${s.otherChanges} other`);
+  return parts.length ? parts.join(' · ') : 'no changes';
+}
+
+// Summarize log events in the range (fromTime, toTime]
+export async function summarizeRange(fromTime: number, toTime: number): Promise<ChangeSummary> {
+  const logs = await readAllLogs();
+  const s = emptySummary();
+  const CATEGORIZED = new Set([
+    'item:create', 'item:delete', 'item:archive', 'item:unarchive', 'item:update',
+    'item:complete', 'item:hold', 'item:continue',
+    'subtask:create', 'subtask:delete', 'subtask:update',
+    'subtask:toggle-done', 'subtask:toggle-next',
+    'tag:toggle', 'item:custom-value',
+    'reminder:reschedule',
+    // These are UI/system and don't count as data changes
+    'app:mount', 'snapshot:navigate', 'store:rehydrate-from-other-tab',
+    'integrity-check', 'integrity-check-initial',
+    'restore:start', 'restore:complete', 'restore:failed', 'item:import',
+    'snapshot-dir:configured',
+  ]);
+
+  for (const e of logs) {
+    if (e._time <= fromTime || e._time > toTime) continue;
+    s.totalEvents++;
+    switch (e.event) {
+      case 'item:create': s.itemsCreated++; break;
+      case 'item:delete': s.itemsDeleted++; break;
+      case 'item:archive': s.itemsArchived++; break;
+      case 'item:unarchive': s.itemsUnarchived++; break;
+      case 'item:update': s.itemsUpdated++; break;
+      case 'item:complete': s.itemsCompleted++; break;
+      case 'item:hold': s.itemsHeld++; break;
+      case 'subtask:create': s.subtasksCreated++; break;
+      case 'subtask:delete': s.subtasksDeleted++; break;
+      case 'subtask:update': s.subtasksUpdated++; break;
+      case 'subtask:toggle-done': s.subtasksToggled++; break;
+      case 'tag:toggle': s.tagsToggled++; break;
+      case 'item:custom-value': s.customValueChanges++; break;
+      default:
+        if (!CATEGORIZED.has(e.event)) s.otherChanges++;
+    }
+  }
+  return s;
+}
 
 // ── Log reading ─────────────────────────────────────────────────────
 

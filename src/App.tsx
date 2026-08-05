@@ -13,8 +13,8 @@ import { Settings } from './components/Settings/Settings';
 import { CreateModal } from './components/CreateModal/CreateModal';
 import { Toast } from './components/Toast/Toast';
 import { restoreFromData, pickAndRegisterRestoreFile } from './backup';
-import { writeSnapshot, writeLiveFile, log, getTabId, listSnapshots, readSnapshot, getSnapshotDir, subscribePermission, requestDirPermission, runIntegrityCheck } from './snapshots';
-import type { IntegrityResult } from './snapshots';
+import { writeSnapshot, writeLiveFile, log, getTabId, listSnapshots, readSnapshot, getSnapshotDir, subscribePermission, requestDirPermission, runIntegrityCheck, isPreviewMode, summarizeRange, formatSummary } from './snapshots';
+import type { IntegrityResult, ChangeSummary } from './snapshots';
 import { Confetti } from './components/Confetti';
 
 export type SyncState = 'idle' | 'syncing' | 'saved';
@@ -106,6 +106,11 @@ export default function App() {
 
   const [permError, setPermError] = useState<string | null>(null);
   const [integrityAlert, setIntegrityAlert] = useState<IntegrityResult | null>(null);
+  const [previewSummary, setPreviewSummary] = useState<ChangeSummary | null>(null);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const previewInfo = (typeof window !== 'undefined' ? (window as any).__preview : null) as { filename: string; savedAt: string } | null;
+  const inPreview = isPreviewMode();
 
   const toastTimer = useCallback((msg: string) => {
     setToast(msg);
@@ -132,6 +137,20 @@ export default function App() {
 
   // Subscribe to permission changes → show banner
   useEffect(() => subscribePermission(setPermError), []);
+
+  // In preview mode: compute change summary vs the previous snapshot
+  useEffect(() => {
+    if (!inPreview || !previewInfo) return;
+    (async () => {
+      const list = await listSnapshots();
+      const currentTime = Date.parse(previewInfo.savedAt);
+      const currentIdx = list.findIndex(s => s.filename === previewInfo.filename);
+      const prevSnapshot = currentIdx >= 0 && currentIdx < list.length - 1 ? list[currentIdx + 1] : null;
+      const from = prevSnapshot ? prevSnapshot.time : 0;
+      const summary = await summarizeRange(from, currentTime);
+      setPreviewSummary(summary);
+    })();
+  }, [inPreview, previewInfo]);
 
   // Run integrity check on mount
   useEffect(() => {
@@ -225,6 +244,17 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', width: '100%', minHeight: '100vh', background: 'var(--t-bg)', flexDirection: 'column' }}>
+      {/* Preview mode banner (blue, always at top when in preview) */}
+      {inPreview && previewInfo && (
+        <div style={{ padding: '10px 20px', background: '#4b7bec', color: 'white', fontSize: 14, display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid rgba(0,0,0,0.15)', zIndex: 100, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600 }}>👁 Preview mode</span>
+          <span>·  Snapshot from {new Date(previewInfo.savedAt).toLocaleString()}</span>
+          {previewSummary && (
+            <span style={{ opacity: 0.9, fontSize: 13 }}>·  Changes since previous snapshot: <b>{formatSummary(previewSummary)}</b></span>
+          )}
+          <span style={{ marginLeft: 'auto', opacity: 0.8, fontSize: 12 }}>Read-only. Close this tab to exit.</span>
+        </div>
+      )}
       {/* Persistent alert banners */}
       {permError && (
         <div style={{ padding: '10px 20px', background: '#ff8a3d', color: '#231a10', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid rgba(0,0,0,0.1)', zIndex: 100 }}>

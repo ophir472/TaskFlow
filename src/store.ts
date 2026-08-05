@@ -1,7 +1,13 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig } from './types';
 import { midnight } from './engine';
+
+// Fire-and-forget log helper. Dynamic import avoids circular dep at module init.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function slog(event: string, data?: any): void {
+  import('./snapshots').then(m => m.log(event, data)).catch(() => {});
+}
 
 const PROMOTION_GOAL = 3;
 
@@ -103,61 +109,84 @@ export const useStore = create<AppState>()(
 
       setDisplayId: (id) => set({ displayId: id }),
       setTriggerTagForId: (id) => set({ triggerTagForId: id }),
-      setTheme: (themeId, customAccent = null, customBg = null) => set({ themeId, customAccent, customBg }),
+      setTheme: (themeId, customAccent = null, customBg = null) => {
+        slog('theme:set', { themeId, customAccent, customBg });
+        set({ themeId, customAccent, customBg });
+      },
 
-      updateItem: (id, patch) => set(s => ({
-        items: s.items.map(it => it.id === id ? { ...it, ...patch, updatedAt: Date.now() } as Item : it),
-        history: pushHistory(s.history, { ts: Date.now(), type: 'update', id, patch: patch as Partial<Item> })
-      })),
+      updateItem: (id, patch) => {
+        slog('item:update', { id, fields: Object.keys(patch), patch });
+        set(s => ({
+          items: s.items.map(it => it.id === id ? { ...it, ...patch, updatedAt: Date.now() } as Item : it),
+          history: pushHistory(s.history, { ts: Date.now(), type: 'update', id, patch: patch as Partial<Item> })
+        }));
+      },
 
-      updateTask: (id, patch) => set(s => ({
-        items: s.items.map(it => it.id === id && it.kind === 'task' ? { ...it, ...patch, updatedAt: Date.now() } : it),
-        history: pushHistory(s.history, { ts: Date.now(), type: 'updateTask', id })
-      })),
+      updateTask: (id, patch) => {
+        slog('task:update', { id, fields: Object.keys(patch), patch });
+        set(s => ({
+          items: s.items.map(it => it.id === id && it.kind === 'task' ? { ...it, ...patch, updatedAt: Date.now() } : it),
+          history: pushHistory(s.history, { ts: Date.now(), type: 'updateTask', id })
+        }));
+      },
 
-      updateSubtask: (parentId, subId, patch) => set(s => ({
-        items: s.items.map(it =>
-          it.id === parentId && it.kind === 'task'
-            ? { ...it, subtasks: it.subtasks.map(su => su.id === subId ? { ...su, ...patch } : su), updatedAt: Date.now() }
-            : it
-        ),
-        history: pushHistory(s.history, { ts: Date.now(), type: 'updateSubtask', id: subId })
-      })),
+      updateSubtask: (parentId, subId, patch) => {
+        slog('subtask:update', { parentId, subId, fields: Object.keys(patch), patch });
+        set(s => ({
+          items: s.items.map(it =>
+            it.id === parentId && it.kind === 'task'
+              ? { ...it, subtasks: it.subtasks.map(su => su.id === subId ? { ...su, ...patch } : su), updatedAt: Date.now() }
+              : it
+          ),
+          history: pushHistory(s.history, { ts: Date.now(), type: 'updateSubtask', id: subId })
+        }));
+      },
 
-      toggleTag: (id, key) => set(s => ({
-        items: s.items.map(it => {
-          if (it.id !== id || it.kind !== 'task') return it;
-          if (key === 'noTag') return { ...it, noTag: !it.noTag, urgent: false, important: false, quick: false, updatedAt: Date.now() };
-          return { ...it, [key]: !(it as Task)[key], noTag: false, updatedAt: Date.now() };
-        }),
-        history: pushHistory(s.history, { ts: Date.now(), type: 'toggleTag', id })
-      })),
+      toggleTag: (id, key) => {
+        const it = get().items.find(x => x.id === id);
+        const before = it?.kind === 'task' ? { urgent: it.urgent, important: it.important, quick: it.quick, noTag: it.noTag } : undefined;
+        slog('tag:toggle', { id, key, before });
+        set(s => ({
+          items: s.items.map(it => {
+            if (it.id !== id || it.kind !== 'task') return it;
+            if (key === 'noTag') return { ...it, noTag: !it.noTag, urgent: false, important: false, quick: false, updatedAt: Date.now() };
+            return { ...it, [key]: !(it as Task)[key], noTag: false, updatedAt: Date.now() };
+          }),
+          history: pushHistory(s.history, { ts: Date.now(), type: 'toggleTag', id })
+        }));
+      },
 
-      toggleSubtaskDone: (parentId, subId) => set(s => {
-        let promoted = false;
-        const items = s.items.map(it => {
-          if (it.id !== parentId || it.kind !== 'task') return it;
-          const subtasks = it.subtasks.map(su => {
-            if (su.id !== subId) return su;
-            promoted = !su.done;
-            return { ...su, done: !su.done };
+      toggleSubtaskDone: (parentId, subId) => {
+        slog('subtask:toggle-done', { parentId, subId });
+        set(s => {
+          let promoted = false;
+          const items = s.items.map(it => {
+            if (it.id !== parentId || it.kind !== 'task') return it;
+            const subtasks = it.subtasks.map(su => {
+              if (su.id !== subId) return su;
+              promoted = !su.done;
+              return { ...su, done: !su.done };
+            });
+            return { ...it, subtasks, updatedAt: Date.now() };
           });
-          return { ...it, subtasks, updatedAt: Date.now() };
+          return {
+            items,
+            promotionsToday: promoted ? s.promotionsToday + 1 : s.promotionsToday,
+            history: pushHistory(s.history, { ts: Date.now(), type: 'subtaskDone', id: subId })
+          };
         });
-        return {
-          items,
-          promotionsToday: promoted ? s.promotionsToday + 1 : s.promotionsToday,
-          history: pushHistory(s.history, { ts: Date.now(), type: 'subtaskDone', id: subId })
-        };
-      }),
+      },
 
-      toggleSubtaskNext: (parentId, subId) => set(s => ({
-        items: s.items.map(it =>
-          it.id === parentId && it.kind === 'task'
-            ? { ...it, subtasks: it.subtasks.map(su => ({ ...su, isNext: su.id === subId ? !su.isNext : false })) }
-            : it
-        )
-      })),
+      toggleSubtaskNext: (parentId, subId) => {
+        slog('subtask:toggle-next', { parentId, subId });
+        set(s => ({
+          items: s.items.map(it =>
+            it.id === parentId && it.kind === 'task'
+              ? { ...it, subtasks: it.subtasks.map(su => ({ ...su, isNext: su.id === subId ? !su.isNext : false })) }
+              : it
+          )
+        }));
+      },
 
       addSubtask: (parentId, title) => {
         const id = 's' + Date.now() + Math.random().toString(36).slice(2, 5);
@@ -186,32 +215,42 @@ export const useStore = create<AppState>()(
       }));
       },
 
-      continueItem: (id) => set(s => ({
-        items: s.items.map(it => it.id === id ? { ...it, bumpedAt: Date.now(), updatedAt: Date.now() } as Item : it),
-        history: pushHistory(s.history, { ts: Date.now(), type: 'continue', id })
-      })),
+      continueItem: (id) => {
+        slog('item:continue', { id });
+        set(s => ({
+          items: s.items.map(it => it.id === id ? { ...it, bumpedAt: Date.now(), updatedAt: Date.now() } as Item : it),
+          history: pushHistory(s.history, { ts: Date.now(), type: 'continue', id })
+        }));
+      },
 
-      holdItem: (id, toCheck, schedule) => set(s => ({
-        items: s.items.map(it =>
-          it.id === id && it.kind === 'task'
-            ? { ...it, status: 'waiting', priorityBoost: false, toCheck, holdSchedule: schedule, updatedAt: Date.now() }
-            : it
-        ),
-        history: pushHistory(s.history, { ts: Date.now(), type: 'hold', id })
-      })),
+      holdItem: (id, toCheck, schedule) => {
+        slog('item:hold', { id, toCheck, schedule });
+        set(s => ({
+          items: s.items.map(it =>
+            it.id === id && it.kind === 'task'
+              ? { ...it, status: 'waiting', priorityBoost: false, toCheck, holdSchedule: schedule, updatedAt: Date.now() }
+              : it
+          ),
+          history: pushHistory(s.history, { ts: Date.now(), type: 'hold', id })
+        }));
+      },
 
-      rescheduleReminder: (id, schedule) => set(s => ({
-        items: s.items.map(it =>
-          it.id === id && it.kind === 'reminder'
-            ? { ...it, schedule, bumpedAt: Date.now(), updatedAt: Date.now() }
-            : it
-        ),
-        history: pushHistory(s.history, { ts: Date.now(), type: 'reschedule', id })
-      })),
+      rescheduleReminder: (id, schedule) => {
+        slog('reminder:reschedule', { id, schedule });
+        set(s => ({
+          items: s.items.map(it =>
+            it.id === id && it.kind === 'reminder'
+              ? { ...it, schedule, bumpedAt: Date.now(), updatedAt: Date.now() }
+              : it
+          ),
+          history: pushHistory(s.history, { ts: Date.now(), type: 'reschedule', id })
+        }));
+      },
 
       completeItem: (id) => {
         const item = get().items.find(it => it.id === id);
         if (!item) return null;
+        slog('item:complete', { id, kind: item.kind, title: item.title });
         if (item.kind === 'responsibility') {
           set(s => ({
             items: s.items.map(it => it.id === id ? { ...it, bumpedAt: Date.now(), updatedAt: Date.now() } as Item : it),
@@ -264,41 +303,49 @@ export const useStore = create<AppState>()(
         }));
       },
 
-      addRequester: (name) => set(s => ({ requesters: [...s.requesters, name] })),
-      removeRequester: (name) => set(s => ({ requesters: s.requesters.filter(r => r !== name) })),
-      addProject: (name) => set(s => ({ projects: [...s.projects, name] })),
-      removeProject: (name) => set(s => ({ projects: s.projects.filter(p => p !== name) })),
+      addRequester: (name) => { slog('requester:add', { name }); set(s => ({ requesters: [...s.requesters, name] })); },
+      removeRequester: (name) => { slog('requester:remove', { name }); set(s => ({ requesters: s.requesters.filter(r => r !== name) })); },
+      addProject: (name) => { slog('project:add', { name }); set(s => ({ projects: [...s.projects, name] })); },
+      removeProject: (name) => { slog('project:remove', { name }); set(s => ({ projects: s.projects.filter(p => p !== name) })); },
 
-      addCustomField: (field) => set(s => ({ customFields: [...s.customFields, field] })),
-      removeCustomField: (id) => set(s => ({ customFields: s.customFields.filter(f => f.id !== id) })),
-      updateCustomField: (id, patch) => set(s => ({
-        customFields: s.customFields.map(f => f.id === id ? { ...f, ...patch } : f)
-      })),
-      updateItemCustomValue: (itemId, fieldId, value) => set(s => ({
-        items: s.items.map(it =>
-          it.id === itemId && it.kind === 'task'
-            ? { ...it, customValues: { ...(it.customValues ?? {}), [fieldId]: value }, updatedAt: Date.now() }
-            : it
-        )
-      })),
+      addCustomField: (field) => { slog('customfield:add', field); set(s => ({ customFields: [...s.customFields, field] })); },
+      removeCustomField: (id) => { slog('customfield:remove', { id }); set(s => ({ customFields: s.customFields.filter(f => f.id !== id) })); },
+      updateCustomField: (id, patch) => {
+        slog('customfield:update', { id, patch });
+        set(s => ({ customFields: s.customFields.map(f => f.id === id ? { ...f, ...patch } : f) }));
+      },
+      updateItemCustomValue: (itemId, fieldId, value) => {
+        slog('item:custom-value', { itemId, fieldId, value });
+        set(s => ({
+          items: s.items.map(it =>
+            it.id === itemId && it.kind === 'task'
+              ? { ...it, customValues: { ...(it.customValues ?? {}), [fieldId]: value }, updatedAt: Date.now() }
+              : it
+          )
+        }));
+      },
 
+      // UI-only mutations — no need to log
       setView: (v) => set({ view: v }),
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
-      setJiraConfig: (config) => set({ jiraConfig: config }),
-      setItsmConfig: (config) => set({ itsmConfig: config }),
-      setTaskOrder: (order) => set({ taskOrder: order }),
-      setTableVisibleCols: (cols) => set({ tableVisibleCols: cols }),
-      setArchiveVisibleCols: (cols) => set({ archiveVisibleCols: cols }),
-      setTableColWidths: (widths) => set({ tableColWidths: widths }),
-      setArchiveColWidths: (widths) => set({ archiveColWidths: widths }),
-      resetManualOrder: () => set(s => ({
-        taskOrder: [],
-        items: s.items.map(it =>
-          it.kind === 'task' && it.manuallyMoved
-            ? { ...it, manuallyMoved: false, updatedAt: Date.now() }
-            : it
-        ),
-      })),
+      setJiraConfig: (config) => { slog('jira-config:set', { host: config?.host, hasToken: !!config?.apiToken }); set({ jiraConfig: config }); },
+      setItsmConfig: (config) => { slog('itsm-config:set', { host: config?.host }); set({ itsmConfig: config }); },
+      setTaskOrder: (order) => { slog('task-order:set', { count: order.length }); set({ taskOrder: order }); },
+      setTableVisibleCols: (cols) => { slog('table-cols:set', cols); set({ tableVisibleCols: cols }); },
+      setArchiveVisibleCols: (cols) => { slog('archive-cols:set', cols); set({ archiveVisibleCols: cols }); },
+      setTableColWidths: (widths) => { slog('table-widths:set', widths); set({ tableColWidths: widths }); },
+      setArchiveColWidths: (widths) => { slog('archive-widths:set', widths); set({ archiveColWidths: widths }); },
+      resetManualOrder: () => {
+        slog('manual-order:reset');
+        set(s => ({
+          taskOrder: [],
+          items: s.items.map(it =>
+            it.kind === 'task' && it.manuallyMoved
+              ? { ...it, manuallyMoved: false, updatedAt: Date.now() }
+              : it
+          ),
+        }));
+      },
 
       checkDailyReset: () => {
         const { dailyResetAt } = get();
@@ -307,7 +354,17 @@ export const useStore = create<AppState>()(
         }
       },
     }),
-    { name: 'taskflow-store', version: 2 }
+    {
+      name: 'taskflow-store',
+      version: 2,
+      // In preview mode: persist to sessionStorage (per-tab, discarded on close)
+      // so the preview can't affect the real localStorage or other tabs.
+      storage: createJSONStorage(() =>
+        (typeof window !== 'undefined' && window.location.hash.startsWith('#preview/'))
+          ? sessionStorage
+          : localStorage
+      ),
+    }
   )
 );
 
@@ -316,10 +373,11 @@ export const useStore = create<AppState>()(
 // writes to localStorage, the other tab's next write clobbers it with stale
 // data — silently destroying work. This listener rehydrates the store when
 // any other tab writes, keeping all tabs in sync.
-if (typeof window !== 'undefined') {
+// Disabled in preview mode: preview tabs are read-only and shouldn't react to
+// changes made by the main tab.
+if (typeof window !== 'undefined' && !window.location.hash.startsWith('#preview/')) {
   window.addEventListener('storage', (e) => {
     if (e.key === 'taskflow-store') {
-      // Lazy import to avoid circular dep at module init
       import('./snapshots').then(m => m.log('store:rehydrate-from-other-tab'));
       useStore.persist.rehydrate();
     }
