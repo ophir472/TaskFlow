@@ -50,6 +50,9 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const [creatingJira, setCreatingJira] = useState(false);
   const [subDragId, setSubDragId] = useState<string | null>(null);
   const [subDragOverId, setSubDragOverId] = useState<string | null>(null);
+  const [editingSubId, setEditingSubId] = useState<string | null>(null);
+  const [editingSubTitle, setEditingSubTitle] = useState('');
+  const updateSubtask = useStore(s => s.updateSubtask);
   const [holdOpen, setHoldOpen] = useState(false);
   const [cardMenuOpen, setCardMenuOpen] = useState(false);
   const [editingLabel, setEditingLabel] = useState<string | null>(null);
@@ -569,7 +572,27 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                         style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', border: '1px solid var(--t-brd2)', borderRadius: 9, background: 'var(--t-surf2)', opacity: isDragging ? 0.4 : 1, borderTop: isOver ? '2px solid var(--t-acc)' : undefined, cursor: 'grab' }}>
                         <span style={{ fontSize: 14, color: 'var(--t-brd)', flexShrink: 0, userSelect: 'none' }}>⠿</span>
                         <input type="checkbox" checked={sub.done} onChange={() => toggleSubtaskDone(current.id, sub.id)} onClick={e => e.stopPropagation()} style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }} />
-                        <div onClick={() => setSubtaskPanel({ parentId: current.id, subId: sub.id })} style={{ flex: 1, fontSize: 14, cursor: 'pointer', textDecoration: sub.done ? 'line-through' : 'none', color: sub.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{sub.title}</div>
+                        {editingSubId === sub.id ? (
+                          <input autoFocus value={editingSubTitle}
+                            onChange={e => setEditingSubTitle(e.target.value)}
+                            onBlur={() => {
+                              const t = editingSubTitle.trim();
+                              if (t && t !== sub.title) updateSubtask(current.id, sub.id, { title: t });
+                              setEditingSubId(null);
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') { e.currentTarget.blur(); }
+                              if (e.key === 'Escape') setEditingSubId(null);
+                            }}
+                            onClick={e => e.stopPropagation()}
+                            style={{ flex: 1, fontSize: 14, padding: '3px 6px', border: '1px solid var(--t-acc)', borderRadius: 4, background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
+                        ) : (
+                          <div onClick={() => { setEditingSubId(sub.id); setEditingSubTitle(sub.title); }}
+                            title="Click to rename"
+                            style={{ flex: 1, fontSize: 14, cursor: 'text', textDecoration: sub.done ? 'line-through' : 'none', color: sub.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{sub.title}</div>
+                        )}
+                        <span onClick={() => setSubtaskPanel({ parentId: current.id, subId: sub.id })} title="Open subtask details"
+                          style={{ cursor: 'pointer', fontSize: 15, color: 'var(--t-acc)', fontWeight: 600, userSelect: 'none', flexShrink: 0 }}>→</span>
                         <div onClick={() => toggleSubtaskNext(current.id, sub.id)} style={{ cursor: 'pointer', fontSize: 15, color: sub.isNext ? 'var(--t-amber)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Next up">★</div>
                         <div onClick={() => deleteSubtask(current.id, sub.id)} style={{ cursor: 'pointer', fontSize: 14, color: 'var(--t-muted)', userSelect: 'none', flexShrink: 0 }} title="Remove">×</div>
                       </div>

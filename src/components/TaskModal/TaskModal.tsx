@@ -32,6 +32,8 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
   const updateItemCustomValue = useStore(s => s.updateItemCustomValue);
 
   const [newSubtask, setNewSubtask] = useState('');
+  const [editingSubId, setEditingSubId] = useState<string | null>(null);
+  const [editingSubTitle, setEditingSubTitle] = useState('');
   const [subId, setSubId] = useState<string | null>(null);
   const subIdRef = useRef<string | null>(null);
   subIdRef.current = subId; // keep ref in sync for popstate handler
@@ -57,9 +59,8 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
     function onKeyDown(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement).tagName;
       if (e.key === 'Escape') {
-        // If in subtask view, back out to task view first
-        if (subIdRef.current) { setSubId(null); return; }
-        onClose();
+        // Escape fully closes the modal (both task and subtask view in one press)
+        fullyClose();
         return;
       }
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -87,14 +88,19 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
   }, []);
 
   function openSubtask(id: string) {
-    // Push a new URL entry so browser back returns to task view
     const parts = window.location.hash.slice(1).split('/');
     const view = parts[0] || 'table';
     window.location.hash = `${view}/task/${taskId}/sub/${id}`;
   }
   function closeSubtask() {
-    // Browser back: pops the /sub/{id} entry, restoring #{view}/task/{taskId}
+    // Back-arrow in header: pops the /sub/{id} entry, restoring task view
     history.back();
+  }
+  // Full close: used by backdrop, × button, and Escape. Pops both entries
+  // (task + subtask) so we exit the modal entirely — not just the subtask view.
+  function fullyClose() {
+    const toPop = subIdRef.current ? 2 : 1;
+    history.go(-toPop);
   }
 
   if (!task) return null;
@@ -112,7 +118,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
     return (
       <div
         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
-        onClick={onClose}>
+        onClick={fullyClose}>
         <div
           style={{ width: 900, maxWidth: '96vw', maxHeight: '90vh', overflow: 'auto', background: 'var(--t-surf)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.28)', borderTop: '3px solid var(--t-acc)' }}
           onClick={e => e.stopPropagation()}>
@@ -133,7 +139,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
               </label>
               <div onClick={() => toggleSubtaskNext(taskId, sub.id)} title="Mark as next up"
                 style={{ cursor: 'pointer', fontSize: 18, color: sub.isNext ? 'var(--t-amber)' : 'var(--t-brd)', userSelect: 'none' }}>★</div>
-              <span onClick={onClose} style={{ cursor: 'pointer', fontSize: 20, color: 'var(--t-muted)', lineHeight: 1, padding: '2px 6px' }}>×</span>
+              <span onClick={fullyClose} style={{ cursor: 'pointer', fontSize: 20, color: 'var(--t-muted)', lineHeight: 1, padding: '2px 6px' }}>×</span>
             </div>
           </div>
           {/* Subtask body */}
@@ -172,7 +178,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
   return (
     <div
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
-      onClick={onClose}>
+      onClick={fullyClose}>
       <div
         style={{ width: 900, maxWidth: '96vw', maxHeight: '90vh', overflow: 'auto', background: 'var(--t-surf)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.28)', borderTop: '3px solid var(--t-acc)' }}
         onClick={e => e.stopPropagation()}>
@@ -195,7 +201,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
                     style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, padding: '4px 10px', borderRadius: 7, cursor: canNext ? 'pointer' : 'default', opacity: canNext ? 1 : 0.35 }}>→</button>
                 </>
               )}
-              <span onClick={onClose} style={{ cursor: 'pointer', fontSize: 20, color: 'var(--t-muted)', lineHeight: 1, padding: '2px 6px', marginLeft: 4 }}>×</span>
+              <span onClick={fullyClose} style={{ cursor: 'pointer', fontSize: 20, color: 'var(--t-muted)', lineHeight: 1, padding: '2px 6px', marginLeft: 4 }}>×</span>
             </div>
           </div>
           <textarea
@@ -240,14 +246,36 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
             <div>
               <div style={{ ...fl, marginBottom: 8 }}>Subtasks {task.subtasks.length > 0 && `(${task.subtasks.filter(s => s.done).length}/${task.subtasks.length})`}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {task.subtasks.map(s => (
-                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid var(--t-brd2)', borderRadius: 9, background: 'var(--t-surf2)' }}>
-                    <input type="checkbox" checked={s.done} onChange={() => toggleSubtaskDone(taskId, s.id)} style={{ width: 15, height: 15, cursor: 'pointer', flexShrink: 0 }} />
-                    <div onClick={() => openSubtask(s.id)} style={{ flex: 1, fontSize: 14, cursor: 'pointer', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{s.title}</div>
-                    <div onClick={() => toggleSubtaskNext(taskId, s.id)} style={{ cursor: 'pointer', fontSize: 15, color: s.isNext ? 'var(--t-amber)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Next up">★</div>
-                    <span onClick={() => deleteSubtask(taskId, s.id)} style={{ cursor: 'pointer', fontSize: 14, color: 'var(--t-muted)', flexShrink: 0 }}>×</span>
-                  </div>
-                ))}
+                {task.subtasks.map(s => {
+                  const isEditing = editingSubId === s.id;
+                  return (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid var(--t-brd2)', borderRadius: 9, background: 'var(--t-surf2)' }}>
+                      <input type="checkbox" checked={s.done} onChange={() => toggleSubtaskDone(taskId, s.id)} style={{ width: 15, height: 15, cursor: 'pointer', flexShrink: 0 }} />
+                      {isEditing ? (
+                        <input autoFocus value={editingSubTitle}
+                          onChange={e => setEditingSubTitle(e.target.value)}
+                          onBlur={() => {
+                            const t = editingSubTitle.trim();
+                            if (t && t !== s.title) updateSubtask(taskId, s.id, { title: t });
+                            setEditingSubId(null);
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') { e.currentTarget.blur(); }
+                            if (e.key === 'Escape') setEditingSubId(null);
+                          }}
+                          style={{ flex: 1, fontSize: 14, padding: '3px 6px', border: '1px solid var(--t-acc)', borderRadius: 4, background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
+                      ) : (
+                        <div onClick={() => { setEditingSubId(s.id); setEditingSubTitle(s.title); }}
+                          title="Click to rename"
+                          style={{ flex: 1, fontSize: 14, cursor: 'text', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{s.title}</div>
+                      )}
+                      <span onClick={() => openSubtask(s.id)} title="Open subtask details"
+                        style={{ cursor: 'pointer', fontSize: 15, color: 'var(--t-acc)', fontWeight: 600, userSelect: 'none', flexShrink: 0 }}>→</span>
+                      <div onClick={() => toggleSubtaskNext(taskId, s.id)} style={{ cursor: 'pointer', fontSize: 15, color: s.isNext ? 'var(--t-amber)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Next up">★</div>
+                      <span onClick={() => deleteSubtask(taskId, s.id)} style={{ cursor: 'pointer', fontSize: 14, color: 'var(--t-muted)', flexShrink: 0 }}>×</span>
+                    </div>
+                  );
+                })}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input value={newSubtask} onChange={e => setNewSubtask(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && newSubtask.trim()) { addSubtask(taskId, newSubtask.trim()); setNewSubtask(''); } }}
