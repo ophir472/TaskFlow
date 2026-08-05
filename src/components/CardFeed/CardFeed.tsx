@@ -76,8 +76,12 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     if (it.archived) return false;
     if (it.kind === 'task') {
       const t = it as Task;
+      // Include waiting tasks only if resumed (priorityBoost) OR marked forToday.
+      // Without the forToday override, held tasks marked as today would silently
+      // be excluded → the feed appears stuck on 1 card even though you marked
+      // several as today.
       return t.status !== 'done' && t.status !== 'archived' &&
-             (t.status !== 'waiting' || it.priorityBoost);
+             (t.status !== 'waiting' || it.priorityBoost || t.forToday);
     }
     return it.status === 'active';
   });
