@@ -128,6 +128,21 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     if (displayId && !items.find(it => it.id === displayId)) setDisplayId(null);
   }, [items.map(it => it.id).join(','), tagEditMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // When the queue changes (e.g., a task is marked forToday and scope narrows
+  // to today-only), snap to queue[0] if the current displayId is out of queue.
+  // Without this, marking new today tasks doesn't update the shown card —
+  // the user sees their old pinned card indefinitely.
+  // Skip the first render so URL-restored displayId (e.g. deep link to a
+  // specific task) isn't immediately overridden.
+  const queueSyncedOnce = useRef(false);
+  useEffect(() => {
+    if (!queueSyncedOnce.current) { queueSyncedOnce.current = true; return; }
+    if (tagEditMode) return;
+    if (!displayId) return;
+    if (queue.length === 0) return;
+    if (!queue.some(it => it.id === displayId)) setDisplayId(null);
+  }, [queue.map(it => it.id).join(','), tagEditMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Resize title textarea whenever the active card changes
   useEffect(() => { autoResizeTitle(); }, [current?.id, autoResizeTitle]);
 
