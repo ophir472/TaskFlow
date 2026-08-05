@@ -291,8 +291,10 @@ export function Settings() {
                           </div>
                           <div style={{ color: 'var(--t-muted)', fontSize: 12, marginTop: 3 }}>
                             {isCurrent
-                              ? (summary && summary.totalEvents > 0 ? formatSummary(summary) : 'Latest saved state')
-                              : (summary ? formatSummary(summary) : '…')}
+                              ? (summary && summary.dataEvents > 0 ? formatSummary(summary) : 'Latest saved state')
+                              : idx === snapshots.length - 1
+                                ? 'Initial snapshot'
+                                : (summary ? formatSummary(summary) : '…')}
                           </div>
                           <div style={{ color: 'var(--t-muted)', fontSize: 11, marginTop: 1, opacity: 0.7 }}>{(s.size / 1024).toFixed(1)} KB · {s.filename}</div>
                         </div>

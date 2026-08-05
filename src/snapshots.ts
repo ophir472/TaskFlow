@@ -137,12 +137,13 @@ export async function writeSnapshot(): Promise<boolean> {
   // but doesn't change actual data. Skip write if only UI state changed.
   if (stripped === lastSnapshotRaw) return false;
 
-  // Also skip if no user actions have been logged since the last snapshot.
+  // Also skip if no user-facing data changes have been logged since the last snapshot.
   // Prevents creating snapshots that would show "no changes" in the summary.
+  // Uses dataEvents (not totalEvents) so navigation/rehydrate noise doesn't count.
   const lastSnapshotTime = await getNewestSnapshotTime(handle);
   if (lastSnapshotTime !== null) {
     const summary = await summarizeRange(lastSnapshotTime, Date.now());
-    if (summary.totalEvents === 0) {
+    if (summary.dataEvents === 0) {
       lastSnapshotRaw = stripped; // record so we don't keep re-checking
       return false;
     }
@@ -552,7 +553,8 @@ export interface ChangeSummary {
   tagsToggled: number;
   customValueChanges: number;
   otherChanges: number;
-  totalEvents: number;
+  totalEvents: number;   // all events including noise (navigation, rehydrate)
+  dataEvents: number;    // only user-facing data changes; use this for skip logic
 }
 
 export function emptySummary(): ChangeSummary {
@@ -560,7 +562,7 @@ export function emptySummary(): ChangeSummary {
     itemsCreated: 0, itemsDeleted: 0, itemsArchived: 0, itemsUnarchived: 0,
     itemsUpdated: 0, itemsCompleted: 0, itemsHeld: 0,
     subtasksCreated: 0, subtasksDeleted: 0, subtasksUpdated: 0, subtasksToggled: 0,
-    tagsToggled: 0, customValueChanges: 0, otherChanges: 0, totalEvents: 0,
+    tagsToggled: 0, customValueChanges: 0, otherChanges: 0, totalEvents: 0, dataEvents: 0,
   };
 }
 
@@ -602,9 +604,18 @@ export async function summarizeRange(fromTime: number, toTime: number): Promise<
     'snapshot-dir:configured',
   ]);
 
+  // Events that represent actual user-facing data changes.
+  const DATA_EVENTS = new Set([
+    'item:create', 'item:delete', 'item:archive', 'item:unarchive', 'item:update',
+    'item:complete', 'item:hold',
+    'subtask:create', 'subtask:delete', 'subtask:update', 'subtask:toggle-done',
+    'tag:toggle', 'item:custom-value', 'reminder:reschedule', 'item:import',
+  ]);
+
   for (const e of logs) {
     if (e._time <= fromTime || e._time > toTime) continue;
     s.totalEvents++;
+    if (DATA_EVENTS.has(e.event)) s.dataEvents++;
     switch (e.event) {
       case 'item:create': s.itemsCreated++; break;
       case 'item:delete': s.itemsDeleted++; break;
@@ -620,7 +631,7 @@ export async function summarizeRange(fromTime: number, toTime: number): Promise<
       case 'tag:toggle': s.tagsToggled++; break;
       case 'item:custom-value': s.customValueChanges++; break;
       default:
-        if (!CATEGORIZED.has(e.event)) s.otherChanges++;
+        if (!CATEGORIZED.has(e.event)) { s.otherChanges++; s.dataEvents++; }
     }
   }
   return s;
