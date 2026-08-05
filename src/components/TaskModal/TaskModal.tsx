@@ -253,6 +253,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
                       <input type="checkbox" checked={s.done} onChange={() => toggleSubtaskDone(taskId, s.id)} style={{ width: 15, height: 15, cursor: 'pointer', flexShrink: 0 }} />
                       {isEditing ? (
                         <input autoFocus value={editingSubTitle}
+                          size={Math.max(editingSubTitle.length + 2, 8)}
                           onChange={e => setEditingSubTitle(e.target.value)}
                           onBlur={() => {
                             const t = editingSubTitle.trim();
@@ -263,14 +264,16 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
                             if (e.key === 'Enter') { e.currentTarget.blur(); }
                             if (e.key === 'Escape') setEditingSubId(null);
                           }}
-                          style={{ flex: 1, fontSize: 14, padding: '3px 6px', border: '1px solid var(--t-acc)', borderRadius: 4, background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
+                          style={{ fontSize: 14, padding: '3px 6px', border: '1px solid var(--t-acc)', borderRadius: 4, background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
                       ) : (
-                        <div onClick={() => { setEditingSubId(s.id); setEditingSubTitle(s.title); }}
+                        <span onClick={() => { setEditingSubId(s.id); setEditingSubTitle(s.title); }}
                           title="Click to rename"
-                          style={{ flex: 1, fontSize: 14, cursor: 'text', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{s.title}</div>
+                          style={{ fontSize: 14, cursor: 'text', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{s.title}</span>
                       )}
-                      <span onClick={() => openSubtask(s.id)} title="Open subtask details"
-                        style={{ cursor: 'pointer', fontSize: 15, color: 'var(--t-acc)', fontWeight: 600, userSelect: 'none', flexShrink: 0 }}>→</span>
+                      {/* Empty space fills the row and acts as click-to-open */}
+                      <div onClick={() => openSubtask(s.id)}
+                        title="Open subtask details"
+                        style={{ flex: 1, cursor: 'pointer', alignSelf: 'stretch' }} />
                       <div onClick={() => toggleSubtaskNext(taskId, s.id)} style={{ cursor: 'pointer', fontSize: 15, color: s.isNext ? 'var(--t-amber)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Next up">★</div>
                       <span onClick={() => deleteSubtask(taskId, s.id)} style={{ cursor: 'pointer', fontSize: 14, color: 'var(--t-muted)', flexShrink: 0 }}>×</span>
                     </div>

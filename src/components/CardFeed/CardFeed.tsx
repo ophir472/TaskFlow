@@ -574,6 +574,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                         <input type="checkbox" checked={sub.done} onChange={() => toggleSubtaskDone(current.id, sub.id)} onClick={e => e.stopPropagation()} style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }} />
                         {editingSubId === sub.id ? (
                           <input autoFocus value={editingSubTitle}
+                            size={Math.max(editingSubTitle.length + 2, 8)}
                             onChange={e => setEditingSubTitle(e.target.value)}
                             onBlur={() => {
                               const t = editingSubTitle.trim();
@@ -585,14 +586,16 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                               if (e.key === 'Escape') setEditingSubId(null);
                             }}
                             onClick={e => e.stopPropagation()}
-                            style={{ flex: 1, fontSize: 14, padding: '3px 6px', border: '1px solid var(--t-acc)', borderRadius: 4, background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
+                            style={{ fontSize: 14, padding: '3px 6px', border: '1px solid var(--t-acc)', borderRadius: 4, background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
                         ) : (
-                          <div onClick={() => { setEditingSubId(sub.id); setEditingSubTitle(sub.title); }}
+                          <span onClick={() => { setEditingSubId(sub.id); setEditingSubTitle(sub.title); }}
                             title="Click to rename"
-                            style={{ flex: 1, fontSize: 14, cursor: 'text', textDecoration: sub.done ? 'line-through' : 'none', color: sub.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{sub.title}</div>
+                            style={{ fontSize: 14, cursor: 'text', textDecoration: sub.done ? 'line-through' : 'none', color: sub.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{sub.title}</span>
                         )}
-                        <span onClick={() => setSubtaskPanel({ parentId: current.id, subId: sub.id })} title="Open subtask details"
-                          style={{ cursor: 'pointer', fontSize: 15, color: 'var(--t-acc)', fontWeight: 600, userSelect: 'none', flexShrink: 0 }}>→</span>
+                        {/* Empty space fills the row and acts as click-to-open */}
+                        <div onClick={() => setSubtaskPanel({ parentId: current.id, subId: sub.id })}
+                          title="Open subtask details"
+                          style={{ flex: 1, cursor: 'pointer', alignSelf: 'stretch' }} />
                         <div onClick={() => toggleSubtaskNext(current.id, sub.id)} style={{ cursor: 'pointer', fontSize: 15, color: sub.isNext ? 'var(--t-amber)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Next up">★</div>
                         <div onClick={() => deleteSubtask(current.id, sub.id)} style={{ cursor: 'pointer', fontSize: 14, color: 'var(--t-muted)', userSelect: 'none', flexShrink: 0 }} title="Remove">×</div>
                       </div>
