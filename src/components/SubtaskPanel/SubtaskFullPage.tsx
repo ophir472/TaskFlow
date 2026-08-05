@@ -37,7 +37,7 @@ export function SubtaskFullPage({ parentId, subId, onBack }: Props) {
   );
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--t-bg)', overflow: 'auto' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--t-bg)', overflowY: 'auto', overflowX: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 36px', borderBottom: '1px solid var(--t-brd)', background: 'var(--t-surf)', flexShrink: 0 }}>
         <button onClick={onBack} style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 13.5, fontWeight: 600, padding: '8px 14px', borderRadius: 8, cursor: 'pointer' }}>
           ← Back

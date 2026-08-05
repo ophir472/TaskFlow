@@ -85,7 +85,7 @@ export function ThemePicker({ onBack }: Props) {
   const setTheme = useStore(s => s.setTheme);
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--t-bg)', overflow: 'auto' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--t-bg)', overflowY: 'auto', overflowX: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 14,

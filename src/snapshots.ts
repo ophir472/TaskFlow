@@ -580,13 +580,22 @@ export interface ChangeDetail {
 // Settings uses this to auto-refresh the version history list.
 type SnapshotListener = () => void;
 const snapshotListeners = new Set<SnapshotListener>();
+let lastSnapshotWriteAt = 0;
+const RECENT_WRITE_WINDOW_MS = 3000;
 
 export function subscribeSnapshots(fn: SnapshotListener): () => void {
   snapshotListeners.add(fn);
+  // If a write happened just before this listener subscribed (common race:
+  // navigating to Settings triggers a snapshot write that may complete before
+  // Settings' useEffect runs and subscribes), fire the callback now.
+  if (Date.now() - lastSnapshotWriteAt < RECENT_WRITE_WINDOW_MS) {
+    setTimeout(() => { try { fn(); } catch { /* ignore */ } }, 0);
+  }
   return () => { snapshotListeners.delete(fn); };
 }
 
 function notifySnapshotWritten(): void {
+  lastSnapshotWriteAt = Date.now();
   snapshotListeners.forEach(fn => { try { fn(); } catch { /* ignore */ } });
 }
 

@@ -303,7 +303,7 @@ export function Archive() {
 
   return (
     <>
-    <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflow: 'auto' }}>
+    <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', overflowX: 'hidden' }}>
       {archived.length === 0 ? (
         <div style={{ paddingTop: 60, textAlign: 'center', color: 'var(--t-muted)', fontSize: 15 }}>No archived items yet.</div>
       ) : (

@@ -13,7 +13,7 @@ import { Settings } from './components/Settings/Settings';
 import { CreateModal } from './components/CreateModal/CreateModal';
 import { Toast } from './components/Toast/Toast';
 import { restoreFromData, pickAndRegisterRestoreFile } from './backup';
-import { writeSnapshot, writeLiveFile, log, logDebug, getDebugMode, getTabId, listSnapshots, readSnapshot, getSnapshotDir, subscribePermission, requestDirPermission, runIntegrityCheck, isPreviewMode, summarizeRange, formatSummary } from './snapshots';
+import { writeSnapshot, writeLiveFile, log, logDebug, getDebugMode, getTabId, listSnapshots, readSnapshot, getSnapshotDir, subscribePermission, requestDirPermission, runIntegrityCheck, isPreviewMode, summarizeRange, formatSummary, formatDetailed } from './snapshots';
 import type { IntegrityResult, ChangeSummary } from './snapshots';
 import { Confetti } from './components/Confetti';
 
@@ -307,13 +307,22 @@ export default function App() {
     <div style={{ display: 'flex', width: '100%', minHeight: '100vh', background: 'var(--t-bg)', flexDirection: 'column' }}>
       {/* Preview mode banner (blue, always at top when in preview) */}
       {inPreview && previewInfo && (
-        <div style={{ padding: '10px 20px', background: '#4b7bec', color: 'white', fontSize: 14, display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid rgba(0,0,0,0.15)', zIndex: 100, flexWrap: 'wrap' }}>
-          <span style={{ fontWeight: 600 }}>👁 Preview mode</span>
-          <span>·  Snapshot from {new Date(previewInfo.savedAt).toLocaleString()}</span>
-          {previewSummary && (
-            <span style={{ opacity: 0.9, fontSize: 13 }}>·  Changes since previous snapshot: <b>{formatSummary(previewSummary)}</b></span>
+        <div style={{ padding: '10px 20px', background: '#4b7bec', color: 'white', fontSize: 14, borderBottom: '1px solid rgba(0,0,0,0.15)', zIndex: 100 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 600 }}>👁 Preview mode</span>
+            <span>·  Snapshot from {new Date(previewInfo.savedAt).toLocaleString()}</span>
+            {previewSummary && previewSummary.dataEvents > 0 && (
+              <span style={{ opacity: 0.9, fontSize: 13 }}>·  <b>{formatSummary(previewSummary)}</b></span>
+            )}
+            <span style={{ marginLeft: 'auto', opacity: 0.8, fontSize: 12 }}>Read-only. Close this tab to exit.</span>
+          </div>
+          {previewSummary && previewSummary.details.length > 0 && (
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.95, lineHeight: 1.5 }}>
+              {formatDetailed(previewSummary).map((line, i) => (
+                <div key={i} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {line}</div>
+              ))}
+            </div>
           )}
-          <span style={{ marginLeft: 'auto', opacity: 0.8, fontSize: 12 }}>Read-only. Close this tab to exit.</span>
         </div>
       )}
       {/* Persistent alert banners */}
