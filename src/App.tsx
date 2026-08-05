@@ -42,6 +42,10 @@ export default function App() {
   const restoreFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // Never show the restore prompt in preview mode — a preview tab starts
+    // with the snapshot's data, and clicking Restore would try to write to
+    // real localStorage from a preview tab.
+    if (isPreviewMode()) return;
     // Only trigger when the store is genuinely empty on first load
     const initialEmpty = items.length === 0;
     if (!initialEmpty) return;

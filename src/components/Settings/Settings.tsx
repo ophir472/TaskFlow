@@ -107,10 +107,14 @@ export function Settings() {
   }
 
   function handlePreview(entry: SnapshotEntry) {
-    // Open in a new tab with the preview URL. sessionStorage in that tab
-    // will be seeded with the snapshot data by main.tsx.
+    // Open as a popup window (specifying width/height forces popup mode).
+    // sessionStorage in that window will be seeded with the snapshot data by main.tsx.
     const url = window.location.origin + window.location.pathname + '#preview/' + encodeURIComponent(entry.filename);
-    window.open(url, '_blank', 'noopener');
+    const w = Math.min(1400, Math.floor(window.screen.availWidth * 0.9));
+    const h = Math.min(900, Math.floor(window.screen.availHeight * 0.9));
+    const left = Math.floor((window.screen.availWidth - w) / 2);
+    const top = Math.floor((window.screen.availHeight - h) / 2);
+    window.open(url, '_blank', `popup=yes,width=${w},height=${h},left=${left},top=${top}`);
   }
 
   async function handlePickSnapDir() {
@@ -267,15 +271,25 @@ export function Settings() {
                 <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>No snapshots yet. Navigate between views to create some.</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 420, overflowY: 'auto', border: '1px solid var(--t-brd2)', borderRadius: 8 }}>
-                  {snapshots.map(s => {
+                  {snapshots.map((s, idx) => {
                     const summary = summaries[s.filename];
+                    const isCurrent = idx === 0;
                     return (
                       <div key={s.filename}
                         style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderBottom: '1px solid var(--t-brd2)', fontSize: 13 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: 'var(--t-txt)', fontWeight: 500 }}>{new Date(s.time).toLocaleString()}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ color: 'var(--t-txt)', fontWeight: 500 }}>{new Date(s.time).toLocaleString()}</span>
+                            {isCurrent && (
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Current
+                              </span>
+                            )}
+                          </div>
                           <div style={{ color: 'var(--t-muted)', fontSize: 12, marginTop: 3 }}>
-                            {summary ? formatSummary(summary) : '…'}
+                            {isCurrent
+                              ? (summary && summary.totalEvents > 0 ? formatSummary(summary) : 'Latest saved state')
+                              : (summary ? formatSummary(summary) : '…')}
                           </div>
                           <div style={{ color: 'var(--t-muted)', fontSize: 11, marginTop: 1, opacity: 0.7 }}>{(s.size / 1024).toFixed(1)} KB · {s.filename}</div>
                         </div>

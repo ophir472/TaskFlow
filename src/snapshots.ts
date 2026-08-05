@@ -4,8 +4,13 @@
 // RETENTION_DAYS are pruned. A per-day JSONL log file records every mutation
 // for forensic debugging.
 
+// Cached at module init — a tab is either preview or real for its entire lifetime.
+// Do NOT re-check window.location.hash: browsing inside the preview updates the
+// URL (to #feed/taskId etc.), which would flip this flag and cause disastrous
+// writes to real localStorage from the preview tab.
+const IS_PREVIEW_MODE = typeof window !== 'undefined' && window.location.hash.startsWith('#preview/');
 export function isPreviewMode(): boolean {
-  return typeof window !== 'undefined' && window.location.hash.startsWith('#preview/');
+  return IS_PREVIEW_MODE;
 }
 
 const IDB_NAME = 'taskflow-meta';
@@ -132,6 +137,23 @@ export async function writeSnapshot(): Promise<boolean> {
   // but doesn't change actual data. Skip write if only UI state changed.
   if (stripped === lastSnapshotRaw) return false;
 
+  // Also skip if no user actions have been logged since the last snapshot.
+  // Prevents creating snapshots that would show "no changes" in the summary.
+  const lastSnapshotTime = await getNewestSnapshotTime(handle);
+  if (lastSnapshotTime !== null) {
+    const summary = await summarizeRange(lastSnapshotTime, Date.now());
+    if (summary.totalEvents === 0) {
+      lastSnapshotRaw = stripped; // record so we don't keep re-checking
+      return false;
+    }
+  }
+
+  // CLAIM the marker synchronously BEFORE any async work. Prevents duplicate
+  // writes when writeSnapshot is called twice in quick succession (e.g. React
+  // StrictMode double-mount, or two hashchange listeners racing). The second
+  // call sees the same stripped value and skips.
+  lastSnapshotRaw = stripped;
+
   const content = JSON.stringify({
     savedAt: new Date().toISOString(),
     ...JSON.parse(raw),
@@ -142,7 +164,6 @@ export async function writeSnapshot(): Promise<boolean> {
     const writable = await fileHandle.createWritable();
     await writable.write(content);
     await writable.close();
-    lastSnapshotRaw = stripped;
     // Fire-and-forget prune
     pruneOldSnapshots(handle).catch(() => { /* ignore */ });
     return true;
@@ -171,6 +192,9 @@ export async function writeLiveFile(): Promise<boolean> {
   // Compare with UI-only fields stripped so navigation doesn't rewrite the file
   if (stripped === lastLiveRaw) return false;
 
+  // CLAIM synchronously to prevent duplicate concurrent writes (see writeSnapshot)
+  lastLiveRaw = stripped;
+
   const content = JSON.stringify({
     savedAt: new Date().toISOString(),
     ...JSON.parse(raw),
@@ -181,7 +205,6 @@ export async function writeLiveFile(): Promise<boolean> {
     const writable = await fh.createWritable();
     await writable.write(content);
     await writable.close();
-    lastLiveRaw = stripped;
     return true;
   } catch (e) {
     logError('writeLiveFile failed', e);
@@ -289,6 +312,20 @@ async function pruneOldSnapshots(handle: Handle): Promise<void> {
       try { await handle.removeEntry(name); } catch { /* ignore */ }
     }
   }
+}
+
+// Returns the epoch-ms time of the newest snapshot in the dir, or null if none exist.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getNewestSnapshotTime(handle: any): Promise<number | null> {
+  let newest: number | null = null;
+  try {
+    for await (const [name, entry] of handle.entries()) {
+      if (entry.kind !== 'file') continue;
+      const t = parseSnapshotTime(name);
+      if (t !== null && (newest === null || t > newest)) newest = t;
+    }
+  } catch { /* ignore */ }
+  return newest;
 }
 
 /**

@@ -11,6 +11,11 @@ function slog(event: string, data?: any): void {
 
 const PROMOTION_GOAL = 3;
 
+// Cached at module init. A tab is either preview or real for its entire lifetime.
+// See snapshots.ts IS_PREVIEW_MODE for why we cache (browsing inside the preview
+// changes the URL, which would flip this flag mid-session).
+const IS_PREVIEW_MODE = typeof window !== 'undefined' && window.location.hash.startsWith('#preview/');
+
 export type View = 'feed' | 'kanban' | 'table' | 'archive' | 'settings';
 
 interface AppState {
@@ -359,11 +364,12 @@ export const useStore = create<AppState>()(
       version: 2,
       // In preview mode: persist to sessionStorage (per-tab, discarded on close)
       // so the preview can't affect the real localStorage or other tabs.
-      storage: createJSONStorage(() =>
-        (typeof window !== 'undefined' && window.location.hash.startsWith('#preview/'))
-          ? sessionStorage
-          : localStorage
-      ),
+      // Use the CACHED preview flag — never re-check URL, because browsing
+      // inside the preview changes the URL and would flip storage to localStorage.
+      storage: createJSONStorage(() => IS_PREVIEW_MODE ? sessionStorage : localStorage),
+      // In preview mode, skip auto-hydration. main.tsx seeds sessionStorage
+      // asynchronously (needs to read from disk), then manually rehydrates.
+      skipHydration: IS_PREVIEW_MODE,
     }
   )
 );
@@ -375,7 +381,7 @@ export const useStore = create<AppState>()(
 // any other tab writes, keeping all tabs in sync.
 // Disabled in preview mode: preview tabs are read-only and shouldn't react to
 // changes made by the main tab.
-if (typeof window !== 'undefined' && !window.location.hash.startsWith('#preview/')) {
+if (typeof window !== 'undefined' && !IS_PREVIEW_MODE) {
   window.addEventListener('storage', (e) => {
     if (e.key === 'taskflow-store') {
       import('./snapshots').then(m => m.log('store:rehydrate-from-other-tab'));

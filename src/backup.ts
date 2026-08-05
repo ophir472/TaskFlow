@@ -141,6 +141,16 @@ function normalizeItem(item: any): any {
 }
 
 export function restoreFromData(data: Record<string, unknown>): void {
+  // Hard safety: refuse to touch localStorage from a preview tab.
+  // Uses cached IS_PREVIEW flag via a runtime check on module-load-time value.
+  const isPreview = typeof window !== 'undefined' &&
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((window as any).__previewMode === true || window.location.hash.startsWith('#preview/'));
+  if (isPreview) {
+    alert('Restore is disabled in preview mode. Close this popup and use Restore from the main app.');
+    return;
+  }
+
   // Defensive: log intent BEFORE any destructive action so we have a trail if things fail.
   import('./snapshots').then(m => m.log('restore:start', { hasState: !!data.state, exportedAt: data.exportedAt }));
 
