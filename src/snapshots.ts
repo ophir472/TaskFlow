@@ -82,6 +82,24 @@ export async function pickSnapshotDir(): Promise<Handle | null> {
 
 let lastSnapshotRaw: string | null = null;
 
+// UI-only fields that change during normal navigation but don't represent
+// user data. Excluded from the change-detection comparison so navigating
+// between views doesn't create redundant snapshots.
+const UI_ONLY_FIELDS = ['view', 'sidebarCollapsed', 'displayId', 'triggerTagForId'];
+
+function stripUiFields(rawJson: string): string {
+  try {
+    const parsed = JSON.parse(rawJson);
+    if (parsed && typeof parsed === 'object' && parsed.state && typeof parsed.state === 'object') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleaned: any = { ...parsed.state };
+      UI_ONLY_FIELDS.forEach(k => delete cleaned[k]);
+      return JSON.stringify({ ...parsed, state: cleaned });
+    }
+    return rawJson;
+  } catch { return rawJson; }
+}
+
 function snapshotFilename(ts: number = Date.now()): string {
   // ISO timestamp with dashes-only so it's safe on all filesystems
   const iso = new Date(ts).toISOString().replace(/[:.]/g, '-');
@@ -108,9 +126,11 @@ export async function writeSnapshot(): Promise<boolean> {
   if (!(await ensureDirPermissionTracked(handle))) return false;
 
   const raw = localStorage.getItem('taskflow-store') ?? '{}';
+  const stripped = stripUiFields(raw);
 
-  // Compare raw state (excludes timestamp) so unchanged data doesn't produce a new file
-  if (raw === lastSnapshotRaw) return false;
+  // Compare with UI-only fields stripped — navigation changes view/sidebar/displayId
+  // but doesn't change actual data. Skip write if only UI state changed.
+  if (stripped === lastSnapshotRaw) return false;
 
   const content = JSON.stringify({
     savedAt: new Date().toISOString(),
@@ -122,7 +142,7 @@ export async function writeSnapshot(): Promise<boolean> {
     const writable = await fileHandle.createWritable();
     await writable.write(content);
     await writable.close();
-    lastSnapshotRaw = raw;
+    lastSnapshotRaw = stripped;
     // Fire-and-forget prune
     pruneOldSnapshots(handle).catch(() => { /* ignore */ });
     return true;
@@ -146,9 +166,10 @@ export async function writeLiveFile(): Promise<boolean> {
   if (!(await ensureDirPermissionTracked(handle))) return false;
 
   const raw = localStorage.getItem('taskflow-store') ?? '{}';
+  const stripped = stripUiFields(raw);
 
-  // Compare raw state (excludes timestamp) so unchanged data doesn't rewrite the file
-  if (raw === lastLiveRaw) return false;
+  // Compare with UI-only fields stripped so navigation doesn't rewrite the file
+  if (stripped === lastLiveRaw) return false;
 
   const content = JSON.stringify({
     savedAt: new Date().toISOString(),
@@ -160,7 +181,7 @@ export async function writeLiveFile(): Promise<boolean> {
     const writable = await fh.createWritable();
     await writable.write(content);
     await writable.close();
-    lastLiveRaw = raw;
+    lastLiveRaw = stripped;
     return true;
   } catch (e) {
     logError('writeLiveFile failed', e);
