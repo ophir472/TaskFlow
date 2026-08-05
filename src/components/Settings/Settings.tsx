@@ -1,9 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import { nextId } from '../../engine';
 import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
 import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload, pickAndRegisterRestoreFile } from '../../backup';
+import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log } from '../../snapshots';
+import type { SnapshotEntry } from '../../snapshots';
 import type { JiraConfig, ItsmConfig } from '../../types';
 
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
@@ -35,14 +37,7 @@ function ManagedList({ title, items, onAdd, onRemove }: { title: string; items: 
   );
 }
 
-interface BackupProps {
-  backupFileName: string | null;
-  lastBackedUp: number | null;
-  onSetBackupFile: () => void;
-  onClearBackupFile: () => void;
-}
-
-export function Settings({ backupFileName, lastBackedUp, onSetBackupFile, onClearBackupFile }: BackupProps) {
+export function Settings() {
   const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);
   const customFields = useStore(s => s.customFields);
@@ -73,6 +68,50 @@ export function Settings({ backupFileName, lastBackedUp, onSetBackupFile, onClea
     setItsmConfig(itsm.host ? itsm : null);
   }
   const importRef = useRef<HTMLInputElement>(null);
+
+  // Snapshot directory state
+  const [snapDirName, setSnapDirName] = useState<string | null>(null);
+  const [snapshots, setSnapshots] = useState<SnapshotEntry[]>([]);
+  const [loadingSnaps, setLoadingSnaps] = useState(false);
+
+  useEffect(() => {
+    getSnapshotDir().then(h => { if (h) setSnapDirName(h.name); });
+    refreshSnapshots();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function refreshSnapshots() {
+    setLoadingSnaps(true);
+    try { setSnapshots(await listSnapshots()); } catch { /* ignore */ }
+    setLoadingSnaps(false);
+  }
+
+  async function handlePickSnapDir() {
+    const h = await pickSnapshotDir();
+    if (h) {
+      setSnapDirName(h.name);
+      log('snapshot-dir:configured', { name: h.name });
+      // Write an initial snapshot right away
+      await writeSnapshot();
+      await refreshSnapshots();
+    }
+  }
+
+  async function handleClearSnapDir() {
+    if (!confirm('Stop writing snapshots to this folder? Existing files on disk are not deleted.')) return;
+    await clearSnapshotDir();
+    setSnapDirName(null);
+    setSnapshots([]);
+  }
+
+  async function handleRestoreSnapshot(entry: SnapshotEntry) {
+    if (!confirm(`Restore snapshot from ${new Date(entry.time).toLocaleString()}?\nAll current data will be overwritten. A new snapshot of your current state will be written first.`)) return;
+    // Write a "pre-restore" snapshot as a safety net
+    await writeSnapshot();
+    log('snapshot:restore-requested', { filename: entry.filename, time: entry.time });
+    const data = await readSnapshot(entry.filename);
+    if (!data) { alert('Failed to read snapshot file.'); return; }
+    restoreFromData(data);
+  }
 
   function handleExport() {
     const date = new Date().toISOString().slice(0, 10);
@@ -151,11 +190,16 @@ export function Settings({ backupFileName, lastBackedUp, onSetBackupFile, onClea
         </div>
       </div>
 
-      {/* Backup & Restore */}
+      {/* Backup & Version History */}
       <div style={card}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 14 }}>Backup & Restore</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 6 }}>Backup & Version History</div>
+        <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: 14 }}>
+          Pick a folder on your computer. On every navigation a full snapshot is written to that folder as a JSON file.
+          Snapshots older than 7 days are pruned automatically. Debug logs also go here.
+        </div>
 
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: supportsAutoBackup() ? 20 : 0 }}>
+        {/* Manual export / import */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
           <button onClick={handleExport} style={addBtn}>↓ Export JSON</button>
           <button onClick={handleImportClick}
             style={{ ...addBtn, background: 'var(--t-surf2)', color: 'var(--t-txt2)', border: '1px solid var(--t-brd)' }}>
@@ -167,28 +211,55 @@ export function Settings({ backupFileName, lastBackedUp, onSetBackupFile, onClea
           <input ref={importRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleImport} />
         </div>
 
-        {supportsAutoBackup() && (
-          <>
-            <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: 12 }}>
-              Auto-backup writes to a file on your computer every time data changes.
-            </div>
-            {backupFileName ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 9 }}>
+        {/* Snapshot folder */}
+        {supportsAutoBackup() ? (
+          snapDirName ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 9, marginBottom: 14 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--t-txt)' }}>{backupFileName}</div>
-                  {lastBackedUp
-                    ? <div style={{ fontSize: 12, color: 'var(--t-muted)', marginTop: 2 }}>Last saved {new Date(lastBackedUp).toLocaleString()}</div>
-                    : <div style={{ fontSize: 12, color: 'var(--t-muted)', marginTop: 2 }}>Waiting for next change…</div>
-                  }
+                  <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--t-txt)' }}>📁 {snapDirName}</div>
+                  <div style={{ fontSize: 12, color: 'var(--t-muted)', marginTop: 2 }}>{snapshots.length} snapshot{snapshots.length !== 1 ? 's' : ''} · 7 day retention</div>
                 </div>
-                <span onClick={onClearBackupFile}
+                <button onClick={refreshSnapshots}
+                  style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', cursor: 'pointer' }}>
+                  ↻ Refresh
+                </button>
+                <span onClick={handleClearSnapDir}
                   style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 16, lineHeight: 1 }}
-                  title="Remove auto-backup">×</span>
+                  title="Stop using this folder">×</span>
               </div>
-            ) : (
-              <button onClick={onSetBackupFile} style={addBtn}>Choose backup file…</button>
-            )}
-          </>
+
+              {/* Version history list */}
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>
+                Version history
+              </div>
+              {loadingSnaps ? (
+                <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>Loading…</div>
+              ) : snapshots.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>No snapshots yet. Navigate between views to create some.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 320, overflowY: 'auto', border: '1px solid var(--t-brd2)', borderRadius: 8 }}>
+                  {snapshots.map(s => (
+                    <div key={s.filename}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', borderBottom: '1px solid var(--t-brd2)', fontSize: 13 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ color: 'var(--t-txt)', fontWeight: 500 }}>{new Date(s.time).toLocaleString()}</div>
+                        <div style={{ color: 'var(--t-muted)', fontSize: 11, marginTop: 1 }}>{(s.size / 1024).toFixed(1)} KB · {s.filename}</div>
+                      </div>
+                      <button onClick={() => handleRestoreSnapshot(s)}
+                        style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', cursor: 'pointer', fontWeight: 500 }}>
+                        Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <button onClick={handlePickSnapDir} style={addBtn}>Choose snapshot folder…</button>
+          )
+        ) : (
+          <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>Auto-backup requires Chrome or Edge.</div>
         )}
       </div>
 

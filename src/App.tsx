@@ -12,7 +12,8 @@ import { Archive } from './components/Archive/Archive';
 import { Settings } from './components/Settings/Settings';
 import { CreateModal } from './components/CreateModal/CreateModal';
 import { Toast } from './components/Toast/Toast';
-import { getStoredHandle, storeHandle, clearStoredHandle, ensureWritePermission, writeBackup, getExportData, supportsAutoBackup, readBackupFile, restoreFromData, pickAndRegisterRestoreFile } from './backup';
+import { restoreFromData, pickAndRegisterRestoreFile } from './backup';
+import { writeSnapshot, log, getTabId, listSnapshots, readSnapshot, getSnapshotDir } from './snapshots';
 import { Confetti } from './components/Confetti';
 
 export type SyncState = 'idle' | 'syncing' | 'saved';
@@ -44,19 +45,24 @@ export default function App() {
     const initialEmpty = items.length === 0;
     if (!initialEmpty) return;
     setRestoreState('checking');
-    getStoredHandle().then(async handle => {
-      if (!handle) { setRestoreState('manual'); return; }
+    (async () => {
+      // Look for the newest snapshot in the configured snapshot directory
+      const dir = await getSnapshotDir();
+      if (!dir) { setRestoreState('manual'); return; }
       try {
-        const data = await readBackupFile(handle);
-        const count = (data?.state as any)?.items?.length ?? 0;
-        if (count === 0) { setRestoreState('manual'); return; }
-        setFoundBackupHandle(handle);
+        const list = await listSnapshots();
+        if (list.length === 0) { setRestoreState('manual'); return; }
+        const data = await readSnapshot(list[0].filename);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const count = (data as any)?.state?.items?.length ?? 0;
+        if (!data || count === 0) { setRestoreState('manual'); return; }
+        setFoundBackupHandle({ name: list[0].filename } as FileSystemFileHandle);
         setFoundBackupData(data);
         setRestoreState('found');
       } catch {
         setRestoreState('manual');
       }
-    });
+    })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleAutoRestore() {
@@ -96,56 +102,12 @@ export default function App() {
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const backupHandleRef = useRef<FileSystemFileHandle | null>(null);
-  const backupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [backupFileName, setBackupFileName] = useState<string | null>(null);
-  const [lastBackedUp, setLastBackedUp] = useState<number | null>(() => {
-    const v = localStorage.getItem('taskflow-last-backup');
-    return v ? parseInt(v) : null;
-  });
-
-  function applyHandle(handle: FileSystemFileHandle | null) {
-    backupHandleRef.current = handle;
-    setBackupFileName(handle?.name ?? null);
-  }
-
-  async function handleSetBackupFile() {
-    if (!supportsAutoBackup()) return;
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const handle: FileSystemFileHandle = await (window as any).showSaveFilePicker({
-        suggestedName: 'taskflow-backup.json',
-        types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
-      });
-      await storeHandle(handle);
-      applyHandle(handle);
-      await writeBackup(handle, getExportData());
-      const now = Date.now();
-      localStorage.setItem('taskflow-last-backup', String(now));
-      setLastBackedUp(now);
-    } catch {
-      // user cancelled or permission denied
-    }
-  }
-
-  async function handleClearBackupFile() {
-    await clearStoredHandle();
-    applyHandle(null);
-  }
-
   const toastTimer = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(t => (t === msg ? null : t)), 2500);
   }, []);
 
-  // Load stored backup handle on mount
-  useEffect(() => {
-    getStoredHandle().then(handle => {
-      if (handle) applyHandle(handle);
-    });
-  }, []);
-
-  // Sync indicator + auto-backup
+  // Sync indicator (visual feedback only; actual persistence is via Zustand + snapshots)
   useEffect(() => {
     const unsub = useStore.subscribe(() => {
       setSyncState('syncing');
@@ -153,24 +115,6 @@ export default function App() {
       if (idleTimer.current) clearTimeout(idleTimer.current);
       syncTimer.current = setTimeout(() => setSyncState('saved'), 500);
       idleTimer.current = setTimeout(() => setSyncState('idle'), 2000);
-
-      if (backupHandleRef.current) {
-        if (backupDebounceRef.current) clearTimeout(backupDebounceRef.current);
-        backupDebounceRef.current = setTimeout(async () => {
-          const handle = backupHandleRef.current;
-          if (!handle) return;
-          try {
-            const ok = await ensureWritePermission(handle);
-            if (!ok) return;
-            await writeBackup(handle, getExportData());
-            const now = Date.now();
-            localStorage.setItem('taskflow-last-backup', String(now));
-            setLastBackedUp(now);
-          } catch {
-            // silently skip — file may have been moved/deleted
-          }
-        }, 2000);
-      }
     });
     return unsub;
   }, []);
@@ -185,15 +129,20 @@ export default function App() {
   }, [promotionsToday]);
 
   // Hash-based routing: URL → view on load and on back/forward
-  // Only the first segment matters for view (e.g. "feed/taskId/sub/subId" → view="feed")
+  // Also: every URL change triggers a snapshot write (fire-and-forget).
   useEffect(() => {
     function syncFromHash() {
       const seg = window.location.hash.slice(1).split('/')[0] as View;
       if (VALID_VIEWS.includes(seg)) setView(seg);
       else if (!window.location.hash) setView('feed');
+      // Snapshot on every navigation. Async, non-blocking.
+      writeSnapshot().then(written => {
+        if (written) log('snapshot:navigate', { hash: window.location.hash });
+      }).catch(() => { /* ignore */ });
     }
     syncFromHash();
     window.addEventListener('hashchange', syncFromHash);
+    log('app:mount', { tab: getTabId() });
     return () => window.removeEventListener('hashchange', syncFromHash);
   }, [setView]);
 
@@ -249,14 +198,7 @@ export default function App() {
         {view === 'kanban' && <Kanban />}
         {view === 'table' && <Table />}
         {view === 'archive' && <Archive />}
-        {view === 'settings' && (
-          <Settings
-            backupFileName={backupFileName}
-            lastBackedUp={lastBackedUp}
-            onSetBackupFile={handleSetBackupFile}
-            onClearBackupFile={handleClearBackupFile}
-          />
-        )}
+        {view === 'settings' && <Settings />}
       </div>
 
       {createOpen && (

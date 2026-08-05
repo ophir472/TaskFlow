@@ -226,23 +226,34 @@ export const useStore = create<AppState>()(
         history: pushHistory(s.history, { ts: Date.now(), type: 'create', id: item.id })
       })),
 
-      archiveItem: (id) => set(s => ({
-        items: s.items.map(it => it.id === id ? { ...it, archived: true, updatedAt: Date.now() } as Item : it),
-        history: pushHistory(s.history, { ts: Date.now(), type: 'archive', id })
-      })),
+      archiveItem: (id) => {
+        const item = get().items.find(it => it.id === id);
+        import('./snapshots').then(m => m.log('item:archive', { id, title: item?.title }));
+        set(s => ({
+          items: s.items.map(it => it.id === id ? { ...it, archived: true, updatedAt: Date.now() } as Item : it),
+          history: pushHistory(s.history, { ts: Date.now(), type: 'archive', id })
+        }));
+      },
 
-      deleteItem: (id) => set(s => ({
-        items: s.items.filter(it => it.id !== id),
-        history: pushHistory(s.history, { ts: Date.now(), type: 'delete', id })
-      })),
+      deleteItem: (id) => {
+        const item = get().items.find(it => it.id === id);
+        import('./snapshots').then(m => m.log('item:delete', { id, title: item?.title, snapshot: item }));
+        set(s => ({
+          items: s.items.filter(it => it.id !== id),
+          history: pushHistory(s.history, { ts: Date.now(), type: 'delete', id })
+        }));
+      },
 
-      unarchiveItem: (id) => set(s => ({
-        items: s.items.map(it => it.id === id
-          ? { ...it, archived: false, status: it.kind === 'task' ? 'backlog' : 'active', updatedAt: Date.now() } as Item
-          : it
-        ),
-        history: pushHistory(s.history, { ts: Date.now(), type: 'unarchive', id })
-      })),
+      unarchiveItem: (id) => {
+        import('./snapshots').then(m => m.log('item:unarchive', { id }));
+        set(s => ({
+          items: s.items.map(it => it.id === id
+            ? { ...it, archived: false, status: it.kind === 'task' ? 'backlog' : 'active', updatedAt: Date.now() } as Item
+            : it
+          ),
+          history: pushHistory(s.history, { ts: Date.now(), type: 'unarchive', id })
+        }));
+      },
 
       addRequester: (name) => set(s => ({ requesters: [...s.requesters, name] })),
       removeRequester: (name) => set(s => ({ requesters: s.requesters.filter(r => r !== name) })),
@@ -299,6 +310,8 @@ export const useStore = create<AppState>()(
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
     if (e.key === 'taskflow-store') {
+      // Lazy import to avoid circular dep at module init
+      import('./snapshots').then(m => m.log('store:rehydrate-from-other-tab'));
       useStore.persist.rehydrate();
     }
   });
