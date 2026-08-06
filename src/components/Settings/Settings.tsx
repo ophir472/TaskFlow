@@ -78,6 +78,7 @@ export function Settings() {
   const [loadingSnaps, setLoadingSnaps] = useState(false);
   const [summaries, setSummaries] = useState<Record<string, ChangeSummary>>({});
   const [debugEnabled, setDebugEnabled] = useState(getDebugMode());
+  const [historyCollapsed, setHistoryCollapsed] = useState(true);
 
   useEffect(() => {
     getSnapshotDir().then(h => { if (h) setSnapDirName(h.name); });
@@ -269,11 +270,53 @@ export function Settings() {
                   title="Stop using this folder">×</span>
               </div>
 
-              {/* Version history list */}
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>
-                Version history
-              </div>
-              {loadingSnaps ? (
+              {/* Version history list — collapsible. When collapsed, show
+                  latest snapshot summary + total backup folder size. */}
+              {(() => {
+                const latest = snapshots[0];
+                const latestSummary = latest ? summaries[latest.filename] : undefined;
+                const totalBytes = snapshots.reduce((n, s) => n + s.size, 0);
+                const formatBytes = (b: number) => b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(1)} KB` : `${(b / (1024 * 1024)).toFixed(2)} MB`;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setHistoryCollapsed(c => !c)}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '10px 12px', marginBottom: historyCollapsed ? 0 : 8,
+                      border: '1px solid var(--t-brd2)', borderRadius: 8,
+                      background: 'var(--t-surf2)', cursor: 'pointer', textAlign: 'left',
+                    }}>
+                    <span style={{ fontSize: 11, color: 'var(--t-muted)', transform: historyCollapsed ? 'none' : 'rotate(90deg)', transition: 'transform 0.15s' }}>▸</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Version history
+                      </div>
+                      {latest ? (
+                        <div style={{ fontSize: 12, color: 'var(--t-txt2)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ color: 'var(--t-txt)', fontWeight: 500 }}>Last saved: {new Date(latest.time).toLocaleString()}</span>
+                          {latestSummary && latestSummary.dataEvents > 0 && (
+                            <span style={{ color: 'var(--t-muted)' }}> · {formatSummary(latestSummary)}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: 'var(--t-muted)', marginTop: 4 }}>No snapshots yet.</div>
+                      )}
+                      {latestSummary && latestSummary.details.length > 0 && (
+                        <div style={{ color: 'var(--t-muted)', fontSize: 11, marginTop: 4, lineHeight: 1.5 }}>
+                          {formatDetailed(latestSummary).map((line, i) => (
+                            <div key={i} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {line}</div>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, color: 'var(--t-muted)', marginTop: 4 }}>
+                        {snapshots.length} snapshot{snapshots.length !== 1 ? 's' : ''} · {formatBytes(totalBytes)}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })()}
+              {!historyCollapsed && (loadingSnaps ? (
                 <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>Loading…</div>
               ) : snapshots.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>No snapshots yet. Navigate between views to create some.</div>
@@ -328,7 +371,7 @@ export function Settings() {
                     );
                   })}
                 </div>
-              )}
+              ))}
             </>
           ) : (
             <button onClick={handlePickSnapDir} style={addBtn}>Choose snapshot folder…</button>
