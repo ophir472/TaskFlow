@@ -11,11 +11,14 @@ import { Table } from './components/Table/Table';
 import { Archive } from './components/Archive/Archive';
 import { Settings } from './components/Settings/Settings';
 import { CreateModal } from './components/CreateModal/CreateModal';
+import { GreenPlay } from './components/GreenPlay/GreenPlay';
+import { ReminderPopup } from './components/ReminderPopup/ReminderPopup';
 import { Toast } from './components/Toast/Toast';
 import { restoreFromData, pickAndRegisterRestoreFile } from './backup';
 import { writeSnapshot, writeLiveFile, log, logDebug, getDebugMode, getTabId, listSnapshots, readSnapshot, getSnapshotDir, subscribePermission, requestDirPermission, runIntegrityCheck, isPreviewMode, summarizeRange, formatSummary, formatDetailed } from './snapshots';
 import type { IntegrityResult, ChangeSummary } from './snapshots';
 import { Confetti } from './components/Confetti';
+import { nextOccurrence } from './scheduleEngine';
 
 export type SyncState = 'idle' | 'syncing' | 'saved';
 
@@ -27,9 +30,14 @@ export default function App() {
   const view = useStore(s => s.view);
   const setView = useStore(s => s.setView);
   const themeId = useStore(s => s.themeId);
+  const sidebarCollapsed = useStore(s => s.sidebarCollapsed);
   const promotionsToday = useStore(s => s.promotionsToday);
   const setTriggerTagForId = useStore(s => s.setTriggerTagForId);
   const checkDailyReset = useStore(s => s.checkDailyReset);
+  const checkResponsibilitiesDue = useStore(s => s.checkResponsibilitiesDue);
+  const checkRemindersDue = useStore(s => s.checkRemindersDue);
+  const checkHoldsDue = useStore(s => s.checkHoldsDue);
+  const pendingReminderIds = useStore(s => s.pendingReminderIds);
 
   const items = useStore(s => s.items);
 
@@ -99,6 +107,7 @@ export default function App() {
   const showRestore = restoreState === 'found' || restoreState === 'manual';
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const confettiFiredAt = useRef<number>(0);
@@ -107,6 +116,8 @@ export default function App() {
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveWriteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settingsSnapshotTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleSnapshotTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [permError, setPermError] = useState<string | null>(null);
   const [integrityAlert, setIntegrityAlert] = useState<IntegrityResult | null>(null);
@@ -121,9 +132,13 @@ export default function App() {
     setTimeout(() => setToast(t => (t === msg ? null : t)), 2500);
   }, []);
 
-  // Sync indicator + debounced live-file write on every store change
+  // Sync indicator + debounced live-file write on every store change.
+  // Also fires a debounced writeSnapshot when settings-scope state (requesters,
+  // projects, customFields, jiraConfig, itsmConfig, themeId) changes — otherwise
+  // snapshots only happen on navigation and Settings edits would never version.
   useEffect(() => {
-    const unsub = useStore.subscribe(() => {
+    let prev = useStore.getState();
+    const unsub = useStore.subscribe((s) => {
       setSyncState('syncing');
       if (syncTimer.current) clearTimeout(syncTimer.current);
       if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -135,6 +150,40 @@ export default function App() {
       liveWriteTimer.current = setTimeout(() => {
         writeLiveFile().catch(() => { /* logged internally */ });
       }, 500);
+
+      // Settings changed → schedule a snapshot (debounced 2s so several rapid
+      // edits collapse into one version).
+      const settingsChanged =
+        s.requesters !== prev.requesters ||
+        s.projects !== prev.projects ||
+        s.customFields !== prev.customFields ||
+        s.jiraConfig !== prev.jiraConfig ||
+        s.itsmConfig !== prev.itsmConfig ||
+        s.themeId !== prev.themeId ||
+        s.customAccent !== prev.customAccent ||
+        s.customBg !== prev.customBg ||
+        s.responsibilities !== prev.responsibilities;
+      if (settingsChanged) {
+        if (settingsSnapshotTimer.current) clearTimeout(settingsSnapshotTimer.current);
+        settingsSnapshotTimer.current = setTimeout(() => {
+          writeSnapshot().then(written => {
+            if (written) log('snapshot:settings', { });
+          }).catch(() => { /* logged internally */ });
+        }, 2000);
+      }
+
+      // Catch-all: any store change eventually snapshots after 8s of idle.
+      // Covers card resize, subtask star toggles, and every other data change
+      // that isn't already covered by a navigation or the settings trigger.
+      // writeSnapshot itself is idempotent (skips when nothing changed).
+      if (idleSnapshotTimer.current) clearTimeout(idleSnapshotTimer.current);
+      idleSnapshotTimer.current = setTimeout(() => {
+        writeSnapshot().then(written => {
+          if (written) log('snapshot:idle', {});
+        }).catch(() => { /* logged internally */ });
+      }, 8000);
+
+      prev = s;
     });
     return unsub;
   }, []);
@@ -285,6 +334,66 @@ export default function App() {
     return () => clearInterval(id);
   }, [checkDailyReset]);
 
+  // Responsibilities scheduler — fire on mount and once a minute. Idempotent
+  // (only creates a task when a responsibility is due and no previous
+  // auto-task is still open).
+  useEffect(() => {
+    checkResponsibilitiesDue();
+    const id = setInterval(checkResponsibilitiesDue, 60_000);
+    return () => clearInterval(id);
+  }, [checkResponsibilitiesDue]);
+
+  // Reminder + hold-return scheduler — precise setTimeout to the earliest
+  // future event (reminder nextFireAt or hold-return time) so a reminder due
+  // at 3:00:37 fires at 3:00:37, not on the next 30-second poll. Reschedules
+  // whenever items change (new reminder created, snooze/complete moves
+  // nextFireAt, held task's return time changes, etc.). A 60s safety fallback
+  // catches edge cases (system sleep, wall-clock changes).
+  useEffect(() => {
+    let timerId: ReturnType<typeof setTimeout> | undefined;
+
+    function scheduleNext() {
+      if (timerId) clearTimeout(timerId);
+      checkRemindersDue();  // fire anything already past-due
+      checkHoldsDue();      // auto-return any waiting tasks whose hold expired
+      const state = useStore.getState();
+      const now = Date.now();
+      let earliestDelta = 60_000;  // safety fallback
+      for (const it of state.items) {
+        if (it.archived) continue;
+        if (it.kind === 'reminder' && it.status === 'active') {
+          const delta = it.nextFireAt - now;
+          if (delta > 0 && delta < earliestDelta) earliestDelta = delta;
+        } else if (it.kind === 'task' && it.status === 'waiting' && it.holdSchedule) {
+          const due = it.holdSchedule.type === 'once'
+            ? it.holdSchedule.at
+            : nextOccurrence(it.holdSchedule, it.updatedAt);
+          const delta = due - now;
+          if (delta > 0 && delta < earliestDelta) earliestDelta = delta;
+        }
+      }
+      // +200ms buffer so Date.now() at fire time is safely past due.
+      timerId = setTimeout(scheduleNext, earliestDelta + 200);
+    }
+
+    scheduleNext();
+
+    // Re-arm when any store change might affect timing (new reminder, snooze,
+    // complete, hold, delete). scheduleNext itself is O(items), cheap.
+    let lastItems = useStore.getState().items;
+    const unsub = useStore.subscribe(s => {
+      if (s.items !== lastItems) {
+        lastItems = s.items;
+        scheduleNext();
+      }
+    });
+
+    return () => {
+      if (timerId) clearTimeout(timerId);
+      unsub();
+    };
+  }, [checkRemindersDue, checkHoldsDue]);
+
   // Keyboard shortcuts
   useEffect(() => {
     function handler(e: KeyboardEvent) {
@@ -297,6 +406,21 @@ export default function App() {
         e.preventDefault();
         setView('feed');
         setFocusSearchTrigger(n => n + 1);
+      }
+      // Plain 'r' opens Green Play review — skip when the user is typing
+      // into a form control or when a modifier is held (so Cmd-R reload
+      // and text input aren't hijacked).
+      if (e.key === 'r' && !meta && !e.altKey && !e.shiftKey) {
+        const t = e.target as HTMLElement | null;
+        const onFormControl = t && (
+          t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          t.tagName === 'SELECT' ||
+          t.isContentEditable
+        );
+        if (onFormControl) return;
+        e.preventDefault();
+        setReviewOpen(true);
       }
     }
     document.addEventListener('keydown', handler);
@@ -354,9 +478,15 @@ export default function App() {
       )}
 
     <div style={{ display: 'flex', width: '100%', flex: 1, minHeight: 0 }}>
-      <Sidebar onNewItem={() => setCreateOpen(true)} syncState={syncState} />
+      <Sidebar onNewItem={() => setCreateOpen(true)} onOpenReview={() => setReviewOpen(true)} syncState={syncState} />
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
+        // Compensates for the fixed sidebar width. Transition matches the
+        // sidebar's own width transition so the content slides smoothly.
+        marginLeft: sidebarCollapsed ? 44 : 220,
+        transition: 'margin-left 0.15s ease',
+      }}>
         {view !== 'feed' && (
           <div style={{ padding: '22px 36px 8px' }}>
             <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--t-txt)' }}>{VIEW_TITLES[view]}</div>
@@ -379,6 +509,8 @@ export default function App() {
           }}
         />
       )}
+      {reviewOpen && <GreenPlay onClose={() => setReviewOpen(false)} />}
+      {pendingReminderIds.length > 0 && <ReminderPopup />}
     </div>{/* end sidebar+content wrapper */}
 
       <Toast text={toast} />

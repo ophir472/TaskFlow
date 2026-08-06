@@ -3,12 +3,19 @@ import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import type { Task } from '../../types';
 import { scoreItem } from '../../engine';
+import { EstimatesSection } from '../Common/EstimatesSection';
+import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
+import { ResizableTextarea } from '../Common/ResizableTextarea';
 
 interface Props {
   taskId: string;
   allIds?: string[];        // ordered list for keyboard navigation
   onNavigate?: (id: string) => void;
   onClose: () => void;
+  /** When true (default), close pops the URL hash — matches Table/Archive
+   * routing. Callers that open the modal via React state only (like CardFeed's
+   * tag-sweep banner) should pass false so close doesn't trigger navigation. */
+  urlDriven?: boolean;
 }
 
 const fl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 };
@@ -16,7 +23,7 @@ const inp: React.CSSProperties = { width: '100%', fontSize: 14, padding: '8px 10
 const ta: React.CSSProperties = { ...inp, resize: 'vertical' as const, fontFamily: 'inherit' };
 const sel: React.CSSProperties = { width: '100%', fontSize: 13, padding: '7px 8px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)' };
 
-export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
+export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = true }: Props) {
   useLogMount('TaskModal');
   const items = useStore(s => s.items);
   const requesters = useStore(s => s.requesters);
@@ -96,9 +103,12 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
     // Back-arrow in header: pops the /sub/{id} entry, restoring task view
     history.back();
   }
-  // Full close: used by backdrop, × button, and Escape. Pops both entries
-  // (task + subtask) so we exit the modal entirely — not just the subtask view.
+  // Full close: used by backdrop, × button, and Escape. When URL-driven,
+  // pops both entries (task + subtask) so the modal exits and the URL returns
+  // to the underlying view. When not URL-driven, just calls onClose so the
+  // parent can unmount without any navigation side-effect.
   function fullyClose() {
+    if (!urlDriven) { onClose(); return; }
     const toPop = subIdRef.current ? 2 : 1;
     history.go(-toPop);
   }
@@ -243,7 +253,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
             )}
 
             {/* Subtasks */}
-            <div>
+            <div data-review-target="subtasks">
               <div style={{ ...fl, marginBottom: 8 }}>Subtasks {task.subtasks.length > 0 && `(${task.subtasks.filter(s => s.done).length}/${task.subtasks.length})`}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {task.subtasks.map(s => {
@@ -292,20 +302,23 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
             {/* Jira Description */}
             <div>
               <div style={fl}>Jira Description</div>
-              <textarea value={task.description ?? ''} onChange={e => updateItem(taskId, { description: e.target.value })} rows={3} placeholder="Describe the ticket…" style={ta} />
+              <ResizableTextarea taskId={taskId} fieldKey="description" value={task.description ?? ''} onChange={e => updateItem(taskId, { description: e.target.value })} rows={3} placeholder="Describe the ticket…" style={ta} />
             </div>
 
             {/* Notes */}
             <div>
               <div style={fl}>Notes</div>
-              <textarea value={task.notes} onChange={e => updateItem(taskId, { notes: e.target.value })} rows={4} style={ta} />
+              <ResizableTextarea taskId={taskId} fieldKey="notes" value={task.notes} onChange={e => updateItem(taskId, { notes: e.target.value })} rows={4} style={ta} />
             </div>
 
             {/* Blockers */}
             <div>
               <div style={fl}>Blockers</div>
-              <textarea value={task.blockers} onChange={e => updateItem(taskId, { blockers: e.target.value })} rows={2} placeholder="Who can help?" style={ta} />
+              <ResizableTextarea taskId={taskId} fieldKey="blockers" value={task.blockers} onChange={e => updateItem(taskId, { blockers: e.target.value })} rows={2} placeholder="Who can help?" style={ta} />
             </div>
+
+            {/* Estimates (collapsible) */}
+            <EstimatesSection task={task} />
 
             {/* Custom fields */}
             {customFields.filter(f => f.showInCard).map(f => (
@@ -317,7 +330,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
           </div>
 
           {/* Right sidebar */}
-          <div style={{ width: 200, flexShrink: 0, borderLeft: '1px solid var(--t-brd2)', padding: '18px 16px 24px' }}>
+          <div style={{ width: 200, flexShrink: 0, borderLeft: '1px solid var(--t-brd2)', padding: '18px 16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ background: 'var(--t-surf2)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <div style={fl}>Status</div>
@@ -344,13 +357,23 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose }: Props) {
               </div>
               <div>
                 <div style={fl}>Jira</div>
-                <input value={task.jiraLink} onChange={e => updateItem(taskId, { jiraLink: e.target.value })} placeholder="PROJ-1234" style={{ ...inp, fontSize: 13, padding: '7px 9px' }} />
+                <div data-review-target="jira">
+                  <input value={task.jiraLink} onChange={e => updateItem(taskId, { jiraLink: e.target.value })} placeholder="PROJ-1234" style={{ ...inp, fontSize: 13, padding: '7px 9px' }} />
+                  {!task.jiraLink && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--t-muted)', cursor: 'pointer', marginTop: 4 }}>
+                      <input type="checkbox" checked={!!task.noJira} onChange={e => updateItem(taskId, { noJira: e.target.checked })} style={{ cursor: 'pointer' }} />
+                      No Jira needed
+                    </label>
+                  )}
+                </div>
               </div>
               <div>
                 <div style={fl}>General link</div>
                 <input value={task.generalLink} onChange={e => updateItem(taskId, { generalLink: e.target.value })} placeholder="Any URL or ref" style={{ ...inp, fontSize: 13, padding: '7px 9px' }} />
               </div>
             </div>
+            {/* Communication — separate panel below the metadata/ticket panel */}
+            <CommunicationSection taskId={taskId} fields={getCommunications(task.communications)} />
           </div>
         </div>
       </div>

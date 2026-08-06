@@ -1,5 +1,6 @@
 import { useStore, type View } from '../../store';
 import type { SyncState } from '../../App';
+import { flaggedTasks } from '../../greenPlay';
 
 const NAV: { key: View; label: string; icon: string }[] = [
   { key: 'feed', label: 'Card Feed', icon: '🂡' },
@@ -11,10 +12,11 @@ const NAV: { key: View; label: string; icon: string }[] = [
 
 interface Props {
   onNewItem: () => void;
+  onOpenReview: () => void;
   syncState: SyncState;
 }
 
-export function Sidebar({ onNewItem, syncState }: Props) {
+export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
   const view = useStore(s => s.view);
   const setView = useStore(s => s.setView);
   const setDisplayId = useStore(s => s.setDisplayId);
@@ -22,6 +24,23 @@ export function Sidebar({ onNewItem, syncState }: Props) {
   const setSidebarCollapsed = useStore(s => s.setSidebarCollapsed);
   const promotionsToday = useStore(s => s.promotionsToday);
   const promotionGoal = useStore(s => s.promotionGoal);
+  const items = useStore(s => s.items);
+  const reviewSession = useStore(s => s.reviewSession);
+  // Badge count mirrors what the review popup will actually show on open:
+  // any un-walked cards left in the session PLUS any newly-flagged tasks
+  // that aren't in the session yet (they'll be appended by
+  // syncReviewSessionWithFlags when the popup mounts).
+  const flaggedCount = (() => {
+    const flagged = flaggedTasks(items);
+    if (!reviewSession) return flagged.length;
+    const inSession = new Set(reviewSession.taskIds);
+    const remainingInSession = reviewSession.taskIds
+      .slice(reviewSession.cardIdx)
+      .filter(id => items.some(it => it.id === id))
+      .length;
+    const newFlaggedNotInSession = flagged.filter(t => !inSession.has(t.id)).length;
+    return remainingInSession + newFlaggedNotInSession;
+  })();
 
   const pieCount = Math.min(promotionsToday, promotionGoal);
   const pieDeg = Math.round((pieCount / promotionGoal) * 360);
@@ -34,14 +53,16 @@ export function Sidebar({ onNewItem, syncState }: Props) {
     <div
       onClick={() => setSidebarCollapsed(!collapsed)}
       style={{
-        width, flexShrink: 0, background: 'var(--t-surf, #ffffff)', borderRight: '1px solid var(--t-brd, #e6e3dc)',
+        width, background: 'var(--t-surf, #ffffff)', borderRight: '1px solid var(--t-brd, #e6e3dc)',
         display: 'flex', flexDirection: 'column',
         padding: collapsed ? '16px 6px' : '20px 14px',
         gap: 2,
         transition: 'width 0.15s ease, padding 0.15s ease',
         boxSizing: 'border-box', overflow: 'hidden',
         cursor: 'pointer',
-        position: 'sticky', top: 0, height: '100vh', alignSelf: 'flex-start',
+        // Fixed so it stays visible regardless of any scroll context. The
+        // content wrapper compensates with margin-left of the same width.
+        position: 'fixed', left: 0, top: 0, height: '100vh', zIndex: 30,
       }}
     >
 
@@ -98,6 +119,43 @@ export function Sidebar({ onNewItem, syncState }: Props) {
       })}
 
       <div style={{ flex: 1 }} />
+
+      {/* Green Play review button */}
+      <button
+        onClick={e => { e.stopPropagation(); onOpenReview(); }}
+        title={collapsed ? `Review (${flaggedCount})` : undefined}
+        disabled={flaggedCount === 0}
+        style={{
+          border: 'none',
+          background: flaggedCount > 0 ? 'oklch(0.6 0.14 150)' : 'var(--t-brd)',
+          color: flaggedCount > 0 ? 'white' : 'var(--t-muted)',
+          fontSize: collapsed ? 15 : 13,
+          fontWeight: 600,
+          padding: collapsed ? '7px 0' : '8px 14px',
+          borderRadius: 9,
+          cursor: flaggedCount > 0 ? 'pointer' : 'default',
+          marginBottom: 8,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          width: '100%',
+          lineHeight: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+        }}
+      >
+        <span style={{ fontSize: collapsed ? 14 : 11 }}>▶</span>
+        {!collapsed && <span>Review</span>}
+        {flaggedCount > 0 && (
+          <span style={{
+            fontSize: 11, fontWeight: 700,
+            padding: '2px 6px', borderRadius: 999,
+            background: 'rgba(255,255,255,0.25)', color: 'white',
+            lineHeight: 1,
+          }}>{flaggedCount}</span>
+        )}
+      </button>
 
       {/* New item button */}
       <button

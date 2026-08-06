@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ScheduleSpec, MonthlyOrdinalRule } from '../../types';
-import { inMs, tomorrowAt9, toDatetimeLocal, fromDatetimeLocal, formatSchedule } from '../../scheduleEngine';
+import { OneTimePicker } from './OneTimePicker';
 
 // ── Sub-types for internal state ─────────────────────────────────
 
@@ -14,21 +14,14 @@ const ORDINALS: { v: MonthlyOrdinalRule['ordinal']; label: string }[] = [
   { v: 4, label: 'Fourth' }, { v: -1, label: 'Last' },
 ];
 
-const ONCE_PRESETS: { label: string; at: () => number }[] = [
-  { label: 'In 15 min', at: () => inMs(15 * 60_000) },
-  { label: 'In 1 hr', at: () => inMs(60 * 60_000) },
-  { label: 'In 3 hrs', at: () => inMs(3 * 60 * 60_000) },
-  { label: 'Tomorrow', at: () => tomorrowAt9() },
-  { label: 'In 2 days', at: () => inMs(2 * 86_400_000) },
-  { label: 'Next week', at: () => inMs(7 * 86_400_000) },
-];
-
 // ── Styles ───────────────────────────────────────────────────────
 
 const tab = (active: boolean): React.CSSProperties => ({
-  flex: 1, textAlign: 'center', padding: '6px 0', borderRadius: 6, fontSize: 13, fontWeight: 600,
-  cursor: 'pointer', background: active ? 'var(--t-surf)' : 'transparent',
-  color: active ? 'var(--t-txt)' : 'var(--t-muted)', userSelect: 'none',
+  flex: 1, textAlign: 'center', padding: '7px 0', borderRadius: 6, fontSize: 13, fontWeight: 700,
+  cursor: 'pointer', userSelect: 'none',
+  background: active ? 'var(--t-acc)' : 'transparent',
+  color: active ? 'white' : 'var(--t-txt2)',
+  transition: 'background 0.12s, color 0.12s',
 });
 
 const pill = (active: boolean): React.CSSProperties => ({
@@ -65,11 +58,6 @@ interface Props {
 export function SchedulePicker({ value, onChange, allowRecurring = true }: Props) {
   const [activeTab, setActiveTab] = useState<'once' | 'recurring'>(
     value?.type === 'recurring' ? 'recurring' : 'once'
-  );
-
-  // One-time state
-  const [customAt, setCustomAt] = useState<string>(
-    value?.type === 'once' ? toDatetimeLocal(value.at) : toDatetimeLocal(tomorrowAt9())
   );
 
   // Recurring state
@@ -117,8 +105,6 @@ export function SchedulePicker({ value, onChange, allowRecurring = true }: Props
     onChange({ type: 'recurring', rule: { freq: 'weekly', every, days: next.length ? next : [d] } });
   }
 
-  const preview = value ? formatSchedule(value) : null;
-
   const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
   const label: React.CSSProperties = { fontSize: 12, color: 'var(--t-muted)', whiteSpace: 'nowrap' };
 
@@ -126,35 +112,18 @@ export function SchedulePicker({ value, onChange, allowRecurring = true }: Props
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Tab switcher */}
       {allowRecurring && (
-        <div style={{ display: 'flex', gap: 4, background: 'var(--t-surf2)', padding: 3, borderRadius: 8 }}>
+        <div style={{ display: 'flex', gap: 4, background: 'var(--t-surf2)', padding: 3, borderRadius: 8, border: '1px solid var(--t-brd)' }}>
           <div onClick={() => setActiveTab('once')} style={tab(activeTab === 'once')}>One-time</div>
           <div onClick={() => setActiveTab('recurring')} style={tab(activeTab === 'recurring')}>Recurring</div>
         </div>
       )}
 
-      {/* One-time */}
+      {/* One-time — uses the new relative/absolute picker */}
       {activeTab === 'once' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {ONCE_PRESETS.map(p => (
-              <div key={p.label} onClick={() => { const at = p.at(); onChange(buildOnce(at)); setCustomAt(toDatetimeLocal(at)); }} style={pill(false)}>
-                {p.label}
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={label}>Or pick:</span>
-            <input
-              type="datetime-local"
-              value={customAt}
-              onChange={e => {
-                setCustomAt(e.target.value);
-                if (e.target.value) onChange(buildOnce(fromDatetimeLocal(e.target.value)));
-              }}
-              style={{ fontSize: 13.5, padding: '6px 9px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', flex: 1 }}
-            />
-          </div>
-        </div>
+        <OneTimePicker
+          value={value?.type === 'once' ? value.at : null}
+          onChange={at => onChange(buildOnce(at))}
+        />
       )}
 
       {/* Recurring */}
@@ -218,12 +187,6 @@ export function SchedulePicker({ value, onChange, allowRecurring = true }: Props
         </div>
       )}
 
-      {/* Live preview */}
-      {preview && (
-        <div style={{ fontSize: 12, color: 'var(--t-acc-dk)', background: 'var(--t-acc-bg)', padding: '5px 10px', borderRadius: 6 }}>
-          {preview}
-        </div>
-      )}
     </div>
   );
 }

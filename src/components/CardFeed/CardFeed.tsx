@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
-import { scoreItem, nextId } from '../../engine';
+import { scoreItem, nextId, duplicateTask } from '../../engine';
+import { EstimatesSection } from '../Common/EstimatesSection';
+import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
+import { ResizableTextarea } from '../Common/ResizableTextarea';
+import { TaskModal } from '../TaskModal/TaskModal';
 import { formatSchedule } from '../../scheduleEngine';
 import type { Item, Task, ScheduleSpec } from '../../types';
 import { SubtaskPanel } from '../SubtaskPanel/SubtaskPanel';
@@ -59,10 +63,10 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const [labelValue, setLabelValue] = useState('');
   const cardMenuRef = useRef<HTMLDivElement>(null);
   const prevHadSubtask = useRef(false);
-  const [holdNote, setHoldNote] = useState('');
   const [holdSchedule, setHoldSchedule] = useState<ScheduleSpec | null>(null);
   const [subtaskPanel, setSubtaskPanel] = useState<{ parentId: string; subId: string } | null>(null);
   const [fullPageSubtask, setFullPageSubtask] = useState<{ parentId: string; subId: string } | null>(null);
+  const [tagModalTaskId, setTagModalTaskId] = useState<string | null>(null);
   const [newSubtask, setNewSubtask] = useState('');
   const [tagEditMode, setTagEditMode] = useState(false);
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -74,19 +78,21 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     el.style.height = el.scrollHeight + 'px';
   }, []);
 
-  // Queue matches table order exactly: today-filter → today→manual→score
+  // Queue matches table order exactly: today-filter → today→manual→score.
+  // The feed is task-only — reminders pop up via ReminderPopup when due.
+  //
+  // Visibility (processed in this order, later rules override earlier ones):
+  //   1. forToday alone would show it in the feed
+  //   2. status='waiting' (held) hides it — Hold wins over Today
+  //   3. Toggling forToday clears the hold (setForToday store action),
+  //      so once un-held the task shows normally per rule 1
+  // priorityBoost still surfaces a manually-resumed held task at the top.
   const activeItems = items.filter(it => {
     if (it.archived) return false;
-    if (it.kind === 'task') {
-      const t = it as Task;
-      // Include waiting tasks only if resumed (priorityBoost) OR marked forToday.
-      // Without the forToday override, held tasks marked as today would silently
-      // be excluded → the feed appears stuck on 1 card even though you marked
-      // several as today.
-      return t.status !== 'done' && t.status !== 'archived' &&
-             (t.status !== 'waiting' || it.priorityBoost || t.forToday);
-    }
-    return it.status === 'active';
+    if (it.kind !== 'task') return false;
+    const t = it as Task;
+    return t.status !== 'done' && t.status !== 'archived' &&
+           (t.status !== 'waiting' || it.priorityBoost);
   });
   const todayItems = activeItems.filter(it => it.kind === 'task' && (it as Task).forToday);
   const scope = todayItems.length > 0 ? todayItems : activeItems;
@@ -263,13 +269,12 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
       rescheduleReminder(current.id, holdSchedule);
       onToast('Reminder rescheduled');
     } else {
-      holdItem(current.id, holdNote, holdSchedule ?? undefined);
+      holdItem(current.id, '', holdSchedule ?? undefined);
       onToast('Moved to Waiting');
     }
     setDisplayId(null);
     setTagEditMode(false);
     setHoldOpen(false);
-    setHoldNote('');
     setHoldSchedule(null);
   };
 
@@ -324,6 +329,14 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     setCardMenuOpen(false);
   }
 
+  function handleCardDuplicate() {
+    if (!current || current.kind !== 'task') return;
+    const dup = duplicateTask(current as Task);
+    createItem(dup);
+    setCardMenuOpen(false);
+    onToast('Duplicated');
+  }
+
   async function handleCreateJira() {
     if (!jiraConfig || !t || !current) return;
     setCreatingJira(true);
@@ -367,7 +380,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const score = scoreItem(current);
   const isTask = current.kind === 'task';
   const isReminder = current.kind === 'reminder';
-  const isResponsibility = current.kind === 'responsibility';
   const t = isTask ? (current as Task) : null;
 
   // Tag-sweep banner
@@ -376,10 +388,10 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const queueTier: 'needsTag' | 'scored' =
     needsTagCount > 0 ? 'needsTag' : 'scored';
 
-  const kindLabel = isTask ? 'TASK' : isReminder ? 'REMINDER' : 'RESPONSIBILITY';
+  const kindLabel = isTask ? 'TASK' : 'REMINDER';
   const holdButtonLabel = isReminder ? 'Remind me again' : 'Hold';
   const holdPanelLabel = isReminder ? 'Schedule next reminder' : 'When should this come back?';
-  const completeLabel = isResponsibility ? 'Complete (reschedule)' : 'Complete';
+  const completeLabel = 'Complete';
   const holdConfirmDisabled = isReminder && !holdSchedule;
 
   const queuePos = queue.length > 1
@@ -396,7 +408,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const KIND_STYLE = {
     task:           { color: 'var(--t-kind-task)',     bg: 'var(--t-kind-task-bg)',     border: 'var(--t-kind-task)'     },
     reminder:       { color: 'var(--t-kind-reminder)', bg: 'var(--t-kind-reminder-bg)', border: 'var(--t-kind-reminder)' },
-    responsibility: { color: 'var(--t-kind-resp)',     bg: 'var(--t-kind-resp-bg)',      border: 'var(--t-kind-resp)'     },
   } as const;
 
   // Style shortcuts
@@ -412,19 +423,32 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
         borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden',
         borderTop: `3px solid ${KIND_STYLE[current.kind].border}`,
       }}>
-        {/* Tier banner */}
-        {isTask && queueTier === 'needsTag' && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 20px', background: 'var(--t-amber-bg)', borderBottom: '1px solid var(--t-amber-brd)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span style={{ fontSize: 13 }}>🏷</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--t-amber)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tag sweep</span>
-              <span style={{ fontSize: 12, color: 'var(--t-amber)' }}>— set at least one tag or "None of these"</span>
+        {/* Tier banner — click to open the FIRST task that needs tagging in a
+            popup (which may be a different task than the one currently shown). */}
+        {isTask && queueTier === 'needsTag' && (() => {
+          const nextNeedsTag = (activeItems.filter(it => it.kind === 'task') as Task[])
+            .find(it => !it.urgent && !it.important && !it.quick && !it.noTag);
+          return (
+            <div
+              onClick={() => { if (nextNeedsTag) setTagModalTaskId(nextNeedsTag.id); }}
+              title="Click to tag the next untagged task"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 20px', background: 'var(--t-amber-bg)', borderBottom: '1px solid var(--t-amber-brd)', cursor: 'pointer' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'oklch(0.9 0.06 85)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'var(--t-amber-bg)'; }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={{ fontSize: 13 }}>🏷</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--t-amber)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tag sweep</span>
+                <span style={{ fontSize: 12, color: 'var(--t-amber)' }}>
+                  — click to tag{nextNeedsTag ? `: ${nextNeedsTag.title}` : ''}
+                </span>
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--t-amber)', background: 'var(--t-amber-bg)', padding: '2px 8px', borderRadius: 20 }}>
+                {needsTagCount} left
+              </span>
             </div>
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--t-amber)', background: 'var(--t-amber-bg)', padding: '2px 8px', borderRadius: 20 }}>
-              {needsTagCount} left
-            </span>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Header */}
         <div style={{ padding: '22px 26px 0' }}>
@@ -461,6 +485,14 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                 </button>
                 {cardMenuOpen && (
                   <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.14)', minWidth: 150, zIndex: 30, overflow: 'hidden' }}>
+                    {isTask && (
+                      <button onClick={handleCardDuplicate}
+                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', border: 'none', background: 'transparent', fontSize: 14, color: 'var(--t-txt)', cursor: 'pointer' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                        ⧉ Duplicate
+                      </button>
+                    )}
                     <button onClick={handleCardArchive}
                       style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 16px', border: 'none', background: 'transparent', fontSize: 14, color: 'var(--t-txt)', cursor: 'pointer' }}
                       onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
@@ -544,7 +576,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
               )}
 
               {/* Subtasks */}
-              <div>
+              <div data-review-target="subtasks">
                 <div style={{ ...fl, marginBottom: 8 }}>
                   Subtasks {t.subtasks.length > 0 && `(${t.subtasks.filter(s => s.done).length}/${t.subtasks.length})`}
                 </div>
@@ -632,32 +664,35 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
               {/* Jira Description */}
               <div>
                 <div style={fl}>Jira Description</div>
-                <textarea value={t.description ?? ''} onChange={e => updateItem(current.id, { description: e.target.value })} rows={3} placeholder="Describe the ticket…" style={ta} />
+                <ResizableTextarea taskId={current.id} fieldKey="description" value={t.description ?? ''} onChange={e => updateItem(current.id, { description: e.target.value })} rows={3} placeholder="Describe the ticket…" style={ta} />
               </div>
 
               {/* Notes */}
               <div>
                 <div style={fl}>Notes</div>
-                <textarea value={t.notes} onChange={e => updateItem(current.id, { notes: e.target.value })} rows={5} style={ta} />
+                <ResizableTextarea taskId={current.id} fieldKey="notes" value={t.notes} onChange={e => updateItem(current.id, { notes: e.target.value })} rows={5} style={ta} />
               </div>
 
               {/* Blockers */}
               <div>
                 <div style={fl}>Blockers</div>
-                <textarea value={t.blockers} onChange={e => updateItem(current.id, { blockers: e.target.value })} rows={3} placeholder="Who can help?" style={ta} />
+                <ResizableTextarea taskId={current.id} fieldKey="blockers" value={t.blockers} onChange={e => updateItem(current.id, { blockers: e.target.value })} rows={3} placeholder="Who can help?" style={ta} />
               </div>
+
+              {/* Estimates (collapsible) */}
+              <EstimatesSection task={t} />
 
               {/* Custom fields (showInCard) */}
               {customFields.filter(f => f.showInCard).map(f => (
                 <div key={f.id}>
                   <div style={fl}>{f.name}</div>
-                  <textarea value={t.customValues?.[f.id] ?? ''} onChange={e => updateItemCustomValue(current.id, f.id, e.target.value)} rows={3} style={ta} />
+                  <ResizableTextarea taskId={current.id} fieldKey={`cf:${f.id}`} value={t.customValues?.[f.id] ?? ''} onChange={e => updateItemCustomValue(current.id, f.id, e.target.value)} rows={3} style={ta} />
                 </div>
               ))}
             </div>
 
             {/* ── Sidebar ── */}
-            <div style={{ width: 200, flexShrink: 0, borderLeft: '1px solid var(--t-brd2)', padding: '14px 14px 22px 14px' }}>
+            <div style={{ width: 200, flexShrink: 0, borderLeft: '1px solid var(--t-brd2)', padding: '14px 14px 22px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ background: 'var(--t-surf2)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: '14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <div style={fl}>Requester</div>
@@ -686,7 +721,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                           style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 4 }} />
                       : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel('jiraLink:primary'); setLabelValue(t.jiraLinkLabel || 'Jira ticket'); }}>{t.jiraLinkLabel || 'Jira ticket'}</div>
                     }
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                    <div data-review-target="jira" style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
                       <input value={t.jiraLink} onChange={e => updateItem(current.id, { jiraLink: e.target.value })} placeholder="PROJ-1234" style={sInp} />
                       {t.jiraLink && <a href={`https://${jiraConfig?.host ?? ''}/browse/${t.jiraLink}`} target="_blank" rel="noreferrer" style={{ fontSize: 16, color: 'var(--t-acc)', textDecoration: 'none', flexShrink: 0 }} title={`Open ${t.jiraLink}`}>↗</a>}
                     </div>
@@ -695,6 +730,12 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                         style={{ marginBottom: 4, width: '100%', border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 12, fontWeight: 600, padding: '6px 0', borderRadius: 6, cursor: creatingJira ? 'wait' : 'pointer', opacity: creatingJira ? 0.6 : 1 }}>
                         {creatingJira ? 'Creating…' : '+ Create in Jira'}
                       </button>
+                    )}
+                    {!t.jiraLink && (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--t-muted)', cursor: 'pointer', marginTop: 2 }}>
+                        <input type="checkbox" checked={!!t.noJira} onChange={e => updateItem(current.id, { noJira: e.target.checked })} style={{ cursor: 'pointer' }} />
+                        No Jira needed
+                      </label>
                     )}
                     {/* Extra tickets */}
                     {t.jiraLink && (t.extraJiraLinks ?? []).map((link, i) => (
@@ -736,7 +777,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                           style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 4 }} />
                       : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel('itsmTicket:primary'); setLabelValue(t.itsmTicketLabel || 'ITSM ticket'); }}>{t.itsmTicketLabel || 'ITSM ticket'}</div>
                     }
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
+                    <div data-review-target="itsm" style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
                       <input value={t.itsmTicket ?? ''} onChange={e => updateItem(current.id, { itsmTicket: e.target.value })} placeholder="INC0001234" style={sInp} />
                       {t.itsmTicket && <a href={`https://${itsmConfig?.host ?? ''}/incident.do?sysparm_query=number=${t.itsmTicket}`} target="_blank" rel="noreferrer" style={{ fontSize: 16, color: 'var(--t-acc)', textDecoration: 'none', flexShrink: 0 }} title={`Open ${t.itsmTicket}`}>↗</a>}
                     </div>
@@ -811,6 +852,8 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                 );
               })()}
             </div>
+            {/* Communication — separate panel below the metadata/ticket panel */}
+            <CommunicationSection taskId={current.id} fields={getCommunications(t.communications)} />
             </div>
 
           </div>
@@ -819,11 +862,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
         {isReminder && (
           <div style={{ padding: '6px 26px 26px', fontSize: 15, color: 'var(--t-txt2)' }}>
             Scheduled: {formatSchedule(current.schedule)}
-          </div>
-        )}
-        {isResponsibility && (
-          <div style={{ padding: '6px 26px 26px', fontSize: 15, color: 'var(--t-txt2)' }}>
-            Cadence: {formatSchedule(current.schedule)}
           </div>
         )}
 
@@ -835,6 +873,14 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
           subId={subtaskPanel.subId}
           onClose={() => setSubtaskPanel(null)}
           onExpand={() => { setFullPageSubtask(subtaskPanel); setSubtaskPanel(null); }}
+        />
+      )}
+
+      {tagModalTaskId && (
+        <TaskModal
+          taskId={tagModalTaskId}
+          onClose={() => setTagModalTaskId(null)}
+          urlDriven={false}
         />
       )}
 
@@ -850,15 +896,12 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
           <div style={{ padding: '14px 0 10px', borderBottom: '1px solid var(--t-brd)', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--t-txt)' }}>{holdPanelLabel}</div>
             <SchedulePicker value={holdSchedule} onChange={setHoldSchedule} allowRecurring={isReminder} />
-            {!isReminder && (
-              <input value={holdNote} onChange={e => setHoldNote(e.target.value)} placeholder="What are you waiting for?" style={{ fontSize: 14, padding: '8px 11px', borderRadius: 8, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)' }} />
-            )}
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={handleHoldConfirm} disabled={holdConfirmDisabled}
                 style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 13, fontWeight: 600, padding: '7px 14px', borderRadius: 7, opacity: holdConfirmDisabled ? 0.5 : 1, cursor: holdConfirmDisabled ? 'not-allowed' : 'pointer' }}>
                 Confirm
               </button>
-              <button onClick={() => { setHoldOpen(false); setHoldNote(''); setHoldSchedule(null); }}
+              <button onClick={() => { setHoldOpen(false); setHoldSchedule(null); }}
                 style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 13, fontWeight: 600, padding: '7px 14px', borderRadius: 7, cursor: 'pointer' }}>
                 Cancel
               </button>
@@ -877,7 +920,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                 style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9, opacity: queue.length <= 1 ? 0.4 : 1, cursor: queue.length <= 1 ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
                 Continue
               </button>
-              <button onClick={() => { setHoldOpen(o => !o); setHoldNote(''); setHoldSchedule(null); }}
+              <button onClick={() => { setHoldOpen(o => !o); setHoldSchedule(null); }}
                 style={{ border: '1px solid var(--t-brd)', background: holdOpen ? 'var(--t-surf2)' : 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 {holdButtonLabel}
               </button>

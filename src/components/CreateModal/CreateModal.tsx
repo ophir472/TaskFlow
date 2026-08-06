@@ -4,12 +4,13 @@ import { useLogMount } from '../../useLogMount';
 import { nextId } from '../../engine';
 import type { Item, ScheduleSpec } from '../../types';
 import { SchedulePicker } from '../SchedulePicker/SchedulePicker';
+import { nextOccurrence } from '../../scheduleEngine';
 
-type CreateType = 'task' | 'reminder' | 'responsibility';
+type CreateType = 'task' | 'reminder';
 interface Props { onClose: () => void; onToast: (msg: string) => void; onCreated?: (id: string) => void; initialTitle?: string; }
 
 const TABS: { key: CreateType; label: string }[] = [
-  { key: 'task', label: 'Task' }, { key: 'reminder', label: 'Reminder' }, { key: 'responsibility', label: 'Responsibility' },
+  { key: 'task', label: 'Task' }, { key: 'reminder', label: 'Reminder' },
 ];
 const TAG_DEFS: { key: 'urgent' | 'important' | 'quick' | 'noTag'; label: string }[] = [
   { key: 'urgent', label: 'Urgent' }, { key: 'important', label: 'Important' },
@@ -55,14 +56,13 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
 
   const handleSubmit = () => {
     if (disabled) return;
-    const id = nextId(type === 'task' ? 't' : type === 'reminder' ? 'r' : 'p');
+    const id = nextId(type === 'task' ? 't' : 'r');
     let item: Item;
     if (type === 'task') {
       item = { id, kind: 'task', title, description, notes: '', blockers: '', generalLink: '', jiraLink, requester, project, status: 'backlog', forToday, urgent, important, quick, noTag, toCheck: '', priorityBoost: false, subtasks: [], bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false };
-    } else if (type === 'reminder') {
-      item = { id, kind: 'reminder', title, schedule: schedule!, status: 'active', priorityBoost: false, bumpedAt: 0, createdAt: now, updatedAt: now, archived: false };
     } else {
-      item = { id, kind: 'responsibility', title, schedule: schedule!, status: 'active', priorityBoost: false, bumpedAt: 0, createdAt: now, updatedAt: now, archived: false };
+      const nextFireAt = schedule!.type === 'once' ? schedule!.at : nextOccurrence(schedule!, now);
+      item = { id, kind: 'reminder', title, schedule: schedule!, status: 'active', priorityBoost: false, nextFireAt, bumpedAt: 0, createdAt: now, updatedAt: now, archived: false };
     }
     createItem(item); onCreated?.(id); onToast('Created'); onClose();
   };

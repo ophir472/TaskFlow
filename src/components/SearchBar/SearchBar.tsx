@@ -3,10 +3,10 @@ import { useStore } from '../../store';
 import type { Item, Task } from '../../types';
 
 const KIND_LABEL: Record<string, string> = {
-  task: 'Task', reminder: 'Reminder', responsibility: 'Responsibility',
+  task: 'Task', reminder: 'Reminder',
 };
 const KIND_COLOR: Record<string, string> = {
-  task: 'var(--t-txt2)', reminder: 'var(--t-amber)', responsibility: 'var(--t-acc)',
+  task: 'var(--t-txt2)', reminder: 'var(--t-amber)',
 };
 
 interface Props {

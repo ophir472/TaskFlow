@@ -2,9 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
-import { scoreItem } from '../../engine';
+import { DailyPlay } from '../DailyPlay/DailyPlay';
+import { scoreItem, duplicateTask } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
-import type { Item, Task, Reminder, Responsibility } from '../../types';
+import type { Item, Task, Reminder } from '../../types';
 import type { CSSProperties } from 'react';
 
 // ── Column definitions ──────────────────────────────────────────
@@ -19,10 +20,10 @@ interface ColDef {
 
 const STD_COLS: ColDef[] = [
   { key: 'title', label: 'Title', defaultOn: true, getValue: it => it.title },
-  { key: 'type', label: 'Type', defaultOn: true, getValue: it => it.kind === 'task' ? 'Task' : it.kind === 'reminder' ? 'Reminder' : 'Responsibility' },
+  { key: 'type', label: 'Type', defaultOn: true, getValue: it => it.kind === 'task' ? 'Task' : 'Reminder' },
   { key: 'requester', label: 'Requester', defaultOn: true, getValue: it => (it as Task).requester ?? '' },
   { key: 'project', label: 'Project', defaultOn: true, getValue: it => (it as Task).project ?? '' },
-  { key: 'status', label: 'Status / Schedule', defaultOn: true, getValue: it => it.kind === 'task' ? it.status.replace('_', ' ') : formatSchedule((it as Reminder | Responsibility).schedule) },
+  { key: 'status', label: 'Status / Schedule', defaultOn: true, getValue: it => it.kind === 'task' ? it.status.replace('_', ' ') : formatSchedule((it as Reminder).schedule) },
   { key: 'jira', label: 'Jira', defaultOn: true, getValue: it => (it as Task).jiraLink ?? '' },
   { key: 'tags', label: 'Tags', defaultOn: false, getValue: it => {
     if (it.kind !== 'task') return '';
@@ -30,6 +31,7 @@ const STD_COLS: ColDef[] = [
     if (t.noTag) return 'None';
     return [t.urgent && 'Urgent', t.important && 'Important', t.quick && 'Quick'].filter(Boolean).join(', ') || '—';
   }},
+  { key: 'estimate', label: 'Estimate', defaultOn: false, getValue: it => (it as Task).estimate ?? '' },
   { key: 'score', label: 'Score', defaultOn: true, align: 'right', getValue: it => scoreItem(it) },
   { key: 'created', label: 'Created', defaultOn: false, getValue: it => new Date(it.createdAt).toLocaleDateString() },
   { key: 'updated', label: 'Updated', defaultOn: false, getValue: it => new Date(it.updatedAt).toLocaleDateString() },
@@ -37,11 +39,27 @@ const STD_COLS: ColDef[] = [
 
 // ── Styles ──────────────────────────────────────────────────────
 
-const selectSt: React.CSSProperties = { fontSize: 13, padding: '7px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)' };
-const EDITABLE_COLS = new Set(['title', 'requester', 'project', 'status', 'jira']);
+function ghostSelect(hasValue: boolean): React.CSSProperties {
+  return {
+    fontSize: 13,
+    padding: '5px 6px 5px 10px',
+    borderRadius: 6,
+    border: 'none',
+    background: hasValue ? 'var(--t-acc-bg)' : 'transparent',
+    color: hasValue ? 'var(--t-acc-dk)' : 'var(--t-muted)',
+    fontWeight: hasValue ? 500 : 400,
+    cursor: 'pointer',
+    outline: 'none',
+  };
+}
+const ghostBtn: React.CSSProperties = {
+  fontSize: 13, padding: '5px 10px', borderRadius: 6, border: 'none',
+  background: 'transparent', color: 'var(--t-muted)', cursor: 'pointer', fontWeight: 500,
+};
+const EDITABLE_COLS = new Set(['title', 'requester', 'project', 'status', 'jira', 'estimate']);
 const DEFAULT_COL_WIDTHS: Record<string, number> = {
   title: 200, type: 110, requester: 120, project: 120,
-  status: 130, jira: 90, tags: 150, score: 65, created: 95, updated: 95,
+  status: 130, jira: 90, tags: 150, estimate: 90, score: 65, created: 95, updated: 95,
 };
 
 // ── Component ───────────────────────────────────────────────────
@@ -57,9 +75,11 @@ export function Table() {
   const resetManualOrder = useStore(s => s.resetManualOrder);
   const updateItem = useStore(s => s.updateItem);
   const updateItemCustomValue = useStore(s => s.updateItemCustomValue);
+  const setForToday = useStore(s => s.setForToday);
   const toggleTag = useStore(s => s.toggleTag);
   const archiveItem = useStore(s => s.archiveItem);
   const deleteItem = useStore(s => s.deleteItem);
+  const createItem = useStore(s => s.createItem);
   const tableVisibleColsArr = useStore(s => s.tableVisibleCols);
   const setTableVisibleCols = useStore(s => s.setTableVisibleCols);
   const tableColWidthsStore = useStore(s => s.tableColWidths);
@@ -85,6 +105,7 @@ export function Table() {
   const [editValue, setEditValue] = useState('');
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
   const [modalTaskId, setModalTaskId] = useState<string | null>(null);
+  const [dailyOpen, setDailyOpen] = useState(false);
   const colWidths = tableColWidthsStore;
   const [hoveredResize, setHoveredResize] = useState<string | null>(null);
 
@@ -332,6 +353,7 @@ export function Table() {
     else if (colKey === 'project') updateItem(rowId, { project: value });
     else if (colKey === 'status') updateItem(rowId, { status: value as Task['status'] });
     else if (colKey === 'jira') updateItem(rowId, { jiraLink: value });
+    else if (colKey === 'estimate') updateItem(rowId, { estimate: value });
     else if (colKey.startsWith('cf_')) updateItemCustomValue(rowId, colKey.slice(3), value);
     setEditCell(null);
   }
@@ -432,29 +454,28 @@ export function Table() {
     <>
     <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', overflowX: 'hidden' }}>
       {/* Filters + column picker */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={selectSt}>
+      <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={ghostSelect(!!typeFilter)}>
           <option value="">All types</option>
           <option value="task">Task</option>
           <option value="reminder">Reminder</option>
-          <option value="responsibility">Responsibility</option>
         </select>
-        <select value={reqFilter} onChange={e => setReqFilter(e.target.value)} style={selectSt}>
+        <select value={reqFilter} onChange={e => setReqFilter(e.target.value)} style={ghostSelect(!!reqFilter)}>
           <option value="">All requesters</option>
           {requesters.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
-        <select value={projFilter} onChange={e => setProjFilter(e.target.value)} style={selectSt}>
+        <select value={projFilter} onChange={e => setProjFilter(e.target.value)} style={ghostSelect(!!projFilter)}>
           <option value="">All projects</option>
           {projects.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selectSt}>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={ghostSelect(!!statusFilter)}>
           <option value="">All statuses</option>
           <option value="in_progress">In progress</option>
           <option value="backlog">Backlog</option>
           <option value="waiting">Waiting</option>
           <option value="done">Done</option>
         </select>
-        <select value={tagFilter} onChange={e => setTagFilter(e.target.value)} style={selectSt}>
+        <select value={tagFilter} onChange={e => setTagFilter(e.target.value)} style={ghostSelect(!!tagFilter)}>
           <option value="">All tags</option>
           <option value="urgent">Urgent</option>
           <option value="important">Important</option>
@@ -462,10 +483,10 @@ export function Table() {
           <option value="noTag">None of these</option>
         </select>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--t-muted)', whiteSpace: 'nowrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: minScore ? 'var(--t-acc-dk)' : 'var(--t-muted)', whiteSpace: 'nowrap', padding: '4px 8px', borderRadius: 6, background: minScore ? 'var(--t-acc-bg)' : 'transparent' }}>
           Score ≥
           <input type="number" min="0" value={minScore} onChange={e => setMinScore(e.target.value)} placeholder="—"
-            style={{ width: 50, fontSize: 12, padding: '5px 6px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)' }} />
+            style={{ width: 36, fontSize: 12, padding: '2px 4px', borderRadius: 4, border: 'none', background: 'transparent', color: 'inherit', outline: 'none', textAlign: 'center' }} />
         </div>
 
         {/* Quick filter chips */}
@@ -479,40 +500,76 @@ export function Table() {
           return (
             <button key={key}
               onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; })}
-              style={{ fontSize: 12, padding: '5px 11px', borderRadius: 20, border: `1px solid ${active ? 'var(--t-acc)' : 'var(--t-brd)'}`, background: active ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: active ? 'var(--t-acc-dk)' : 'var(--t-txt2)', cursor: 'pointer', fontWeight: active ? 600 : 400, whiteSpace: 'nowrap' }}>
-              {active ? '✓ ' : ''}{label}
+              style={{ fontSize: 12.5, padding: '5px 10px', borderRadius: 6, border: 'none', background: active ? 'var(--t-acc-bg)' : 'transparent', color: active ? 'var(--t-acc-dk)' : 'var(--t-muted)', cursor: 'pointer', fontWeight: active ? 500 : 400, whiteSpace: 'nowrap' }}
+              onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--t-surf2)'; }}
+              onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
+              {label}
             </button>
           );
         })}
 
+        {(typeFilter || reqFilter || projFilter || statusFilter || tagFilter || minScore || quickFilters.size > 0) && (
+          <button onClick={() => { setTypeFilter(''); setReqFilter(''); setProjFilter(''); setStatusFilter(''); setTagFilter(''); setMinScore(''); setQuickFilters(new Set()); }}
+            style={{ ...ghostBtn, fontSize: 12 }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            title="Clear all filters">Clear filters</button>
+        )}
+
         {items.some(it => it.kind === 'task' && (it as Task).manuallyMoved) && (
           <button onClick={resetManualOrder}
-            style={{ fontSize: 12, padding: '6px 11px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-muted)', cursor: 'pointer' }}>
+            style={{ ...ghostBtn, fontSize: 12 }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
             ↺ Reset all to auto
           </button>
         )}
 
         {selCount > 0 && (
           <>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--t-acc-dk)' }}>{selCount} selected</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-muted)', marginLeft: 10, paddingLeft: 10, borderLeft: '1px solid var(--t-brd)' }}>{selCount} selected</span>
             <button onClick={() => setSelected(new Set())}
-              style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', cursor: 'pointer' }}>
+              style={ghostBtn}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
               Clear
             </button>
             <button onClick={bulkArchive}
-              style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--t-acc)', color: 'white', cursor: 'pointer' }}>
-              ⊙ Archive {selCount}
+              style={{ ...ghostBtn, color: 'var(--t-acc)' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-acc-bg)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              ⊙ Archive
             </button>
             <button onClick={bulkDelete}
-              style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--t-urgent)', color: 'white', cursor: 'pointer' }}>
-              ✕ Delete {selCount}
+              style={{ ...ghostBtn, color: 'var(--t-urgent)' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-urgent-bg)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              ✕ Delete
             </button>
           </>
         )}
 
-        <div style={{ marginLeft: 'auto', position: 'relative' }} ref={colPickerRef}>
+        <button onClick={() => setDailyOpen(true)}
+          title="Open the Daily play — pick which subtasks you're doing today"
+          style={{
+            marginLeft: 'auto',
+            border: 'none',
+            background: 'oklch(0.6 0.14 150)',
+            color: 'white',
+            fontSize: 13, fontWeight: 700,
+            padding: '7px 14px', borderRadius: 999,
+            cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+          <span style={{ fontSize: 11 }}>▶</span>
+          Daily
+        </button>
+
+        <div style={{ position: 'relative' }} ref={colPickerRef}>
           <button onClick={() => setColPickerOpen(o => !o)}
-            style={{ fontSize: 13, padding: '7px 12px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', cursor: 'pointer', color: 'var(--t-txt2)', fontWeight: 500 }}>
+            style={ghostBtn}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
             Columns ▾
           </button>
           {colPickerOpen && (
@@ -603,7 +660,7 @@ export function Table() {
                     <input
                       type="checkbox"
                       checked={(it as Task).forToday ?? false}
-                      onChange={() => updateItem(it.id, { forToday: !(it as Task).forToday })}
+                      onChange={() => setForToday(it.id, !(it as Task).forToday)}
                       style={{ cursor: 'pointer', width: 15, height: 15, accentColor: 'var(--t-amber)' }}
                       title="Mark for today"
                     />
@@ -708,11 +765,16 @@ export function Table() {
                     </td>
                   );
                 })}
-                <td onClick={e => e.stopPropagation()} style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', width: 40 }}>
+                <td onClick={e => e.stopPropagation()} style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', width: 70 }}>
                   {it.kind === 'task' && (it as Task).manuallyMoved && (
                     <span onClick={() => { updateItem(it.id, { manuallyMoved: false }); setTaskOrder(taskOrder.filter(id => id !== it.id)); }}
                       style={{ fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', marginRight: 6, fontWeight: 500 }}
                       title="Reset to auto-sort">↺</span>
+                  )}
+                  {it.kind === 'task' && (
+                    <span onClick={() => { createItem(duplicateTask(it as Task)); }}
+                      style={{ fontSize: 14, color: 'var(--t-acc)', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
+                      title="Duplicate task">⧉</span>
                   )}
                   <span onClick={() => { openTask(it.id); }}
                     style={{ fontSize: 15, color: 'var(--t-acc)', cursor: 'pointer', fontWeight: 600 }}
@@ -749,6 +811,7 @@ export function Table() {
       <div style={{ fontSize: 12, color: 'var(--t-muted)' }}>{rows.length} item{rows.length !== 1 ? 's' : ''}</div>
     </div>
     {modalTaskId && <TaskModal taskId={modalTaskId} allIds={rows.map(r => r.id)} onNavigate={navigateModal} onClose={closeTaskModal} />}
+    {dailyOpen && <DailyPlay onClose={() => setDailyOpen(false)} />}
     </>
   );
 }

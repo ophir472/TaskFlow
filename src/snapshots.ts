@@ -676,26 +676,30 @@ export function formatSummary(s: ChangeSummary): string {
 // 2. Current localStorage items (for still-existing items)
 function buildTitleMap(logs: LogRecord[]): Map<string, string> {
   const map = new Map<string, string>();
-  // From logs (most recent title wins since logs are sorted asc)
+  // From logs (most recent title wins since logs are sorted asc). Also catches
+  // responsibility events which carry `name` instead of `title`, and taskId
+  // references from communication/card-resize events.
   for (const e of logs) {
     if (!e.data) continue;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d = e.data as any;
-    if (typeof d.id === 'string' && typeof d.title === 'string' && d.title) {
-      map.set(d.id, d.title);
-    }
-    if (typeof d.parentId === 'string' && typeof d.title === 'string' && d.title) {
-      map.set(d.parentId, d.title);
+    const label = (typeof d.title === 'string' && d.title) || (typeof d.name === 'string' && d.name) || null;
+    if (!label) continue;
+    for (const key of ['id', 'parentId', 'taskId', 'itemId'] as const) {
+      if (typeof d[key] === 'string') map.set(d[key], label);
     }
   }
-  // Overlay with current state (freshest titles for still-existing items)
+  // Overlay with current state (freshest names/titles for still-existing entities).
   try {
     const raw = localStorage.getItem('taskflow-store') ?? '{}';
+    const state = JSON.parse(raw)?.state ?? {};
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const items = JSON.parse(raw)?.state?.items ?? [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const it of items) {
+    for (const it of (state.items ?? [])) {
       if (it.id && it.title) map.set(it.id, it.title);
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const r of (state.responsibilities ?? [])) {
+      if (r.id && r.name) map.set(r.id, r.name);
     }
   } catch { /* ignore */ }
   return map;
@@ -716,6 +720,20 @@ const COALESCE_DATA_EVENTS = new Set([
   'subtask:create', 'subtask:delete', 'subtask:update',
   'subtask:toggle-done', 'subtask:toggle-next',
   'tag:toggle', 'item:custom-value', 'reminder:reschedule', 'item:import',
+  'comm:add', 'comm:update', 'comm:delete',
+  // Settings changes count as versionable data.
+  'customfield:add', 'customfield:remove', 'customfield:update',
+  'requester:add', 'requester:remove',
+  'project:add', 'project:remove',
+  'jira-config:set', 'itsm-config:set',
+  'theme:set',
+  // Per-card UI preferences that the user cares to preserve across versions.
+  'card:resize',
+  // Responsibilities CRUD + auto-generation.
+  'responsibility:add', 'responsibility:update', 'responsibility:remove',
+  'responsibility:toggle-active', 'responsibility:generate-tasks',
+  'reminder:snooze', 'reminder:complete-occurrence',
+  'item:return-from-hold', 'item:auto-return-holds', 'item:set-for-today',
 ]);
 
 function coalesceRapidEdits(events: LogRecord[]): LogRecord[] {
@@ -768,11 +786,23 @@ export async function summarizeRange(fromTime: number, toTime: number): Promise<
     'subtask:toggle-done', 'subtask:toggle-next',
     'tag:toggle', 'item:custom-value',
     'reminder:reschedule',
+    'comm:add', 'comm:update', 'comm:delete',
+    'customfield:add', 'customfield:remove', 'customfield:update',
+    'requester:add', 'requester:remove',
+    'project:add', 'project:remove',
+    'jira-config:set', 'itsm-config:set', 'theme:set',
+    'card:resize',
+    'responsibility:add', 'responsibility:update', 'responsibility:remove',
+    'responsibility:toggle-active', 'responsibility:generate-tasks',
+    'reminder:snooze', 'reminder:complete-occurrence', 'reminder:queue',
+    'item:return-from-hold', 'item:auto-return-holds', 'item:set-for-today',
     // These are UI/system and don't count as data changes
-    'app:mount', 'snapshot:navigate', 'store:rehydrate-from-other-tab',
+    'app:mount', 'snapshot:navigate', 'snapshot:settings', 'snapshot:idle',
+    'store:rehydrate-from-other-tab',
     'integrity-check', 'integrity-check-initial',
     'restore:start', 'restore:complete', 'restore:failed', 'item:import',
     'snapshot-dir:configured',
+    'review:mark-task', 'review:begin', 'review:end', 'review:extend',
   ]);
 
   // Events that represent actual user-facing data changes.
@@ -780,7 +810,18 @@ export async function summarizeRange(fromTime: number, toTime: number): Promise<
     'item:create', 'item:delete', 'item:archive', 'item:unarchive', 'item:update',
     'item:complete', 'item:hold',
     'subtask:create', 'subtask:delete', 'subtask:update', 'subtask:toggle-done',
+    'subtask:toggle-next',
     'tag:toggle', 'item:custom-value', 'reminder:reschedule', 'item:import',
+    'comm:add', 'comm:update', 'comm:delete',
+    'customfield:add', 'customfield:remove', 'customfield:update',
+    'requester:add', 'requester:remove',
+    'project:add', 'project:remove',
+    'jira-config:set', 'itsm-config:set', 'theme:set',
+    'card:resize',
+    'responsibility:add', 'responsibility:update', 'responsibility:remove',
+    'responsibility:toggle-active', 'responsibility:generate-tasks',
+    'reminder:snooze', 'reminder:complete-occurrence',
+    'item:return-from-hold', 'item:auto-return-holds', 'item:set-for-today',
   ]);
 
   for (const e of logs) {
@@ -841,6 +882,106 @@ export async function summarizeRange(fromTime: number, toTime: number): Promise<
       case 'item:custom-value':
         s.customValueChanges++;
         s.details.push({ action: 'custom field edited', title: titleFor(d.itemId) });
+        break;
+      case 'comm:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added communication field', title: titleFor(d.taskId), extra: d.label });
+        break;
+      case 'comm:update':
+        s.otherChanges++;
+        s.details.push({ action: 'edited communication field', title: titleFor(d.taskId) });
+        break;
+      case 'comm:delete':
+        s.otherChanges++;
+        s.details.push({ action: 'removed communication field', title: titleFor(d.taskId) });
+        break;
+      case 'customfield:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added custom field', title: d.name || '(unnamed)' });
+        break;
+      case 'customfield:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'removed custom field', title: d.id || '' });
+        break;
+      case 'customfield:update':
+        s.otherChanges++;
+        s.details.push({ action: 'updated custom field', title: d.id || '' });
+        break;
+      case 'requester:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added requester', title: d.name });
+        break;
+      case 'requester:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'removed requester', title: d.name });
+        break;
+      case 'project:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added project', title: d.name });
+        break;
+      case 'project:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'removed project', title: d.name });
+        break;
+      case 'jira-config:set':
+        s.otherChanges++;
+        s.details.push({ action: 'updated Jira config', title: d.host || '' });
+        break;
+      case 'itsm-config:set':
+        s.otherChanges++;
+        s.details.push({ action: 'updated ServiceNow config', title: d.host || '' });
+        break;
+      case 'theme:set':
+        s.otherChanges++;
+        s.details.push({ action: 'changed theme', title: d.themeId || '' });
+        break;
+      case 'card:resize':
+        s.otherChanges++;
+        s.details.push({ action: 'resized card field', title: titleFor(d.taskId), extra: d.fieldKey });
+        break;
+      case 'subtask:toggle-next':
+        s.subtasksToggled++;
+        s.details.push({ action: 'starred subtask', title: titleFor(d.parentId), parentTitle: titleFor(d.parentId) });
+        break;
+      case 'responsibility:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added responsibility', title: d.name || titleFor(d.id) });
+        break;
+      case 'responsibility:update':
+        s.otherChanges++;
+        s.details.push({ action: 'updated responsibility', title: d.name || titleFor(d.id) });
+        break;
+      case 'responsibility:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'removed responsibility', title: d.name || titleFor(d.id) });
+        break;
+      case 'responsibility:toggle-active':
+        s.otherChanges++;
+        s.details.push({ action: d.nextActive ? 'resumed responsibility' : 'paused responsibility', title: d.name || titleFor(d.id) });
+        break;
+      case 'responsibility:generate-tasks':
+        s.otherChanges++;
+        s.details.push({ action: 'auto-generated tasks from responsibilities', title: '', extra: `${d.count}` });
+        break;
+      case 'reminder:snooze':
+        s.otherChanges++;
+        s.details.push({ action: 'snoozed reminder', title: titleFor(d.id) });
+        break;
+      case 'reminder:complete-occurrence':
+        s.otherChanges++;
+        s.details.push({ action: 'completed reminder occurrence', title: titleFor(d.id) });
+        break;
+      case 'item:return-from-hold':
+        s.otherChanges++;
+        s.details.push({ action: 'returned from hold', title: titleFor(d.id) });
+        break;
+      case 'item:auto-return-holds':
+        s.otherChanges++;
+        s.details.push({ action: 'auto-returned held tasks', title: '', extra: `${d.count}` });
+        break;
+      case 'item:set-for-today':
+        s.otherChanges++;
+        s.details.push({ action: d.value ? 'marked for today' : 'unmarked for today', title: titleFor(d.id) });
         break;
       default:
         if (!CATEGORIZED.has(e.event)) {

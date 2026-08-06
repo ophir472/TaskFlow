@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import { nextId } from '../../engine';
 import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
+import { ResponsibilitiesSection } from './ResponsibilitiesSection';
 import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload, pickAndRegisterRestoreFile } from '../../backup';
 import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log, trashSnapshot, summarizeRange, formatSummary, formatDetailed, getDebugMode, setDebugMode, subscribeSnapshots } from '../../snapshots';
 import type { SnapshotEntry, ChangeSummary } from '../../snapshots';
@@ -446,6 +447,8 @@ export function Settings() {
         <ManagedList title="Requesters" items={requesters} onAdd={addRequester} onRemove={removeRequester} />
         <ManagedList title="Projects" items={projects} onAdd={addProject} onRemove={removeProject} />
       </div>
+
+      <ResponsibilitiesSection />
 
       {/* Custom fields */}
       <div style={card}>

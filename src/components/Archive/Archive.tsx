@@ -4,7 +4,7 @@ import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { scoreItem } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
-import type { Item, Task, Reminder, Responsibility } from '../../types';
+import type { Item, Task, Reminder } from '../../types';
 
 // ── Column definitions ──────────────────────────────────────────
 
@@ -18,10 +18,10 @@ interface ColDef {
 
 const STD_COLS: ColDef[] = [
   { key: 'title', label: 'Title', defaultOn: true, getValue: it => it.title },
-  { key: 'type', label: 'Type', defaultOn: true, getValue: it => it.kind === 'task' ? 'Task' : it.kind === 'reminder' ? 'Reminder' : 'Responsibility' },
+  { key: 'type', label: 'Type', defaultOn: true, getValue: it => it.kind === 'task' ? 'Task' : 'Reminder' },
   { key: 'requester', label: 'Requester', defaultOn: true, getValue: it => (it as Task).requester ?? '' },
   { key: 'project', label: 'Project', defaultOn: true, getValue: it => (it as Task).project ?? '' },
-  { key: 'status', label: 'Status / Schedule', defaultOn: true, getValue: it => it.kind === 'task' ? it.status.replace('_', ' ') : formatSchedule((it as Reminder | Responsibility).schedule) },
+  { key: 'status', label: 'Status / Schedule', defaultOn: true, getValue: it => it.kind === 'task' ? it.status.replace('_', ' ') : formatSchedule((it as Reminder).schedule) },
   { key: 'jira', label: 'Jira', defaultOn: true, getValue: it => (it as Task).jiraLink ?? '' },
   { key: 'tags', label: 'Tags', defaultOn: false, getValue: it => {
     if (it.kind !== 'task') return '';
@@ -36,7 +36,23 @@ const STD_COLS: ColDef[] = [
 
 // ── Styles ──────────────────────────────────────────────────────
 
-const selectSt: React.CSSProperties = { fontSize: 13, padding: '7px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)' };
+function ghostSelect(hasValue: boolean): React.CSSProperties {
+  return {
+    fontSize: 13,
+    padding: '5px 6px 5px 10px',
+    borderRadius: 6,
+    border: 'none',
+    background: hasValue ? 'var(--t-acc-bg)' : 'transparent',
+    color: hasValue ? 'var(--t-acc-dk)' : 'var(--t-muted)',
+    fontWeight: hasValue ? 500 : 400,
+    cursor: 'pointer',
+    outline: 'none',
+  };
+}
+const ghostBtn: React.CSSProperties = {
+  fontSize: 13, padding: '5px 10px', borderRadius: 6, border: 'none',
+  background: 'transparent', color: 'var(--t-muted)', cursor: 'pointer', fontWeight: 500,
+};
 const EDITABLE_COLS = new Set(['title', 'requester', 'project', 'status', 'jira']);
 const DEFAULT_COL_WIDTHS: Record<string, number> = {
   title: 200, type: 110, requester: 120, project: 120,
@@ -332,50 +348,64 @@ export function Archive() {
       ) : (
         <>
           {/* Filters + column picker */}
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={selectSt}>
+          <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={ghostSelect(!!typeFilter)}>
               <option value="">All types</option>
               <option value="task">Task</option>
               <option value="reminder">Reminder</option>
-              <option value="responsibility">Responsibility</option>
             </select>
-            <select value={reqFilter} onChange={e => setReqFilter(e.target.value)} style={selectSt}>
+            <select value={reqFilter} onChange={e => setReqFilter(e.target.value)} style={ghostSelect(!!reqFilter)}>
               <option value="">All requesters</option>
               {requesters.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
-            <select value={projFilter} onChange={e => setProjFilter(e.target.value)} style={selectSt}>
+            <select value={projFilter} onChange={e => setProjFilter(e.target.value)} style={ghostSelect(!!projFilter)}>
               <option value="">All projects</option>
               {projects.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selectSt}>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={ghostSelect(!!statusFilter)}>
               <option value="">All statuses</option>
               <option value="in_progress">In progress</option>
               <option value="backlog">Backlog</option>
               <option value="waiting">Waiting</option>
               <option value="done">Done</option>
             </select>
+            {(typeFilter || reqFilter || projFilter || statusFilter) && (
+              <button onClick={() => { setTypeFilter(''); setReqFilter(''); setProjFilter(''); setStatusFilter(''); }}
+                style={{ ...ghostBtn, fontSize: 12 }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                title="Clear all filters">Clear filters</button>
+            )}
 
             {selCount > 0 && (
               <>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--t-acc-dk)' }}>{selCount} selected</span>
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-muted)', marginLeft: 10, paddingLeft: 10, borderLeft: '1px solid var(--t-brd)' }}>{selCount} selected</span>
                 <button onClick={() => setSelected(new Set())}
-                  style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', cursor: 'pointer' }}>
+                  style={ghostBtn}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                   Clear
                 </button>
                 <button onClick={bulkRestore}
-                  style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--t-acc)', color: 'white', cursor: 'pointer' }}>
-                  ↩ Restore {selCount}
+                  style={{ ...ghostBtn, color: 'var(--t-acc)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-acc-bg)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  ↩ Restore
                 </button>
                 <button onClick={bulkDelete}
-                  style={{ fontSize: 13, fontWeight: 600, padding: '6px 14px', borderRadius: 7, border: 'none', background: 'var(--t-urgent)', color: 'white', cursor: 'pointer' }}>
-                  ✕ Delete {selCount}
+                  style={{ ...ghostBtn, color: 'var(--t-urgent)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-urgent-bg)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  ✕ Delete
                 </button>
               </>
             )}
 
             <div style={{ marginLeft: 'auto', position: 'relative' }} ref={colPickerRef}>
               <button onClick={() => setColPickerOpen(o => !o)}
-                style={{ fontSize: 13, padding: '7px 12px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', cursor: 'pointer', color: 'var(--t-txt2)', fontWeight: 500 }}>
+                style={ghostBtn}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                 Columns ▾
               </button>
               {colPickerOpen && (

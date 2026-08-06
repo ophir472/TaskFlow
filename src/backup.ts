@@ -299,18 +299,10 @@ export async function triggerExcelDownload(): Promise<void> {
     Created: new Date(it.createdAt).toLocaleDateString(),
   }));
 
-  const responsibilities = items.filter(it => it.kind === 'responsibility').map(it => ({
-    Title: it.title ?? '',
-    Status: it.status ?? '',
-    Archived: it.archived ? 'Yes' : 'No',
-    Created: new Date(it.createdAt).toLocaleDateString(),
-  }));
-
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tasks.length ? tasks : [{}]), 'Tasks');
   if (subtasks.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(subtasks), 'Subtasks');
   if (reminders.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(reminders), 'Reminders');
-  if (responsibilities.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(responsibilities), 'Responsibilities');
 
   XLSX.writeFile(wb, `taskflow-${date}.xlsx`);
 }
