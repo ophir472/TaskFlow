@@ -3,9 +3,11 @@ import { useStore } from './store';
 import { getThemeVars } from './themes';
 import type { View } from './store';
 
-const VALID_VIEWS: View[] = ['feed', 'kanban', 'table', 'archive', 'settings'];
+const VALID_VIEWS: View[] = ['feed', 'explore', 'kanban', 'table', 'archive', 'settings'];
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { CardFeed } from './components/CardFeed/CardFeed';
+import { Explore } from './components/Explore/Explore';
+import { Spotlight } from './components/Explore/Spotlight';
 import { Kanban } from './components/Kanban/Kanban';
 import { Table } from './components/Table/Table';
 import { Archive } from './components/Archive/Archive';
@@ -23,7 +25,7 @@ import { nextOccurrence } from './scheduleEngine';
 export type SyncState = 'idle' | 'syncing' | 'saved';
 
 const VIEW_TITLES: Record<string, string> = {
-  kanban: 'Kanban', table: 'All Items', archive: 'Archive', settings: 'Settings',
+  explore: 'Explore', kanban: 'Kanban', table: 'All Items', archive: 'Archive', settings: 'Settings',
 };
 
 export default function App() {
@@ -108,6 +110,7 @@ export default function App() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const confettiFiredAt = useRef<number>(0);
@@ -155,9 +158,11 @@ export default function App() {
       // edits collapse into one version).
       const settingsChanged =
         s.requesters !== prev.requesters ||
+        s.requesterJiraIds !== prev.requesterJiraIds ||
         s.projects !== prev.projects ||
         s.customFields !== prev.customFields ||
-        s.jiraConfig !== prev.jiraConfig ||
+        s.jiraConfigs !== prev.jiraConfigs ||
+        s.jiraOpenMode !== prev.jiraOpenMode ||
         s.itsmConfig !== prev.itsmConfig ||
         s.themeId !== prev.themeId ||
         s.customAccent !== prev.customAccent ||
@@ -299,11 +304,14 @@ export default function App() {
 
   // Hash-based routing: URL → view on load and on back/forward
   // Also: every URL change triggers a snapshot write (fire-and-forget).
+  // '#review' is a pseudo-route: it opens the Green Play overlay on top of
+  // whatever view is active (defaults to feed on a cold load).
   useEffect(() => {
     function syncFromHash() {
-      const seg = window.location.hash.slice(1).split('/')[0] as View;
-      if (VALID_VIEWS.includes(seg)) setView(seg);
+      const seg = window.location.hash.slice(1).split('/')[0];
+      if (VALID_VIEWS.includes(seg as View)) setView(seg as View);
       else if (!window.location.hash) setView('feed');
+      setReviewOpen(seg === 'review');
       // Snapshot on every navigation. Async, non-blocking.
       writeSnapshot().then(written => {
         if (written) log('snapshot:navigate', { hash: window.location.hash });
@@ -315,11 +323,23 @@ export default function App() {
     return () => window.removeEventListener('hashchange', syncFromHash);
   }, [setView]);
 
-  // View → URL: only update when switching views; preserve sub-path within same view
+  // View → URL: only update when switching views; preserve sub-path within
+  // same view. Leave '#review' alone — it's an overlay route, not a view.
   useEffect(() => {
     const currentSeg = window.location.hash.slice(1).split('/')[0];
+    if (currentSeg === 'review') return;
     if (currentSeg !== view) window.location.hash = view;
   }, [view]);
+
+  // Open/close the review overlay by URL so it's back-button friendly and
+  // deep-linkable (#review).
+  const openReview = useCallback(() => {
+    if (window.location.hash.slice(1).split('/')[0] !== 'review') window.location.hash = 'review';
+  }, []);
+  const closeReview = useCallback(() => {
+    if (window.location.hash.slice(1).split('/')[0] === 'review') history.back();
+    else setReviewOpen(false);
+  }, []);
 
   // Apply theme CSS variables
   useEffect(() => {
@@ -398,19 +418,25 @@ export default function App() {
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
-      if (meta && e.key === 'k') {
+      // Match on e.code (physical key) so shortcuts work on non-Latin keyboard
+      // layouts too — on Hebrew layout Cmd+F sends e.key='כ', not 'f'.
+      if (meta && (e.key === 'k' || e.code === 'KeyK')) {
         e.preventDefault();
         setCreateOpen(true);
       }
-      if (meta && e.key === 'f') {
+      if (meta && (e.key === 'f' || e.code === 'KeyF')) {
         e.preventDefault();
-        setView('feed');
-        setFocusSearchTrigger(n => n + 1);
+        // Already on Explore → just focus its search input. Anywhere else →
+        // open the floating spotlight (Enter there hands off to Explore).
+        if (useStore.getState().view === 'explore') {
+          setFocusSearchTrigger(n => n + 1);
+        } else {
+          setSpotlightOpen(true);
+        }
       }
-      // Plain 'r' opens Green Play review — skip when the user is typing
-      // into a form control or when a modifier is held (so Cmd-R reload
-      // and text input aren't hijacked).
-      if (e.key === 'r' && !meta && !e.altKey && !e.shiftKey) {
+      // Plain-key shortcuts — skip while typing into a form control or when
+      // a modifier is held (Cmd-R reload, Cmd-1 browser tabs, etc. untouched).
+      if (!meta && !e.altKey && !e.shiftKey) {
         const t = e.target as HTMLElement | null;
         const onFormControl = t && (
           t.tagName === 'INPUT' ||
@@ -419,8 +445,21 @@ export default function App() {
           t.isContentEditable
         );
         if (onFormControl) return;
-        e.preventDefault();
-        setReviewOpen(true);
+        // 'r' opens Green Play review.
+        if (e.key === 'r' || e.code === 'KeyR') {
+          e.preventDefault();
+          openReview();
+          return;
+        }
+        // 1–6 jump to the sidebar tabs in their visual order.
+        const digitMatch = /^(?:Digit|Numpad)([1-9])$/.exec(e.code) ?? /^([1-9])$/.exec(e.key);
+        if (digitMatch) {
+          const idx = parseInt(digitMatch[1], 10) - 1;
+          if (idx < VALID_VIEWS.length) {
+            e.preventDefault();
+            setView(VALID_VIEWS[idx]);
+          }
+        }
       }
     }
     document.addEventListener('keydown', handler);
@@ -478,7 +517,7 @@ export default function App() {
       )}
 
     <div style={{ display: 'flex', width: '100%', flex: 1, minHeight: 0 }}>
-      <Sidebar onNewItem={() => setCreateOpen(true)} onOpenReview={() => setReviewOpen(true)} syncState={syncState} />
+      <Sidebar onNewItem={() => setCreateOpen(true)} onOpenReview={openReview} syncState={syncState} />
 
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
@@ -493,7 +532,8 @@ export default function App() {
           </div>
         )}
 
-        {view === 'feed' && <CardFeed onToast={toastTimer} focusSearchTrigger={focusSearchTrigger} />}
+        {view === 'feed' && <CardFeed onToast={toastTimer} />}
+        {view === 'explore' && <Explore focusTrigger={focusSearchTrigger} />}
         {view === 'kanban' && <Kanban />}
         {view === 'table' && <Table />}
         {view === 'archive' && <Archive />}
@@ -509,7 +549,8 @@ export default function App() {
           }}
         />
       )}
-      {reviewOpen && <GreenPlay onClose={() => setReviewOpen(false)} />}
+      {reviewOpen && <GreenPlay onClose={closeReview} />}
+      {spotlightOpen && <Spotlight onClose={() => setSpotlightOpen(false)} onToast={toastTimer} />}
       {pendingReminderIds.length > 0 && <ReminderPopup />}
     </div>{/* end sidebar+content wrapper */}
 

@@ -4,16 +4,161 @@ import { nextId } from '../../engine';
 import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
 import { ResponsibilitiesSection } from './ResponsibilitiesSection';
+import { JiraHostsSection } from './JiraHostsSection';
 import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload, pickAndRegisterRestoreFile } from '../../backup';
-import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log, trashSnapshot, summarizeRange, formatSummary, formatDetailed, getDebugMode, setDebugMode, subscribeSnapshots } from '../../snapshots';
+import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log, trashSnapshot, summarizeRanges, formatSummary, formatDetailed, getDebugMode, setDebugMode, subscribeSnapshots } from '../../snapshots';
 import type { SnapshotEntry, ChangeSummary } from '../../snapshots';
 import { useLogMount } from '../../useLogMount';
-import type { JiraConfig, ItsmConfig } from '../../types';
+import type { ItsmConfig, Task } from '../../types';
+import { flaggedTasks } from '../../greenPlay';
+import { TaskModal } from '../TaskModal/TaskModal';
 
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
 const listItem: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 12px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 8, fontSize: 14, color: 'var(--t-txt)' };
 const addBtn: React.CSSProperties = { border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 13.5, fontWeight: 600, padding: '8px 14px', borderRadius: 7, cursor: 'pointer' };
 const inp: React.CSSProperties = { flex: 1, fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)' };
+
+// Requesters list — like ManagedList but each row also carries a Jira account
+// ID. When a card with this requester creates a Jira, that account becomes the
+// ticket's Reporter (assignee stays the host default).
+function RequestersList() {
+  const requesters = useStore(s => s.requesters);
+  const requesterJiraIds = useStore(s => s.requesterJiraIds);
+  const addRequester = useStore(s => s.addRequester);
+  const removeRequester = useStore(s => s.removeRequester);
+  const setRequesterJiraId = useStore(s => s.setRequesterJiraId);
+  const [input, setInput] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const submit = () => { if (input.trim()) { addRequester(input.trim()); setInput(''); } };
+  return (
+    <div style={{ ...card, flex: 1, minWidth: 280 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Requesters</div>
+      <div style={{ fontSize: 12, color: 'var(--t-muted)', marginBottom: 14 }}>
+        Jira account ID (optional) is set as <b>Reporter</b> on tickets created from this requester's tasks.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+        {requesters.length === 0 && <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>None yet</div>}
+        {requesters.map(name => {
+          const draft = drafts[name] ?? requesterJiraIds[name] ?? '';
+          return (
+            <div key={name} style={{ ...listItem, gap: 10 }}>
+              <span style={{ flexShrink: 0 }}>{name}</span>
+              <input
+                value={draft}
+                onChange={e => setDrafts(d => ({ ...d, [name]: e.target.value }))}
+                onBlur={() => {
+                  setRequesterJiraId(name, draft);
+                  setDrafts(d => { const n = { ...d }; delete n[name]; return n; });
+                }}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                placeholder="Jira account ID"
+                style={{ flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', minWidth: 0, outline: 'none' }}
+              />
+              <span onClick={() => removeRequester(name)} style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 16, lineHeight: 1, flexShrink: 0 }}>×</span>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input value={input} onChange={e => setInput(e.target.value)} placeholder="Add requester" style={inp}
+          onKeyDown={e => e.key === 'Enter' && submit()} />
+        <button onClick={submit} style={addBtn}>Add</button>
+      </div>
+    </div>
+  );
+}
+
+// Shows exactly what the Green Play review will walk through on next open:
+// the un-walked remainder of an in-flight session plus any newly flagged
+// tasks (mirrors the sidebar badge / GreenPlay sync logic).
+function ReviewQueueSection() {
+  const items = useStore(s => s.items);
+  const reviewSession = useStore(s => s.reviewSession);
+  const [open, setOpen] = useState(false);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+
+  const flagged = flaggedTasks(items);
+  let rows: { task: Task; inSession: boolean }[];
+  if (reviewSession) {
+    const inSession = new Set(reviewSession.taskIds);
+    const remaining = reviewSession.taskIds.slice(reviewSession.cardIdx)
+      .map(id => items.find(it => it.id === id))
+      .filter((it): it is Task => !!it && it.kind === 'task')
+      .map(t => ({ task: t, inSession: true }));
+    const fresh = flagged.filter(t => !inSession.has(t.id)).map(t => ({ task: t, inSession: false }));
+    rows = [...remaining, ...fresh];
+  } else {
+    rows = flagged.map(t => ({ task: t, inSession: false }));
+  }
+
+  function reason(t: Task): string {
+    if (t.reviewedAt === undefined) return 'never reviewed';
+    if (t.createdAt > t.reviewedAt) return 'created after last review';
+    return 'updated since last review';
+  }
+
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
+        <div style={{ fontSize: 15, fontWeight: 700 }}>Review queue</div>
+        <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 9px', borderRadius: 20, background: rows.length > 0 ? 'oklch(0.94 0.05 150)' : 'var(--t-surf3)', color: rows.length > 0 ? 'oklch(0.4 0.14 150)' : 'var(--t-muted)' }}>
+          {rows.length}
+        </span>
+        {reviewSession && (
+          <span style={{ fontSize: 11, color: 'var(--t-muted)' }}>
+            session in progress · card {reviewSession.cardIdx + 1} of {reviewSession.taskIds.length}
+          </span>
+        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          {rows.length > 0 && (
+            <button onClick={() => { window.location.hash = 'review'; }}
+              style={{ border: 'none', background: 'oklch(0.6 0.14 150)', color: 'white', fontSize: 12.5, fontWeight: 700, padding: '6px 14px', borderRadius: 999, cursor: 'pointer' }}>
+              ▶ Start review
+            </button>
+          )}
+          <button onClick={() => setOpen(o => !o)}
+            style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 7, cursor: 'pointer' }}>
+            {open ? 'Hide queue' : 'Show queue'}
+          </button>
+        </div>
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: open && rows.length > 0 ? 12 : 0 }}>
+        Tasks the ▶ Review walkthrough will show on next open.
+      </div>
+      {open && (
+        rows.length === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>Queue is empty — everything reviewed.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {rows.map(({ task, inSession }, i) => (
+              <div key={task.id}
+                onClick={() => setOpenTaskId(task.id)}
+                title="Open task"
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 8, cursor: 'pointer', transition: 'border-color 0.1s' }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--t-acc)')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--t-brd2)')}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t-muted)', width: 22, textAlign: 'right', flexShrink: 0 }}>{i + 1}.</span>
+                <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--t-txt)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</span>
+                <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: task.status === 'in_progress' ? 'var(--t-acc-bg)' : task.status === 'waiting' ? 'var(--t-amber-bg)' : 'var(--t-surf3)', color: task.status === 'in_progress' ? 'var(--t-acc-dk)' : task.status === 'waiting' ? 'var(--t-amber)' : 'var(--t-txt2)', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
+                  {task.status.replace('_', ' ')}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--t-muted)', flexShrink: 0 }}>{reason(task)}</span>
+                {inSession && (
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: 'oklch(0.94 0.05 150)', color: 'oklch(0.4 0.14 150)', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
+                    In session
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+      {openTaskId && (
+        <TaskModal taskId={openTaskId} onClose={() => setOpenTaskId(null)} urlDriven={false} />
+      )}
+    </div>
+  );
+}
 
 function ManagedList({ title, items, onAdd, onRemove }: { title: string; items: string[]; onAdd: (n: string) => void; onRemove: (n: string) => void }) {
   const [input, setInput] = useState('');
@@ -41,30 +186,17 @@ function ManagedList({ title, items, onAdd, onRemove }: { title: string; items: 
 
 export function Settings() {
   useLogMount('Settings');
-  const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);
   const customFields = useStore(s => s.customFields);
-  const addRequester = useStore(s => s.addRequester);
-  const removeRequester = useStore(s => s.removeRequester);
   const addProject = useStore(s => s.addProject);
   const removeProject = useStore(s => s.removeProject);
   const addCustomField = useStore(s => s.addCustomField);
   const removeCustomField = useStore(s => s.removeCustomField);
   const updateCustomField = useStore(s => s.updateCustomField);
   const themeId = useStore(s => s.themeId);
-  const jiraConfig = useStore(s => s.jiraConfig);
-  const setJiraConfig = useStore(s => s.setJiraConfig);
   const itsmConfig = useStore(s => s.itsmConfig);
   const setItsmConfig = useStore(s => s.setItsmConfig);
   const [page, setPage] = useState<'main' | 'appearance'>('main');
-
-  const [jira, setJira] = useState<JiraConfig>(() => jiraConfig ?? {
-    host: '', username: '', apiToken: '', projectKey: '', component: '', defaultAssigneeId: '',
-  });
-
-  function saveJira() {
-    setJiraConfig(jira.host && jira.username && jira.apiToken && jira.projectKey ? jira : null);
-  }
 
   const [itsm, setItsm] = useState<ItsmConfig>(() => itsmConfig ?? { host: '' });
   function saveItsm() {
@@ -79,6 +211,7 @@ export function Settings() {
   const [summaries, setSummaries] = useState<Record<string, ChangeSummary>>({});
   const [debugEnabled, setDebugEnabled] = useState(getDebugMode());
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
+  const [showAllSnaps, setShowAllSnaps] = useState(false);
 
   useEffect(() => {
     getSnapshotDir().then(h => { if (h) setSnapDirName(h.name); });
@@ -94,15 +227,16 @@ export function Settings() {
     try {
       const list = await listSnapshots();
       setSnapshots(list);
-      // Compute change summaries for each snapshot (change since previous)
+      // Change summaries for all snapshots in ONE batch — the logs are read
+      // from disk once instead of once per snapshot.
+      // list is newest-first; the previous snapshot is at index+1.
+      const ranges = list.map((s, i) => ({
+        from: i < list.length - 1 ? list[i + 1].time : 0,
+        to: s.time,
+      }));
+      const sums = await summarizeRanges(ranges);
       const map: Record<string, ChangeSummary> = {};
-      // list is newest-first; the previous snapshot is at index+1
-      for (let i = 0; i < list.length; i++) {
-        const from = i < list.length - 1 ? list[i + 1].time : 0;
-        const to = list[i].time;
-        // eslint-disable-next-line no-await-in-loop
-        map[list[i].filename] = await summarizeRange(from, to);
-      }
+      list.forEach((s, i) => { map[s.filename] = sums[i]; });
       setSummaries(map);
     } catch { /* ignore */ }
     setLoadingSnaps(false);
@@ -280,7 +414,7 @@ export function Settings() {
                 return (
                   <button
                     type="button"
-                    onClick={() => setHistoryCollapsed(c => !c)}
+                    onClick={() => setHistoryCollapsed(c => { if (!c) setShowAllSnaps(false); return !c; })}
                     style={{
                       width: '100%', display: 'flex', alignItems: 'center', gap: 10,
                       padding: '10px 12px', marginBottom: historyCollapsed ? 0 : 8,
@@ -322,7 +456,7 @@ export function Settings() {
                 <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>No snapshots yet. Navigate between views to create some.</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 420, overflowY: 'auto', border: '1px solid var(--t-brd2)', borderRadius: 8 }}>
-                  {snapshots.map((s, idx) => {
+                  {(showAllSnaps ? snapshots : snapshots.slice(0, 10)).map((s, idx) => {
                     const summary = summaries[s.filename];
                     const isCurrent = idx === 0;
                     return (
@@ -370,6 +504,13 @@ export function Settings() {
                       </div>
                     );
                   })}
+                  {!showAllSnaps && snapshots.length > 10 && (
+                    <button
+                      onClick={() => setShowAllSnaps(true)}
+                      style={{ padding: '10px 12px', border: 'none', background: 'var(--t-surf2)', color: 'var(--t-acc-dk)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                      Show all {snapshots.length} snapshots
+                    </button>
+                  )}
                 </div>
               ))}
             </>
@@ -406,54 +547,8 @@ export function Settings() {
         </label>
       </div>
 
-      {/* Jira */}
-      {(() => {
-        const fi: React.CSSProperties = { fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', width: '100%', boxSizing: 'border-box' as const };
-        const fl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 5 };
-        const field = (label: string, el: React.ReactNode) => (
-          <div><div style={fl}>{label}</div>{el}</div>
-        );
-        return (
-          <div style={card}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 4 }}>Jira Integration</div>
-            <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: 16 }}>
-              Use an{' '}
-              <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer" style={{ color: 'var(--t-acc)' }}>Atlassian API token</a>
-              {' '}(not your password). Fields marked * are required.
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-              {field('Host *',
-                <input value={jira.host} onChange={e => setJira(j => ({ ...j, host: e.target.value }))} placeholder="mycompany.atlassian.net" style={fi} />
-              )}
-              {field('Project Key *',
-                <input value={jira.projectKey} onChange={e => setJira(j => ({ ...j, projectKey: e.target.value.toUpperCase() }))} placeholder="PROJ" style={fi} />
-              )}
-              {field('Username (email) *',
-                <input value={jira.username} onChange={e => setJira(j => ({ ...j, username: e.target.value }))} placeholder="you@company.com" style={fi} />
-              )}
-              {field('API Token *',
-                <input value={jira.apiToken} onChange={e => setJira(j => ({ ...j, apiToken: e.target.value }))} type="password" placeholder="••••••••••••" style={fi} />
-              )}
-              {field('Default Component',
-                <input value={jira.component} onChange={e => setJira(j => ({ ...j, component: e.target.value }))} placeholder="Frontend (optional)" style={fi} />
-              )}
-              {field('Default Assignee Account ID',
-                <input value={jira.defaultAssigneeId} onChange={e => setJira(j => ({ ...j, defaultAssigneeId: e.target.value }))} placeholder="5d3f… (from Jira profile URL)" style={fi} />
-              )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <button onClick={saveJira} style={addBtn}>Save</button>
-              {jiraConfig && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'oklch(0.5 0.14 150)' }}>
-                  <span>✓ Connected · {jiraConfig.host} / {jiraConfig.projectKey}</span>
-                  <span onClick={() => { setJiraConfig(null); setJira({ host: '', username: '', apiToken: '', projectKey: '', component: '', defaultAssigneeId: '' }); }}
-                    style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 16 }}>×</span>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
+      {/* Jira (multi-host) */}
+      <JiraHostsSection />
 
       {/* ITSM (ServiceNow) */}
       {(() => {
@@ -487,9 +582,11 @@ export function Settings() {
 
       {/* Managed lists row */}
       <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-        <ManagedList title="Requesters" items={requesters} onAdd={addRequester} onRemove={removeRequester} />
+        <RequestersList />
         <ManagedList title="Projects" items={projects} onAdd={addProject} onRemove={removeProject} />
       </div>
+
+      <ReviewQueueSection />
 
       <ResponsibilitiesSection />
 

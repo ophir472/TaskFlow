@@ -152,10 +152,17 @@ async function writeSnapshotInner(): Promise<boolean> {
   // Uses dataEvents (not totalEvents) so navigation/rehydrate noise doesn't count.
   // Because we hold the cross-tab lock, no other tab can have written since we
   // read the newest snapshot time.
-  const lastSnapshotTime = await getNewestSnapshotTime(handle);
-  if (lastSnapshotTime !== null) {
-    const summary = await summarizeRange(lastSnapshotTime, Date.now());
+  const newest = await getNewestSnapshot(handle);
+  if (newest) {
+    const summary = await summarizeRange(newest.time, Date.now());
     if (summary.dataEvents === 0) return false;
+    // Content-identity guard against the newest snapshot ON DISK. The
+    // in-memory marker dies on reload, and toggle-back edits (A→B→A, e.g.
+    // switching the default Jira host and back) log real data events with
+    // zero net state change — both used to produce byte-identical duplicate
+    // snapshots that read as "no changes" in the history.
+    const prevStripped = await newestSnapshotStripped(handle, newest.name);
+    if (prevStripped !== null && prevStripped === stripped) return false;
   }
 
   const content = JSON.stringify({
@@ -339,16 +346,28 @@ async function pruneOldSnapshots(handle: Handle): Promise<void> {
 
 // Returns the epoch-ms time of the newest snapshot in the dir, or null if none exist.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function getNewestSnapshotTime(handle: any): Promise<number | null> {
-  let newest: number | null = null;
+async function getNewestSnapshot(handle: any): Promise<{ name: string; time: number } | null> {
+  let newest: { name: string; time: number } | null = null;
   try {
     for await (const [name, entry] of handle.entries()) {
       if (entry.kind !== 'file') continue;
       const t = parseSnapshotTime(name);
-      if (t !== null && (newest === null || t > newest)) newest = t;
+      if (t !== null && (newest === null || t > newest.time)) newest = { name, time: t };
     }
   } catch { /* ignore */ }
   return newest;
+}
+
+// Stripped state of the newest snapshot file — for content-identity
+// comparison against the state about to be written.
+async function newestSnapshotStripped(handle: any, name: string): Promise<string | null> {
+  try {
+    const fileHandle = await handle.getFileHandle(name);
+    const file = await fileHandle.getFile();
+    const parsed = JSON.parse(await file.text());
+    delete parsed.savedAt;
+    return stripUiFields(JSON.stringify(parsed));
+  } catch { return null; }
 }
 
 /**
@@ -723,9 +742,9 @@ const COALESCE_DATA_EVENTS = new Set([
   'comm:add', 'comm:update', 'comm:delete',
   // Settings changes count as versionable data.
   'customfield:add', 'customfield:remove', 'customfield:update',
-  'requester:add', 'requester:remove',
+  'requester:add', 'requester:remove', 'requester:set-jira-id',
   'project:add', 'project:remove',
-  'jira-config:set', 'itsm-config:set',
+  'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'itsm-config:set',
   'theme:set',
   // Per-card UI preferences that the user cares to preserve across versions.
   'card:resize',
@@ -760,7 +779,18 @@ function coalesceRapidEdits(events: LogRecord[]): LogRecord[] {
       const isSameCustomValueEdit =
         e.event === 'item:custom-value' && last.event === 'item:custom-value' &&
         d.itemId === p.itemId && d.fieldId === p.fieldId;
-      if (isSameItemFieldEdit || isSameSubtaskFieldEdit || isSameCustomValueEdit) {
+      // Typing into a communication field fires comm:update per keystroke.
+      const isSameCommFieldEdit =
+        e.event === 'comm:update' && last.event === 'comm:update' &&
+        d.taskId === p.taskId && d.fieldId === p.fieldId;
+      // Dragging a textarea resize handle fires card:resize repeatedly.
+      const isSameResize =
+        e.event === 'card:resize' && last.event === 'card:resize' &&
+        d.taskId === p.taskId && d.fieldKey === p.fieldKey;
+      // Dragging the custom accent/background color pickers fires theme:set
+      // continuously.
+      const isSameThemeEdit = e.event === 'theme:set' && last.event === 'theme:set';
+      if (isSameItemFieldEdit || isSameSubtaskFieldEdit || isSameCustomValueEdit || isSameCommFieldEdit || isSameResize || isSameThemeEdit) {
         result[result.length - 1] = e;
         last = e;
         continue;
@@ -772,12 +802,31 @@ function coalesceRapidEdits(events: LogRecord[]): LogRecord[] {
   return result;
 }
 
-// Summarize log events in the range (fromTime, toTime]
-export async function summarizeRange(fromTime: number, toTime: number): Promise<ChangeSummary> {
+interface PreparedLogs { logs: LogRecord[]; titleMap: Map<string, string> }
+
+// One disk read + one coalesce + one title map — shared by both summarize APIs.
+async function prepareSummaryLogs(): Promise<PreparedLogs> {
   const rawLogs = await readAllLogs();
   const logs = coalesceRapidEdits(rawLogs);
+  return { logs, titleMap: buildTitleMap(logs) };
+}
+
+// Summarize log events in the range (fromTime, toTime]
+export async function summarizeRange(fromTime: number, toTime: number): Promise<ChangeSummary> {
+  return summarizePrepared(await prepareSummaryLogs(), fromTime, toTime);
+}
+
+// Batch variant: reads + coalesces the logs ONCE and summarizes every range
+// against the in-memory result. The version-history list uses this — the old
+// per-snapshot summarizeRange loop re-read every log file from disk N times,
+// which is what made opening the history take seconds.
+export async function summarizeRanges(ranges: Array<{ from: number; to: number }>): Promise<ChangeSummary[]> {
+  const prepared = await prepareSummaryLogs();
+  return ranges.map(r => summarizePrepared(prepared, r.from, r.to));
+}
+
+function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, toTime: number): ChangeSummary {
   const s = emptySummary();
-  const titleMap = buildTitleMap(logs);
   const titleFor = (id: string | undefined): string => (id && titleMap.get(id)) || '(unknown)';
   const CATEGORIZED = new Set([
     'item:create', 'item:delete', 'item:archive', 'item:unarchive', 'item:update',
@@ -788,9 +837,9 @@ export async function summarizeRange(fromTime: number, toTime: number): Promise<
     'reminder:reschedule',
     'comm:add', 'comm:update', 'comm:delete',
     'customfield:add', 'customfield:remove', 'customfield:update',
-    'requester:add', 'requester:remove',
+    'requester:add', 'requester:remove', 'requester:set-jira-id',
     'project:add', 'project:remove',
-    'jira-config:set', 'itsm-config:set', 'theme:set',
+    'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'itsm-config:set', 'theme:set',
     'card:resize',
     'responsibility:add', 'responsibility:update', 'responsibility:remove',
     'responsibility:toggle-active', 'responsibility:generate-tasks',
@@ -814,9 +863,9 @@ export async function summarizeRange(fromTime: number, toTime: number): Promise<
     'tag:toggle', 'item:custom-value', 'reminder:reschedule', 'item:import',
     'comm:add', 'comm:update', 'comm:delete',
     'customfield:add', 'customfield:remove', 'customfield:update',
-    'requester:add', 'requester:remove',
+    'requester:add', 'requester:remove', 'requester:set-jira-id',
     'project:add', 'project:remove',
-    'jira-config:set', 'itsm-config:set', 'theme:set',
+    'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'itsm-config:set', 'theme:set',
     'card:resize',
     'responsibility:add', 'responsibility:update', 'responsibility:remove',
     'responsibility:toggle-active', 'responsibility:generate-tasks',
@@ -915,6 +964,10 @@ export async function summarizeRange(fromTime: number, toTime: number): Promise<
         s.otherChanges++;
         s.details.push({ action: 'removed requester', title: d.name });
         break;
+      case 'requester:set-jira-id':
+        s.otherChanges++;
+        s.details.push({ action: d.hasId ? 'mapped requester to Jira account' : 'cleared requester Jira account', title: d.name });
+        break;
       case 'project:add':
         s.otherChanges++;
         s.details.push({ action: 'added project', title: d.name });
@@ -926,6 +979,26 @@ export async function summarizeRange(fromTime: number, toTime: number): Promise<
       case 'jira-config:set':
         s.otherChanges++;
         s.details.push({ action: 'updated Jira config', title: d.host || '' });
+        break;
+      case 'jira-config:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added Jira host', title: d.projectKey || d.host || '' });
+        break;
+      case 'jira-config:update':
+        s.otherChanges++;
+        s.details.push({ action: 'updated Jira host', title: d.id || '' });
+        break;
+      case 'jira-config:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'removed Jira host', title: d.id || '' });
+        break;
+      case 'jira-config:set-default':
+        s.otherChanges++;
+        s.details.push({ action: 'changed default Jira host', title: d.id || '' });
+        break;
+      case 'jira-open-mode:set':
+        s.otherChanges++;
+        s.details.push({ action: 'changed Jira link opening', title: d.mode === 'tab' ? 'new tab' : 'popup preview' });
         break;
       case 'itsm-config:set':
         s.otherChanges++;
@@ -997,6 +1070,22 @@ export async function summarizeRange(fromTime: number, toTime: number): Promise<
 // ── Log reading ─────────────────────────────────────────────────────
 
 interface LogRecord extends LogEntry { _time: number }
+
+/**
+ * True when a specific field of a task was edited after `since`, per the
+ * mutation logs. Used by the review flow to decide whether to include the
+ * notes section in the suggested Jira comment. Returns false when no log
+ * directory is configured (can't know → assume unchanged).
+ */
+export async function taskFieldChangedSince(taskId: string, field: string, since: number): Promise<boolean> {
+  const logs = await readAllLogs();
+  return logs.some(e => {
+    if (e._time <= since || e.event !== 'item:update') return false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = e.data as any;
+    return d?.id === taskId && Array.isArray(d?.fields) && d.fields.includes(field);
+  });
+}
 
 async function readAllLogs(): Promise<LogRecord[]> {
   const handle = await getSnapshotDir();

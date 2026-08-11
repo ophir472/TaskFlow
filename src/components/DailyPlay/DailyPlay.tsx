@@ -2,6 +2,10 @@ import { useState, useMemo } from 'react';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { parseEstimate, formatMinutes } from '../../estimateParser';
+import { jiraTicketUrl } from '../../jiraHosts';
+import { useJiraOpener } from '../Common/JiraPreviewModal';
+import { TaskModal } from '../TaskModal/TaskModal';
+import { SubtaskPanel } from '../SubtaskPanel/SubtaskPanel';
 
 interface Props {
   onClose: () => void;
@@ -12,7 +16,7 @@ interface Props {
 // (nothing persisted) — closing the popup resets them.
 export function DailyPlay({ onClose }: Props) {
   const items = useStore(s => s.items);
-  const jiraConfig = useStore(s => s.jiraConfig);
+  const jiraConfigs = useStore(s => s.jiraConfigs);
   const updateItem = useStore(s => s.updateItem);
   const updateSubtask = useStore(s => s.updateSubtask);
 
@@ -21,7 +25,21 @@ export function DailyPlay({ onClose }: Props) {
     [items],
   );
 
+  const { openJira, jiraModal } = useJiraOpener();
   const [markedSubIds, setMarkedSubIds] = useState<Set<string>>(new Set());
+  // Session-only visibility: completed subtasks are hidden by default (toggle
+  // to show), and any row can be hidden manually. Both reset when the popup
+  // closes — reopening hides only the completed ones again.
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [hiddenSubIds, setHiddenSubIds] = useState<Set<string>>(new Set());
+  // Click-to-open popups (state-driven — no URL routing inside this overlay).
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [openSub, setOpenSub] = useState<{ parentId: string; subId: string } | null>(null);
+  function hideSub(subId: string) {
+    setHiddenSubIds(prev => new Set(prev).add(subId));
+    // A hidden row shouldn't keep counting toward the day's total.
+    setMarkedSubIds(prev => { const n = new Set(prev); n.delete(subId); return n; });
+  }
   function toggleMark(subId: string) {
     setMarkedSubIds(prev => {
       const n = new Set(prev);
@@ -46,7 +64,6 @@ export function DailyPlay({ onClose }: Props) {
     return { count, mins };
   }, [todayTasks, markedSubIds]);
 
-  const jiraHost = jiraConfig?.host;
 
   return (
     <div style={backdropSt} onClick={onClose}>
@@ -59,6 +76,16 @@ export function DailyPlay({ onClose }: Props) {
               {todayTasks.length} task{todayTasks.length === 1 ? '' : 's'} marked today
             </span>
           </div>
+          {(() => {
+            const doneCount = todayTasks.reduce((n, t) => n + t.subtasks.filter(s => s.done).length, 0);
+            if (doneCount === 0) return null;
+            return (
+              <button onClick={() => setShowCompleted(v => !v)}
+                style={{ border: '1px solid var(--t-brd)', background: showCompleted ? 'var(--t-surf2)' : 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 999, cursor: 'pointer', marginLeft: 'auto' }}>
+                {showCompleted ? 'Hide completed' : `Show completed (${doneCount})`}
+              </button>
+            );
+          })()}
           <button onClick={onClose} title="Close" style={{ border: 'none', background: 'transparent', fontSize: 20, color: 'var(--t-muted)', cursor: 'pointer', padding: '0 6px', lineHeight: 1 }}>×</button>
         </div>
 
@@ -75,31 +102,42 @@ export function DailyPlay({ onClose }: Props) {
                   <th style={{ ...th, width: 34 }}></th>
                   <th style={{ ...th }}>Task / Subtask</th>
                   <th style={{ ...th, width: 130 }}>Jira</th>
-                  <th style={{ ...th, width: 110, textAlign: 'right', paddingRight: 22 }}>Estimate</th>
+                  <th style={{ ...th, width: 110, textAlign: 'right', paddingRight: 8 }}>Estimate</th>
+                  <th style={{ ...th, width: 36 }}></th>
                 </tr>
               </thead>
               <tbody>
                 {todayTasks.map(t => {
                   const jiraLink = t.jiraLink;
+                  const jiraUrl = jiraLink ? jiraTicketUrl(jiraConfigs, jiraLink) : null;
                   return (
                     <>
                       {/* Parent task row (no triangle — triangles only on subtasks) */}
                       <tr key={t.id} style={{ borderTop: '1px solid var(--t-brd)' }}>
                         <td style={{ ...td, textAlign: 'center', color: 'var(--t-muted)' }}>·</td>
-                        <td style={{ ...td, fontWeight: 600 }}>{t.title}</td>
-                        <td style={{ ...td }}>
-                          {jiraLink && jiraHost ? (
-                            <a href={`https://${jiraHost}/browse/${jiraLink}`} target="_blank" rel="noreferrer"
-                              style={{ fontSize: 12.5, color: 'var(--t-acc)', textDecoration: 'none' }}>
-                              {jiraLink} ↗
-                            </a>
-                          ) : jiraLink ? (
-                            <span style={{ fontSize: 12.5, color: 'var(--t-muted)' }}>{jiraLink}</span>
-                          ) : (
-                            <span style={{ fontSize: 12, color: 'var(--t-muted)' }}>—</span>
-                          )}
+                        <td style={{ ...td, fontWeight: 600 }}>
+                          <span onClick={() => setOpenTaskId(t.id)} title="Open task"
+                            style={{ cursor: 'pointer' }}
+                            onMouseEnter={e => (e.currentTarget.style.color = 'var(--t-acc-dk)')}
+                            onMouseLeave={e => (e.currentTarget.style.color = '')}>
+                            {t.title}
+                          </span>
                         </td>
-                        <td style={{ ...td, textAlign: 'right', paddingRight: 22 }}>
+                        <td style={{ ...td }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <input
+                              value={jiraLink}
+                              onChange={e => updateItem(t.id, { jiraLink: e.target.value })}
+                              placeholder="PROJ-1234"
+                              style={jiraInp}
+                            />
+                            {jiraLink && jiraUrl && (
+                              <span onClick={() => openJira(jiraUrl, jiraLink)} title={`Open ${jiraLink}`}
+                                style={{ fontSize: 14, color: 'var(--t-acc)', cursor: 'pointer', flexShrink: 0 }}>↗</span>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ ...td, textAlign: 'right', paddingRight: 8 }}>
                           <input
                             value={t.estimate ?? ''}
                             onChange={e => updateItem(t.id, { estimate: e.target.value })}
@@ -107,9 +145,12 @@ export function DailyPlay({ onClose }: Props) {
                             style={estInp}
                           />
                         </td>
+                        <td style={{ ...td }} />
                       </tr>
-                      {/* Subtask rows (indented, with triangle) */}
-                      {t.subtasks.map(sub => {
+                      {/* Subtask rows (indented, with triangle). Completed ones
+                          are hidden unless toggled; manually hidden stay out
+                          for the rest of this session. */}
+                      {t.subtasks.filter(sub => !hiddenSubIds.has(sub.id) && (showCompleted || !sub.done)).map(sub => {
                         const marked = markedSubIds.has(sub.id);
                         return (
                           <tr key={sub.id} style={{ background: marked ? 'oklch(0.96 0.05 150)' : 'transparent' }}>
@@ -128,28 +169,47 @@ export function DailyPlay({ onClose }: Props) {
                             </td>
                             <td style={{ ...td, paddingLeft: 32, color: sub.done ? 'var(--t-muted)' : 'var(--t-txt2)', textDecoration: sub.done ? 'line-through' : 'none' }}>
                               <span style={{ color: 'var(--t-muted)', marginRight: 8 }}>↳</span>
-                              {sub.title}
+                              <span onClick={() => setOpenSub({ parentId: t.id, subId: sub.id })} title="Open subtask"
+                                style={{ cursor: 'pointer' }}
+                                onMouseEnter={e => (e.currentTarget.style.color = 'var(--t-acc-dk)')}
+                                onMouseLeave={e => (e.currentTarget.style.color = '')}>
+                                {sub.title}
+                              </span>
                             </td>
                             <td style={{ ...td }}>
-                              {sub.jira ? (
-                                jiraHost ? (
-                                  <a href={`https://${jiraHost}/browse/${sub.jira}`} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--t-acc)', textDecoration: 'none' }}>
-                                    {sub.jira} ↗
-                                  </a>
-                                ) : (
-                                  <span style={{ fontSize: 12, color: 'var(--t-muted)' }}>{sub.jira}</span>
-                                )
-                              ) : (
-                                <span style={{ fontSize: 12, color: 'var(--t-brd)' }}>—</span>
-                              )}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <input
+                                  value={sub.jira ?? ''}
+                                  onChange={e => updateSubtask(t.id, sub.id, { jira: e.target.value })}
+                                  placeholder="PROJ-1234"
+                                  style={jiraInp}
+                                />
+                                {sub.jira && (() => {
+                                  const subUrl = jiraTicketUrl(jiraConfigs, sub.jira);
+                                  return subUrl ? (
+                                    <span onClick={() => openJira(subUrl, sub.jira)} title={`Open ${sub.jira}`}
+                                      style={{ fontSize: 14, color: 'var(--t-acc)', cursor: 'pointer', flexShrink: 0 }}>↗</span>
+                                  ) : null;
+                                })()}
+                              </div>
                             </td>
-                            <td style={{ ...td, textAlign: 'right', paddingRight: 22 }}>
+                            <td style={{ ...td, textAlign: 'right', paddingRight: 8 }}>
                               <input
                                 value={sub.estimate ?? ''}
                                 onChange={e => updateSubtask(t.id, sub.id, { estimate: e.target.value })}
                                 placeholder="—"
                                 style={estInp}
                               />
+                            </td>
+                            <td style={{ ...td, textAlign: 'center' }}>
+                              <span
+                                onClick={() => hideSub(sub.id)}
+                                title="Hide for this session"
+                                style={{ cursor: 'pointer', fontSize: 15, color: 'var(--t-brd)', lineHeight: 1, userSelect: 'none' }}
+                                onMouseEnter={e => (e.currentTarget.style.color = 'var(--t-muted)')}
+                                onMouseLeave={e => (e.currentTarget.style.color = 'var(--t-brd)')}>
+                                ⊖
+                              </span>
                             </td>
                           </tr>
                         );
@@ -183,6 +243,20 @@ export function DailyPlay({ onClose }: Props) {
           </button>
         </div>
       </div>
+      {jiraModal}
+
+      {/* Task / subtask popups — wrapped so their backdrop clicks don't
+          bubble to the Daily backdrop and close everything. */}
+      {openTaskId && (
+        <div onClick={e => e.stopPropagation()}>
+          <TaskModal taskId={openTaskId} onClose={() => setOpenTaskId(null)} urlDriven={false} />
+        </div>
+      )}
+      {openSub && (
+        <div onClick={e => e.stopPropagation()}>
+          <SubtaskPanel parentId={openSub.parentId} subId={openSub.subId} onClose={() => setOpenSub(null)} />
+        </div>
+      )}
     </div>
   );
 }
@@ -203,6 +277,11 @@ const th: React.CSSProperties = {
   textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--t-muted)',
 };
 const td: React.CSSProperties = { padding: '9px 14px', verticalAlign: 'middle' };
+const jiraInp: React.CSSProperties = {
+  width: 100, fontSize: 12.5, padding: '5px 8px', borderRadius: 6,
+  border: '1px solid var(--t-brd)', background: 'var(--t-surf2)',
+  color: 'var(--t-txt)', outline: 'none',
+};
 const estInp: React.CSSProperties = {
   width: 76, fontSize: 13, padding: '5px 8px', borderRadius: 6,
   border: '1px solid var(--t-brd)', background: 'var(--t-surf2)',

@@ -116,9 +116,11 @@ function placeholderFor(label: string): string {
   return 'Names, subjects, links…';
 }
 
-/** Returns communications with fallback seeding — for older items missing the field. */
+/** Returns communications with fallback seeding — for older items missing the
+ * field OR items left with an empty array by the pre-upsert bug. The primary
+ * field can't be deleted from the UI, so empty always means "needs the
+ * default", never a deliberate user state. */
 export function getCommunications(fields: CommunicationField[] | undefined): CommunicationField[] {
   if (fields && fields.length) return fields;
-  if (fields) return fields; // explicitly empty (user deleted all)
   return [{ id: 'c-default-teams', label: 'Teams', value: '' }];
 }

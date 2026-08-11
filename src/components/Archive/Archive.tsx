@@ -81,6 +81,7 @@ export function Archive() {
   const [projFilter, setProjFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [closedToday, setClosedToday] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
@@ -195,12 +196,16 @@ export function Archive() {
   }
 
   // Filter rows (archived only)
+  const todayStart = new Date().setHours(0, 0, 0, 0);
   let rows = items.filter(it => {
     if (!it.archived) return false;
     if (reqFilter && (it as Task).requester !== reqFilter) return false;
     if (projFilter && (it as Task).project !== projFilter) return false;
     if (typeFilter && it.kind !== typeFilter) return false;
     if (statusFilter && it.kind === 'task' && it.status !== statusFilter) return false;
+    // "Closed today" — archiving (complete / done / archive) stamps updatedAt,
+    // so items whose last update is today were closed today.
+    if (closedToday && it.updatedAt < todayStart) return false;
     return true;
   });
 
@@ -369,8 +374,15 @@ export function Archive() {
               <option value="waiting">Waiting</option>
               <option value="done">Done</option>
             </select>
-            {(typeFilter || reqFilter || projFilter || statusFilter) && (
-              <button onClick={() => { setTypeFilter(''); setReqFilter(''); setProjFilter(''); setStatusFilter(''); }}
+            <button
+              onClick={() => setClosedToday(v => !v)}
+              style={{ fontSize: 12.5, padding: '5px 11px', borderRadius: 6, border: 'none', background: closedToday ? 'var(--t-acc-bg)' : 'transparent', color: closedToday ? 'var(--t-acc-dk)' : 'var(--t-muted)', cursor: 'pointer', fontWeight: closedToday ? 600 : 400, whiteSpace: 'nowrap' }}
+              onMouseEnter={e => { if (!closedToday) e.currentTarget.style.background = 'var(--t-surf2)'; }}
+              onMouseLeave={e => { if (!closedToday) e.currentTarget.style.background = 'transparent'; }}>
+              Closed today
+            </button>
+            {(typeFilter || reqFilter || projFilter || statusFilter || closedToday) && (
+              <button onClick={() => { setTypeFilter(''); setReqFilter(''); setProjFilter(''); setStatusFilter(''); setClosedToday(false); }}
                 style={{ ...ghostBtn, fontSize: 12 }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}

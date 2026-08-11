@@ -4,7 +4,10 @@ import type { Task } from '../../types';
 import { flaggedTasks, stepsFor, type Step } from '../../greenPlay';
 import { EstimatesSection } from '../Common/EstimatesSection';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
-import { createJiraIssue } from '../../jira';
+import { createJiraIssue, addJiraComment, closeJiraIssue } from '../../jira';
+import { getDefaultJiraConfig, getJiraConfigForKey } from '../../jiraHosts';
+import { useJiraOpener } from '../Common/JiraPreviewModal';
+import { taskFieldChangedSince } from '../../snapshots';
 
 interface Props {
   onClose: () => void;
@@ -18,7 +21,9 @@ interface ArrowGeom {
 
 export function GreenPlay({ onClose }: Props) {
   const items = useStore(s => s.items);
-  const jiraConfig = useStore(s => s.jiraConfig);
+  const jiraConfigs = useStore(s => s.jiraConfigs);
+  const defaultJira = getDefaultJiraConfig(jiraConfigs);
+  const requesterJiraIds = useStore(s => s.requesterJiraIds);
   const itsmConfig = useStore(s => s.itsmConfig);
   const updateItem = useStore(s => s.updateItem);
   const addSubtask = useStore(s => s.addSubtask);
@@ -69,29 +74,111 @@ export function GreenPlay({ onClose }: Props) {
   const [arrow, setArrow] = useState<ArrowGeom | null>(null);
   const [creatingJira, setCreatingJira] = useState(false);
   const [jiraError, setJiraError] = useState<string | null>(null);
+  const { openJira, jiraModal } = useJiraOpener();
+  // "Create Jira" step: description for the ticket about to be created.
+  const [createJiraDesc, setCreateJiraDesc] = useState('');
+  // "Update Jira" step: suggested comment text + posting state.
+  const [jiraUpdateText, setJiraUpdateText] = useState('');
+  const [addingComment, setAddingComment] = useState(false);
+  const [commentStatus, setCommentStatus] = useState<string | null>(null);
+  const [commentPickerOpen, setCommentPickerOpen] = useState(false);
+  // "Close Jira" step: transition state.
+  const [closingJira, setClosingJira] = useState(false);
+  const [closeStatus, setCloseStatus] = useState<string | null>(null);
+  const [closePickerOpen, setClosePickerOpen] = useState(false);
 
   // Called by the "Create Jira" step's action button. Uses the Jira config
   // stored in Settings; writes the resulting key back to the task's jiraLink.
   const handleCreateJira = useCallback(async () => {
-    if (!currentTask || !jiraConfig) return;
+    if (!currentTask || !defaultJira) return;
     setJiraError(null);
     setCreatingJira(true);
     try {
-      const result = await createJiraIssue(jiraConfig, {
+      const result = await createJiraIssue(defaultJira, {
         summary: currentTask.title,
-        description: currentTask.description ?? '',
+        description: createJiraDesc,
         requestedBy: currentTask.requester ?? '',
+        reporterAccountId: currentTask.requester ? requesterJiraIds[currentTask.requester] : undefined,
       });
-      updateItem(currentTask.id, { jiraLink: result.key });
+      updateItem(currentTask.id, { jiraLink: result.key, description: createJiraDesc });
     } catch (err) {
       setJiraError(err instanceof Error ? err.message : String(err));
     } finally {
       setCreatingJira(false);
     }
-  }, [currentTask, jiraConfig, updateItem]);
+  }, [currentTask, defaultJira, requesterJiraIds, createJiraDesc, updateItem]);
 
-  // Clear the transient jira error whenever we move to another step/card.
-  useEffect(() => { setJiraError(null); }, [stepIdx, cardIdx]);
+  // Clear the transient jira states whenever we move to another step/card.
+  useEffect(() => {
+    setJiraError(null);
+    setCloseStatus(null);
+    setClosePickerOpen(false);
+  }, [stepIdx, cardIdx]);
+
+  // Prefill the "Update Jira" summary box: names of subtasks created since the
+  // card's last review, plus the whole notes section when the logs show notes
+  // were edited since then. The async notes check only overwrites if the user
+  // hasn't already typed over the prefill.
+  // Prefill the Create-Jira description with the task's stored description.
+  useEffect(() => {
+    if (currentStep?.kind === 'createJira' && currentTask) setCreateJiraDesc(currentTask.description ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTask?.id, currentStep?.kind]);
+
+  useEffect(() => {
+    setCommentStatus(null);
+    setCommentPickerOpen(false);
+    if (currentStep?.kind !== 'updateJira' || !currentTask) { setJiraUpdateText(''); return; }
+    const baseline = initialReviewedAt[currentTask.id] ?? currentTask.createdAt;
+    const newSubs = currentTask.subtasks.filter(s => s.createdAt > baseline);
+    const syncText = newSubs.length ? `New subtasks:\n${newSubs.map(s => `- ${s.title}`).join('\n')}` : '';
+    setJiraUpdateText(syncText);
+    let cancelled = false;
+    const notes = currentTask.notes?.trim();
+    if (notes) {
+      taskFieldChangedSince(currentTask.id, 'notes', baseline).then(changed => {
+        if (cancelled || !changed) return;
+        const notesBlock = `Notes:\n${currentTask.notes}`;
+        setJiraUpdateText(prev => prev === syncText
+          ? (syncText ? `${syncText}\n\n${notesBlock}` : notesBlock)
+          : prev);
+      }).catch(() => { /* logs unavailable — leave prefill as-is */ });
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTask?.id, currentStep?.kind]);
+
+  async function postCloseJira(ticketKey: string) {
+    const cfg = getJiraConfigForKey(jiraConfigs, ticketKey);
+    if (!cfg) { setCloseStatus('No Jira host configured for this ticket.'); return; }
+    setClosingJira(true);
+    setCloseStatus(null);
+    setClosePickerOpen(false);
+    try {
+      const statusName = await closeJiraIssue(cfg, ticketKey);
+      setCloseStatus(`✓ ${ticketKey} moved to ${statusName}`);
+    } catch (err) {
+      setCloseStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setClosingJira(false);
+    }
+  }
+
+  async function postComment(ticketKey: string) {
+    const cfg = getJiraConfigForKey(jiraConfigs, ticketKey);
+    if (!cfg) { setCommentStatus('No Jira host configured for this ticket.'); return; }
+    setAddingComment(true);
+    setCommentStatus(null);
+    setCommentPickerOpen(false);
+    try {
+      await addJiraComment(cfg, ticketKey, jiraUpdateText.trim());
+      setCommentStatus(`✓ Comment added to ${ticketKey}`);
+    } catch (err) {
+      setCommentStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setAddingComment(false);
+    }
+  }
 
   // Advance / rewind. When advancing past the LAST step of a card, mark that
   // specific card reviewed. Progress is written to the persisted session so
@@ -251,7 +338,8 @@ export function GreenPlay({ onClose }: Props) {
               task={currentTask}
               currentTarget={currentStep?.target}
               newSubtaskIds={newSubtaskIds}
-              jiraHost={jiraConfig?.host}
+              jiraOpenUrl={(key) => { const cfg = getJiraConfigForKey(jiraConfigs, key); return cfg ? `https://${cfg.host}/browse/${key}` : null; }}
+              onOpenJira={openJira}
               itsmHost={itsmConfig?.host}
               onUpdate={patch => updateItem(currentTask.id, patch)}
               onAddSubtask={title => addSubtask(currentTask.id, title)}
@@ -260,7 +348,7 @@ export function GreenPlay({ onClose }: Props) {
           </div>
 
           {/* Side panel */}
-          <div ref={panelRef} style={{ width: 320, flexShrink: 0, borderLeft: '1px solid var(--t-brd)', background: 'var(--t-surf)', display: 'flex', flexDirection: 'column', padding: '24px 22px' }}>
+          <div ref={panelRef} style={{ width: 320, flexShrink: 0, borderLeft: '1px solid var(--t-brd)', background: 'var(--t-surf)', display: 'flex', flexDirection: 'column', padding: '24px 22px', overflowY: 'auto' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'oklch(0.5 0.13 150)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
               Next step
             </div>
@@ -271,6 +359,19 @@ export function GreenPlay({ onClose }: Props) {
               {currentStep?.description}
             </div>
 
+            {/* Breakdown step: coaching prompts */}
+            {currentStep?.kind === 'breakdown' && (
+              <div style={{ marginBottom: 20, padding: '12px 14px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd)', borderRadius: 9 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                  Ask yourself
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 13.5, color: 'var(--t-txt)', lineHeight: 1.45 }}>
+                  <div>→ What is the <b>next step</b>? Is it a subtask — and starred?</div>
+                  <div>→ Is this plan still <b>accurate</b>? Update what changed, check off what's done.</div>
+                </div>
+              </div>
+            )}
+
             {/* Step-specific action */}
             {currentStep?.kind === 'createJira' && (
               <div style={{ marginBottom: 20 }}>
@@ -278,11 +379,23 @@ export function GreenPlay({ onClose }: Props) {
                   <div style={{ fontSize: 13, color: 'oklch(0.5 0.13 150)', padding: '10px 12px', border: '1px solid oklch(0.8 0.09 150)', background: 'oklch(0.96 0.05 150)', borderRadius: 8 }}>
                     ✓ Linked to <b>{currentTask.jiraLink}</b>
                   </div>
-                ) : jiraConfig ? (
-                  <button onClick={handleCreateJira} disabled={creatingJira}
-                    style={{ width: '100%', border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 14, fontWeight: 600, padding: '10px 14px', borderRadius: 8, cursor: creatingJira ? 'wait' : 'pointer', opacity: creatingJira ? 0.6 : 1 }}>
-                    {creatingJira ? 'Creating…' : '+ Create Jira'}
-                  </button>
+                ) : defaultJira ? (
+                  <>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                      Jira description
+                    </div>
+                    <textarea
+                      value={createJiraDesc}
+                      onChange={e => setCreateJiraDesc(e.target.value)}
+                      rows={4}
+                      placeholder="Describe the ticket…"
+                      style={{ width: '100%', fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit', outline: 'none', marginBottom: 8 }}
+                    />
+                    <button onClick={handleCreateJira} disabled={creatingJira}
+                      style={{ width: '100%', border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 14, fontWeight: 600, padding: '10px 14px', borderRadius: 8, cursor: creatingJira ? 'wait' : 'pointer', opacity: creatingJira ? 0.6 : 1 }}>
+                      {creatingJira ? 'Creating…' : `+ Create in ${defaultJira.projectKey || defaultJira.host}`}
+                    </button>
+                  </>
                 ) : (
                   <div style={{ fontSize: 12, color: 'var(--t-muted)', padding: '10px 12px', border: '1px dashed var(--t-brd)', borderRadius: 8 }}>
                     Configure Jira in Settings to enable one-click creation.
@@ -296,16 +409,113 @@ export function GreenPlay({ onClose }: Props) {
               </div>
             )}
 
-            {(currentStep?.kind === 'updateJira' || currentStep?.kind === 'closeJira') && currentTask.jiraLink && jiraConfig && (
-              <div style={{ marginBottom: 20 }}>
-                <a
-                  href={`https://${jiraConfig.host}/browse/${currentTask.jiraLink}`}
-                  target="_blank" rel="noreferrer"
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', width: '100%', border: '1px solid var(--t-acc)', background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', fontSize: 14, fontWeight: 600, padding: '9px 14px', borderRadius: 8, boxSizing: 'border-box' }}>
-                  ↗ Open {currentTask.jiraLink} in Jira
-                </a>
-              </div>
-            )}
+            {(currentStep?.kind === 'updateJira' || currentStep?.kind === 'closeJira') && currentTask.jiraLink && (() => {
+              const cfg = getJiraConfigForKey(jiraConfigs, currentTask.jiraLink);
+              if (!cfg) return null;
+              return (
+                <div style={{ marginBottom: 20 }}>
+                  <button
+                    onClick={() => openJira(`https://${cfg.host}/browse/${currentTask.jiraLink}`, currentTask.jiraLink)}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', border: '1px solid var(--t-acc)', background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', fontSize: 14, fontWeight: 600, padding: '9px 14px', borderRadius: 8, boxSizing: 'border-box', cursor: 'pointer' }}>
+                    ↗ Open {currentTask.jiraLink} in Jira
+                  </button>
+                </div>
+              );
+            })()}
+
+            {/* Close-Jira step: transition the ticket to done/resolved */}
+            {currentStep?.kind === 'closeJira' && (() => {
+              const tickets = [currentTask.jiraLink, ...(currentTask.extraJiraLinks ?? [])]
+                .map(x => (x ?? '').trim()).filter(Boolean);
+              if (tickets.length === 0) return null;
+              return (
+                <div style={{ marginBottom: 20 }}>
+                  {!closePickerOpen ? (
+                    <button
+                      onClick={() => { if (tickets.length === 1) postCloseJira(tickets[0]); else setClosePickerOpen(true); }}
+                      disabled={closingJira}
+                      style={{ width: '100%', border: 'none', background: 'oklch(0.5 0.13 150)', color: 'white', fontSize: 13, fontWeight: 600, padding: '9px 0', borderRadius: 7, cursor: closingJira ? 'wait' : 'pointer', opacity: closingJira ? 0.6 : 1 }}>
+                      {closingJira ? 'Closing…' : tickets.length > 1 ? '✓ Close Jira… (choose ticket)' : `✓ Close ${tickets[0]}`}
+                    </button>
+                  ) : (
+                    <div style={{ border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '7px 10px', background: 'var(--t-surf2)' }}>
+                        Close which ticket?
+                      </div>
+                      {tickets.map(k => (
+                        <button key={k} onClick={() => postCloseJira(k)}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', borderTop: '1px solid var(--t-brd2)', background: 'var(--t-surf)', fontSize: 13, fontWeight: 600, color: 'oklch(0.4 0.14 150)', cursor: 'pointer' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'oklch(0.96 0.05 150)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'var(--t-surf)')}>
+                          {k}
+                        </button>
+                      ))}
+                      <button onClick={() => setClosePickerOpen(false)}
+                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', borderTop: '1px solid var(--t-brd2)', background: 'var(--t-surf)', fontSize: 12, color: 'var(--t-muted)', cursor: 'pointer' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                  {closeStatus && (
+                    <div style={{ marginTop: 8, fontSize: 12, padding: '7px 10px', borderRadius: 6, background: closeStatus.startsWith('✓') ? 'oklch(0.96 0.05 150)' : 'var(--t-urgent-bg)', color: closeStatus.startsWith('✓') ? 'oklch(0.4 0.14 150)' : 'var(--t-urgent)' }}>
+                      {closeStatus}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Update-Jira step: suggested comment + one-click post */}
+            {currentStep?.kind === 'updateJira' && (() => {
+              const tickets = [currentTask.jiraLink, ...(currentTask.extraJiraLinks ?? [])]
+                .map(x => (x ?? '').trim()).filter(Boolean);
+              const disabled = addingComment || !jiraUpdateText.trim() || tickets.length === 0;
+              return (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                    Update summary
+                  </div>
+                  <textarea
+                    value={jiraUpdateText}
+                    onChange={e => setJiraUpdateText(e.target.value)}
+                    rows={6}
+                    placeholder="No new subtasks or note changes detected — write your update…"
+                    style={{ width: '100%', fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit', outline: 'none' }}
+                  />
+                  {!commentPickerOpen ? (
+                    <button
+                      onClick={() => { if (tickets.length === 1) postComment(tickets[0]); else setCommentPickerOpen(true); }}
+                      disabled={disabled}
+                      style={{ marginTop: 8, width: '100%', border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 13, fontWeight: 600, padding: '9px 0', borderRadius: 7, cursor: addingComment ? 'wait' : 'pointer', opacity: disabled ? 0.5 : 1 }}>
+                      {addingComment ? 'Adding…' : tickets.length > 1 ? 'Add comment… (choose ticket)' : 'Add comment to Jira'}
+                    </button>
+                  ) : (
+                    <div style={{ marginTop: 8, border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '7px 10px', background: 'var(--t-surf2)' }}>
+                        Comment on which ticket?
+                      </div>
+                      {tickets.map(k => (
+                        <button key={k} onClick={() => postComment(k)}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', borderTop: '1px solid var(--t-brd2)', background: 'var(--t-surf)', fontSize: 13, fontWeight: 600, color: 'var(--t-acc-dk)', cursor: 'pointer' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-acc-bg)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'var(--t-surf)')}>
+                          {k}
+                        </button>
+                      ))}
+                      <button onClick={() => setCommentPickerOpen(false)}
+                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', borderTop: '1px solid var(--t-brd2)', background: 'var(--t-surf)', fontSize: 12, color: 'var(--t-muted)', cursor: 'pointer' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                  {commentStatus && (
+                    <div style={{ marginTop: 8, fontSize: 12, padding: '7px 10px', borderRadius: 6, background: commentStatus.startsWith('✓') ? 'oklch(0.96 0.05 150)' : 'var(--t-urgent-bg)', color: commentStatus.startsWith('✓') ? 'oklch(0.4 0.14 150)' : 'var(--t-urgent)' }}>
+                      {commentStatus}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             <div style={{ flex: 1 }} />
 
@@ -349,6 +559,7 @@ export function GreenPlay({ onClose }: Props) {
           )}
         </div>
       </div>
+      {jiraModal}
     </div>
   );
 }
@@ -380,14 +591,16 @@ interface CardProps {
   task: Task;
   currentTarget: Step['target'] | undefined;
   newSubtaskIds: Set<string>;
-  jiraHost: string | undefined;
+  /** Resolves a ticket key to its URL via the multi-host config (null if none). */
+  jiraOpenUrl: (key: string) => string | null;
+  onOpenJira: (url: string, key: string) => void;
   itsmHost: string | undefined;
   onUpdate: (patch: Partial<Task>) => void;
   onAddSubtask: (title: string) => void;
   onToggleSubtaskDone: (subId: string) => void;
 }
 
-function ReviewCard({ task, currentTarget, newSubtaskIds, jiraHost, itsmHost, onUpdate, onAddSubtask, onToggleSubtaskDone }: CardProps) {
+function ReviewCard({ task, currentTarget, newSubtaskIds, jiraOpenUrl, onOpenJira, itsmHost, onUpdate, onAddSubtask, onToggleSubtaskDone }: CardProps) {
   const [newSubTitle, setNewSubTitle] = useState('');
   const dimStyle = (target: Step['target']): React.CSSProperties => {
     if (!currentTarget) return {};
@@ -416,14 +629,26 @@ function ReviewCard({ task, currentTarget, newSubtaskIds, jiraHost, itsmHost, on
         </div>
       </div>
 
-      {/* Jira */}
+      {/* Jira — primary + every extra ticket on the task */}
       <div style={dimStyle('jira')}>
-        <div style={fl}>Jira ticket</div>
-        <div data-review-target="jira" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <input value={task.jiraLink} onChange={e => onUpdate({ jiraLink: e.target.value })} placeholder="PROJ-1234" style={{ ...inp, flex: 1 }} />
-          {task.jiraLink && jiraHost && (
-            <a href={`https://${jiraHost}/browse/${task.jiraLink}`} target="_blank" rel="noreferrer" style={{ fontSize: 18, color: 'var(--t-acc)', textDecoration: 'none' }}>↗</a>
-          )}
+        <div style={fl}>Jira ticket{(task.extraJiraLinks ?? []).filter(l => l.trim()).length > 0 ? 's' : ''}</div>
+        <div data-review-target="jira" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input value={task.jiraLink} onChange={e => onUpdate({ jiraLink: e.target.value })} placeholder="PROJ-1234" style={{ ...inp, flex: 1 }} />
+            {task.jiraLink && jiraOpenUrl(task.jiraLink) && (
+              <span onClick={() => onOpenJira(jiraOpenUrl(task.jiraLink)!, task.jiraLink)} style={{ fontSize: 18, color: 'var(--t-acc)', cursor: 'pointer' }} title={`Open ${task.jiraLink}`}>↗</span>
+            )}
+          </div>
+          {(task.extraJiraLinks ?? []).map((link, i) => (
+            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input value={link}
+                onChange={e => { const n = [...(task.extraJiraLinks ?? [])]; n[i] = e.target.value; onUpdate({ extraJiraLinks: n }); }}
+                placeholder="PROJ-1234" style={{ ...inp, flex: 1 }} />
+              {link && jiraOpenUrl(link) && (
+                <span onClick={() => onOpenJira(jiraOpenUrl(link)!, link)} style={{ fontSize: 18, color: 'var(--t-acc)', cursor: 'pointer' }} title={`Open ${link}`}>↗</span>
+              )}
+            </div>
+          ))}
         </div>
         {!task.jiraLink && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--t-muted)', cursor: 'pointer', marginTop: 6 }}>

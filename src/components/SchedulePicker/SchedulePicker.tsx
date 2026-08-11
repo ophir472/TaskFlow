@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ScheduleSpec, MonthlyOrdinalRule } from '../../types';
+import { formatSchedule } from '../../scheduleEngine';
 import { OneTimePicker } from './OneTimePicker';
 
 // ── Sub-types for internal state ─────────────────────────────────
@@ -86,23 +87,42 @@ export function SchedulePicker({ value, onChange, allowRecurring = true }: Props
       ? value.rule.dayOfWeek : 0 // Sun default
   );
 
+  const [recTime, setRecTime] = useState<string>(() =>
+    value?.type === 'recurring' && value.time
+      ? `${String(value.time.hour).padStart(2, '0')}:${String(value.time.minute).padStart(2, '0')}`
+      : '09:00'
+  );
+
   function buildOnce(at: number): ScheduleSpec {
     return { type: 'once', at };
   }
 
-  function buildRecurring(): ScheduleSpec {
-    if (freq === 'daily') return { type: 'recurring', rule: { freq: 'daily', every } };
-    if (freq === 'weekly') return { type: 'recurring', rule: { freq: 'weekly', every, days: days.length ? days : [1] } };
-    if (monthVariant === 'dayOfMonth') return { type: 'recurring', rule: { freq: 'monthly', variant: 'dayOfMonth', day: monthDay } };
-    return { type: 'recurring', rule: { freq: 'monthly', variant: 'ordinal', ordinal, dayOfWeek: ordinalDay } };
+  // Single source for the recurring spec: current state merged with the
+  // just-changed value (state setters are async, so handlers pass overrides).
+  function specFrom(over: Partial<{
+    freq: Freq; every: number; days: number[]; monthVariant: MonthVariant;
+    monthDay: number; ordinal: MonthlyOrdinalRule['ordinal'];
+    ordinalDay: MonthlyOrdinalRule['dayOfWeek']; recTime: string;
+  }> = {}): ScheduleSpec {
+    const f = over.freq ?? freq;
+    const ev = over.every ?? every;
+    const ds = over.days ?? days;
+    const mv = over.monthVariant ?? monthVariant;
+    const md = over.monthDay ?? monthDay;
+    const od = over.ordinal ?? ordinal;
+    const odw = over.ordinalDay ?? ordinalDay;
+    const [h, m] = (over.recTime ?? recTime).split(':').map(Number);
+    const time = { hour: h || 0, minute: m || 0 };
+    if (f === 'daily') return { type: 'recurring', rule: { freq: 'daily', every: ev }, time };
+    if (f === 'weekly') return { type: 'recurring', rule: { freq: 'weekly', every: ev, days: ds.length ? ds : [1] }, time };
+    if (mv === 'dayOfMonth') return { type: 'recurring', rule: { freq: 'monthly', variant: 'dayOfMonth', day: md, every: ev }, time };
+    return { type: 'recurring', rule: { freq: 'monthly', variant: 'ordinal', ordinal: od, dayOfWeek: odw, every: ev }, time };
   }
-
-  function emitRecurring() { onChange(buildRecurring()); }
 
   function toggleDay(d: number) {
     const next = days.includes(d) ? days.filter(x => x !== d) : [...days, d].sort((a, b) => a - b);
     setDays(next);
-    onChange({ type: 'recurring', rule: { freq: 'weekly', every, days: next.length ? next : [d] } });
+    onChange(specFrom({ days: next.length ? next : [d] }));
   }
 
   const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' };
@@ -129,21 +149,20 @@ export function SchedulePicker({ value, onChange, allowRecurring = true }: Props
       {/* Recurring */}
       {activeTab === 'recurring' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Frequency selector */}
+          {/* Frequency selector — the every-N input applies to all three
+              frequencies (every 3 months = quarterly) */}
           <div style={row}>
             <span style={label}>Every</span>
-            {freq !== 'monthly' && (
-              <input
-                type="number" min={1} max={52}
-                value={every}
-                onChange={e => { const n = Math.max(1, +e.target.value); setEvery(n); onChange(freq === 'daily' ? { type: 'recurring', rule: { freq: 'daily', every: n } } : { type: 'recurring', rule: { freq: 'weekly', every: n, days: days.length ? days : [1] } }); }}
-                style={numInput}
-              />
-            )}
+            <input
+              type="number" min={1} max={52}
+              value={every}
+              onChange={e => { const n = Math.max(1, +e.target.value); setEvery(n); onChange(specFrom({ every: n })); }}
+              style={numInput}
+            />
             <div style={{ display: 'flex', gap: 4 }}>
               {(['daily', 'weekly', 'monthly'] as Freq[]).map(f => (
-                <div key={f} onClick={() => { setFreq(f); if (f === 'daily') onChange({ type: 'recurring', rule: { freq: 'daily', every } }); else if (f === 'weekly') onChange({ type: 'recurring', rule: { freq: 'weekly', every, days: days.length ? days : [1] } }); else emitRecurring(); }} style={pill(freq === f)}>
-                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                <div key={f} onClick={() => { setFreq(f); onChange(specFrom({ freq: f })); }} style={pill(freq === f)}>
+                  {f === 'daily' ? (every > 1 ? 'Days' : 'Day') : f === 'weekly' ? (every > 1 ? 'Weeks' : 'Week') : (every > 1 ? 'Months' : 'Month')}
                 </div>
               ))}
             </div>
@@ -164,26 +183,42 @@ export function SchedulePicker({ value, onChange, allowRecurring = true }: Props
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {/* Ordinal option */}
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13.5 }}>
-                <input type="radio" checked={monthVariant === 'ordinal'} onChange={() => { setMonthVariant('ordinal'); onChange({ type: 'recurring', rule: { freq: 'monthly', variant: 'ordinal', ordinal, dayOfWeek: ordinalDay } }); }} />
+                <input type="radio" checked={monthVariant === 'ordinal'} onChange={() => { setMonthVariant('ordinal'); onChange(specFrom({ monthVariant: 'ordinal' })); }} />
                 <span>The</span>
-                <select value={ordinal} onChange={e => { const v = +e.target.value as MonthlyOrdinalRule['ordinal']; setOrdinal(v); onChange({ type: 'recurring', rule: { freq: 'monthly', variant: 'ordinal', ordinal: v, dayOfWeek: ordinalDay } }); }} style={selectSm} disabled={monthVariant !== 'ordinal'}>
+                <select value={ordinal} onChange={e => { const v = +e.target.value as MonthlyOrdinalRule['ordinal']; setOrdinal(v); onChange(specFrom({ ordinal: v, monthVariant: 'ordinal' })); }} style={selectSm} disabled={monthVariant !== 'ordinal'}>
                   {ORDINALS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
                 </select>
-                <select value={ordinalDay} onChange={e => { const v = +e.target.value as MonthlyOrdinalRule['dayOfWeek']; setOrdinalDay(v); onChange({ type: 'recurring', rule: { freq: 'monthly', variant: 'ordinal', ordinal, dayOfWeek: v } }); }} style={selectSm} disabled={monthVariant !== 'ordinal'}>
+                <select value={ordinalDay} onChange={e => { const v = +e.target.value as MonthlyOrdinalRule['dayOfWeek']; setOrdinalDay(v); onChange(specFrom({ ordinalDay: v, monthVariant: 'ordinal' })); }} style={selectSm} disabled={monthVariant !== 'ordinal'}>
                   {DAY_FULL.map((d, i) => <option key={i} value={i}>{d}</option>)}
                 </select>
-                <span>of every month</span>
+                <span>of the month</span>
               </label>
 
               {/* Day-of-month option */}
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13.5 }}>
-                <input type="radio" checked={monthVariant === 'dayOfMonth'} onChange={() => { setMonthVariant('dayOfMonth'); onChange({ type: 'recurring', rule: { freq: 'monthly', variant: 'dayOfMonth', day: monthDay } }); }} />
+                <input type="radio" checked={monthVariant === 'dayOfMonth'} onChange={() => { setMonthVariant('dayOfMonth'); onChange(specFrom({ monthVariant: 'dayOfMonth' })); }} />
                 <span>Day</span>
-                <input type="number" min={1} max={31} value={monthDay} onChange={e => { const v = Math.min(31, Math.max(1, +e.target.value)); setMonthDay(v); onChange({ type: 'recurring', rule: { freq: 'monthly', variant: 'dayOfMonth', day: v } }); }} style={{ ...numInput, width: 48 }} disabled={monthVariant !== 'dayOfMonth'} />
-                <span>of every month</span>
+                <input type="number" min={1} max={31} value={monthDay} onChange={e => { const v = Math.min(31, Math.max(1, +e.target.value)); setMonthDay(v); onChange(specFrom({ monthDay: v, monthVariant: 'dayOfMonth' })); }} style={{ ...numInput, width: 48 }} disabled={monthVariant !== 'dayOfMonth'} />
+                <span>of the month</span>
               </label>
             </div>
           )}
+
+          {/* Fire time — applies to every frequency */}
+          <div style={row}>
+            <span style={label}>At</span>
+            <input
+              type="time"
+              value={recTime}
+              onChange={e => { const v = e.target.value || '09:00'; setRecTime(v); onChange(specFrom({ recTime: v })); }}
+              style={{ fontSize: 13.5, padding: '6px 9px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', outline: 'none' }}
+            />
+            {value?.type === 'recurring' && (
+              <span style={{ fontSize: 12, color: 'var(--t-acc-dk)', background: 'var(--t-acc-bg)', padding: '4px 10px', borderRadius: 6 }}>
+                {formatSchedule(value)}
+              </span>
+            )}
+          </div>
         </div>
       )}
 

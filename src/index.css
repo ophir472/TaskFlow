@@ -39,3 +39,6 @@ body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: var(-
 input, textarea, select, button { font-family: inherit; }
 button { cursor: pointer; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* Starred-subtask swap: new star rises into the Next-up spot, displaced one drops back into the list */
+@keyframes starRise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes starDrop { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: none; } }

@@ -37,8 +37,11 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
   const [title, setTitle] = useState(initialTitle);
   const [requester, setRequester] = useState(requesters[0] ?? '');
   const [project, setProject] = useState(projects[0] ?? '');
-  const [description, setDescription] = useState('');
   const [jiraLink, setJiraLink] = useState('');
+  const [itsmTicket, setItsmTicket] = useState('');
+  const [generalLink, setGeneralLink] = useState('');
+  const [communication, setCommunication] = useState('');
+  const [notes, setNotes] = useState('');
   const [schedule, setSchedule] = useState<ScheduleSpec | null>(null);
   const [forToday, setForToday] = useState(false);
   const [urgent, setUrgent] = useState(false);
@@ -59,7 +62,16 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
     const id = nextId(type === 'task' ? 't' : 'r');
     let item: Item;
     if (type === 'task') {
-      item = { id, kind: 'task', title, description, notes: '', blockers: '', generalLink: '', jiraLink, requester, project, status: 'backlog', forToday, urgent, important, quick, noTag, toCheck: '', priorityBoost: false, subtasks: [], bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false };
+      item = {
+        id, kind: 'task', title, description: '', notes, blockers: '', generalLink, jiraLink,
+        itsmTicket: itsmTicket.trim() || undefined,
+        // Seed the Teams communication field with the typed value (createItem
+        // only auto-seeds when communications is absent).
+        communications: [{ id: 'c' + now + Math.random().toString(36).slice(2, 5), label: 'Teams', value: communication }],
+        requester, project, status: 'backlog', forToday, urgent, important, quick, noTag,
+        toCheck: '', priorityBoost: false, subtasks: [],
+        bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false,
+      };
     } else {
       const nextFireAt = schedule!.type === 'once' ? schedule!.at : nextOccurrence(schedule!, now);
       item = { id, kind: 'reminder', title, schedule: schedule!, status: 'active', priorityBoost: false, nextFireAt, bumpedAt: 0, createdAt: now, updatedAt: now, archived: false };
@@ -127,12 +139,22 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
                 </select>
               </div>
             </div>
-            <div>
-              <div style={lbl}>Jira Description</div>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Describe the ticket… (optional)" style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div><div style={lbl}>Jira link</div>
+                <input value={jiraLink} onChange={e => setJiraLink(e.target.value)} placeholder="e.g. PROJ-1234" style={inp} />
+              </div>
+              <div><div style={lbl}>ITSM ticket</div>
+                <input value={itsmTicket} onChange={e => setItsmTicket(e.target.value)} placeholder="e.g. INC0001234" style={inp} />
+              </div>
             </div>
-            <div><div style={lbl}>Jira link</div>
-              <input value={jiraLink} onChange={e => setJiraLink(e.target.value)} placeholder="e.g. PROJ-1234 (optional)" style={inp} />
+            <div><div style={lbl}>Link</div>
+              <input value={generalLink} onChange={e => setGeneralLink(e.target.value)} placeholder="Any URL or ref (optional)" style={inp} />
+            </div>
+            <div><div style={lbl}>Communication (Teams)</div>
+              <input value={communication} onChange={e => setCommunication(e.target.value)} placeholder="Channel / person on Teams (optional)" style={inp} />
+            </div>
+            <div><div style={lbl}>Notes</div>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Anything worth writing down… (optional)" style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }} />
             </div>
           </>
         )}

@@ -5,6 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
+./start.sh         # one-shot startup: installs deps if needed, starts dev server, opens browser
+./start.sh --build # production build + preview server
+npm start          # dev server + open browser (deps must already be installed)
 npm run dev        # start dev server at http://localhost:5173
 npm run build      # TypeScript check + Vite production build
 npm run preview    # preview the production build

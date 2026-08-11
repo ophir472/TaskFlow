@@ -1,25 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
-import { scoreItem, nextId, duplicateTask } from '../../engine';
+import { scoreItem, duplicateTask } from '../../engine';
 import { EstimatesSection } from '../Common/EstimatesSection';
+import { WaitingForSection } from '../Common/WaitingForSection';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
 import { ResizableTextarea } from '../Common/ResizableTextarea';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { formatSchedule } from '../../scheduleEngine';
-import type { Item, Task, ScheduleSpec } from '../../types';
+import type { Item, Task, Subtask, ScheduleSpec } from '../../types';
 import { SubtaskPanel } from '../SubtaskPanel/SubtaskPanel';
 import { SubtaskFullPage } from '../SubtaskPanel/SubtaskFullPage';
 import { SchedulePicker } from '../SchedulePicker/SchedulePicker';
-import { SearchBar } from '../SearchBar/SearchBar';
-import { createJiraIssue } from '../../jira';
+import { TicketSections } from '../Common/TicketSections';
 
 interface Props {
   onToast: (msg: string) => void;
-  focusSearchTrigger?: number;
 }
 
-export function CardFeed({ onToast, focusSearchTrigger }: Props) {
+export function CardFeed({ onToast }: Props) {
   useLogMount('CardFeed');
   const items = useStore(s => s.items);
   const requesters = useStore(s => s.requesters);
@@ -32,8 +31,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const setTriggerTagForId = useStore(s => s.setTriggerTagForId);
 
   const customFields = useStore(s => s.customFields);
-  const jiraConfig = useStore(s => s.jiraConfig);
-  const itsmConfig = useStore(s => s.itsmConfig);
   const taskOrder = useStore(s => s.taskOrder);
   const sidebarCollapsed = useStore(s => s.sidebarCollapsed);
   const updateItem = useStore(s => s.updateItem);
@@ -51,7 +48,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const deleteItem = useStore(s => s.deleteItem);
   const createItem = useStore(s => s.createItem);
 
-  const [creatingJira, setCreatingJira] = useState(false);
   const [subDragId, setSubDragId] = useState<string | null>(null);
   const [subDragOverId, setSubDragOverId] = useState<string | null>(null);
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
@@ -59,18 +55,34 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
   const updateSubtask = useStore(s => s.updateSubtask);
   const [holdOpen, setHoldOpen] = useState(false);
   const [cardMenuOpen, setCardMenuOpen] = useState(false);
-  const [editingLabel, setEditingLabel] = useState<string | null>(null);
-  const [labelValue, setLabelValue] = useState('');
   const cardMenuRef = useRef<HTMLDivElement>(null);
   const prevHadSubtask = useRef(false);
   const [holdSchedule, setHoldSchedule] = useState<ScheduleSpec | null>(null);
   const [subtaskPanel, setSubtaskPanel] = useState<{ parentId: string; subId: string } | null>(null);
+  // Ids of subtasks that just gained/lost the star — they get the rise/drop
+  // animation for one render cycle. Without the "just" tracking, the banner
+  // would animate on every card open and refresh, not only on star changes.
+  const [justStarred, setJustStarred] = useState<string | null>(null);
+  const [justUnstarred, setJustUnstarred] = useState<string | null>(null);
+  function markStarred(id: string | undefined) {
+    if (!id) return;
+    setJustStarred(id);
+    setTimeout(() => setJustStarred(cur => (cur === id ? null : cur)), 400);
+  }
+  function markUnstarred(id: string | undefined) {
+    if (!id) return;
+    setJustUnstarred(id);
+    setTimeout(() => setJustUnstarred(cur => (cur === id ? null : cur)), 400);
+  }
   const [fullPageSubtask, setFullPageSubtask] = useState<{ parentId: string; subId: string } | null>(null);
   const [tagModalTaskId, setTagModalTaskId] = useState<string | null>(null);
+  // Subtask list collapsing: show up to 3 open subtasks; overflow and
+  // completed ones sit behind their own chevron toggles. Reset per card.
+  const [showAllSubs, setShowAllSubs] = useState(false);
+  const [showDoneSubs, setShowDoneSubs] = useState(false);
   const [newSubtask, setNewSubtask] = useState('');
   const [tagEditMode, setTagEditMode] = useState(false);
   const titleRef = useRef<HTMLTextAreaElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
   const autoResizeTitle = useCallback(() => {
     const el = titleRef.current;
     if (!el) return;
@@ -133,6 +145,12 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
 
   // Allow viewing any item (including archived) when navigated to directly.
   const displayItem = (displayId ? items.find(it => it.id === displayId) : null) ?? queue[0] ?? null;
+
+  // Collapse subtask overflow/completed again when switching cards.
+  useEffect(() => {
+    setShowAllSubs(false);
+    setShowDoneSubs(false);
+  }, [displayItem?.id]);
   const current = displayItem;
 
   // Only clear displayId when the item is deleted entirely — not when it's just outside the queue
@@ -228,12 +246,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     prevHadSubtask.current = !!(fullPageSubtask || subtaskPanel);
   }, [displayId, subtaskPanel, fullPageSubtask]);
 
-  // Focus search bar when triggered from outside (cmd+f)
-  useEffect(() => {
-    if (!focusSearchTrigger) return;
-    searchRef.current?.focus();
-  }, [focusSearchTrigger]);
-
   const handleContinue = useCallback(() => {
     if (!current || queue.length <= 1) return;
     continueItem(current.id);
@@ -278,25 +290,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     setHoldSchedule(null);
   };
 
-  const handlePin = (id: string) => {
-    setDisplayId(id);
-    setHoldOpen(false);
-  };
-
-  const handleQuickCreate = (title: string) => {
-    const now = Date.now();
-    const id = nextId('t');
-    createItem({
-      id, kind: 'task', title, description: '', notes: '', blockers: '', generalLink: '', jiraLink: '',
-      requester: '', project: '', status: 'backlog', forToday: false,
-      urgent: false, important: false, quick: false, noTag: false,
-      toCheck: '', priorityBoost: false, subtasks: [],
-      bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false,
-    });
-    setTriggerTagForId(id);
-  };
-
-
   const handleComplete = () => {
     if (!current) return;
     const result = completeItem(current.id);
@@ -337,24 +330,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
     onToast('Duplicated');
   }
 
-  async function handleCreateJira() {
-    if (!jiraConfig || !t || !current) return;
-    setCreatingJira(true);
-    try {
-      const result = await createJiraIssue(jiraConfig, {
-        summary: t.title,
-        description: t.description ?? '',
-        requestedBy: t.requester,
-      });
-      updateItem(current.id, { jiraLink: result.key });
-      onToast(`Created ${result.key}`);
-      window.open(result.url, '_blank');
-    } catch (err) {
-      onToast(`Jira error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setCreatingJira(false);
-    }
-  }
 
   // Full-page subtask replaces the entire feed area
   if (fullPageSubtask) {
@@ -529,8 +504,10 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
         {isTask && t && (
           <div style={{ display: 'flex', alignItems: 'flex-start' }}>
 
-            {/* ── Main column ── */}
-            <div style={{ flex: 1, padding: '14px 20px 22px 26px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* ── Main column ── minWidth 0 lets it shrink below its content
+                width, so a long task/subtask name can't push the fixed-width
+                sidebar (Requester/Jira/…) out of the card. */}
+            <div style={{ flex: 1, minWidth: 0, padding: '14px 20px 22px 26px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
               {/* Tags (pencil-locked) */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -577,11 +554,51 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
 
               {/* Subtasks */}
               <div data-review-target="subtasks">
-                <div style={{ ...fl, marginBottom: 8 }}>
-                  Subtasks {t.subtasks.length > 0 && `(${t.subtasks.filter(s => s.done).length}/${t.subtasks.length})`}
+                <div style={{ ...fl, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span>Subtasks {t.subtasks.length > 0 && `(${t.subtasks.filter(s => s.done).length}/${t.subtasks.length})`}</span>
+                  {(() => {
+                    const openCount = t.subtasks.filter(s => !s.done && !s.isNext).length;
+                    const doneCount = t.subtasks.filter(s => s.done).length;
+                    const hdrBtn: React.CSSProperties = { border: 'none', background: 'transparent', color: 'var(--t-muted)', fontSize: 11.5, fontWeight: 600, padding: '1px 4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, textTransform: 'none', letterSpacing: 'normal' };
+                    const chev = (on: boolean): React.CSSProperties => ({ display: 'inline-block', transform: on ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', fontSize: 11, lineHeight: 1 });
+                    return (
+                      <>
+                        {openCount > 3 && (
+                          <button onClick={() => setShowAllSubs(v => !v)} style={hdrBtn}>
+                            <span style={chev(showAllSubs)}>›</span>
+                            {showAllSubs ? 'Show less' : `${openCount - 3} more`}
+                          </button>
+                        )}
+                        {doneCount > 0 && (
+                          <button onClick={() => setShowDoneSubs(v => !v)} style={hdrBtn}>
+                            <span style={chev(showDoneSubs)}>›</span>
+                            {showDoneSubs ? 'Hide completed' : `${doneCount} completed`}
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
+                {/* Starred ("next up") subtasks get their own highlighted spot
+                    above the list; unstarring drops them back into it. */}
+                {t.subtasks.filter(s => s.isNext && !s.done).length > 0 && (
+                  <div style={{ marginBottom: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {t.subtasks.filter(s => s.isNext && !s.done).map(sub => (
+                      <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 12px', border: '1.5px solid var(--t-amber-brd)', borderRadius: 9, background: 'var(--t-amber-bg)', animation: justStarred === sub.id ? 'starRise 0.28s ease' : undefined }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--t-amber)', textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>★ Next up</span>
+                        <input type="checkbox" checked={sub.done} onChange={() => toggleSubtaskDone(current.id, sub.id)} onClick={e => e.stopPropagation()} style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }} />
+                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--t-txt)', flexShrink: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.title}</span>
+                        <div onClick={() => setSubtaskPanel({ parentId: current.id, subId: sub.id })}
+                          title="Open subtask details"
+                          style={{ flex: 1, minWidth: 48, cursor: 'pointer', alignSelf: 'stretch' }} />
+                        <div onClick={() => { markUnstarred(sub.id); toggleSubtaskNext(current.id, sub.id); }} style={{ cursor: 'pointer', fontSize: 15, color: 'var(--t-amber)', userSelect: 'none', flexShrink: 0 }} title="Unstar — return to the list">★</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {t.subtasks.map(sub => {
+                  {(() => {
+                    const renderSubRow = (sub: Subtask) => {
                     const isDragging = subDragId === sub.id;
                     const isOver = subDragOverId === sub.id;
                     return (
@@ -601,7 +618,7 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                           setSubDragId(null); setSubDragOverId(null);
                         }}
                         onDragEnd={() => { setSubDragId(null); setSubDragOverId(null); }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', border: '1px solid var(--t-brd2)', borderRadius: 9, background: 'var(--t-surf2)', opacity: isDragging ? 0.4 : 1, borderTop: isOver ? '2px solid var(--t-acc)' : undefined, cursor: 'grab' }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', border: '1px solid var(--t-brd2)', borderRadius: 9, background: 'var(--t-surf2)', opacity: isDragging ? 0.4 : 1, borderTop: isOver ? '2px solid var(--t-acc)' : undefined, cursor: 'grab', animation: justUnstarred === sub.id ? 'starDrop 0.28s ease' : undefined }}>
                         <span style={{ fontSize: 14, color: 'var(--t-brd)', flexShrink: 0, userSelect: 'none' }}>⠿</span>
                         <input type="checkbox" checked={sub.done} onChange={() => toggleSubtaskDone(current.id, sub.id)} onClick={e => e.stopPropagation()} style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }} />
                         {editingSubId === sub.id ? (
@@ -609,8 +626,8 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                             size={Math.max(editingSubTitle.length + 2, 8)}
                             onChange={e => setEditingSubTitle(e.target.value)}
                             onBlur={() => {
-                              const t = editingSubTitle.trim();
-                              if (t && t !== sub.title) updateSubtask(current.id, sub.id, { title: t });
+                              const v = editingSubTitle.trim();
+                              if (v && v !== sub.title) updateSubtask(current.id, sub.id, { title: v });
                               setEditingSubId(null);
                             }}
                             onKeyDown={e => {
@@ -622,17 +639,37 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                         ) : (
                           <span onClick={() => { setEditingSubId(sub.id); setEditingSubTitle(sub.title); }}
                             title="Click to rename"
-                            style={{ fontSize: 14, cursor: 'text', textDecoration: sub.done ? 'line-through' : 'none', color: sub.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{sub.title}</span>
+                            style={{ fontSize: 14, cursor: 'text', textDecoration: sub.done ? 'line-through' : 'none', color: sub.done ? 'var(--t-muted)' : 'var(--t-txt)', flexShrink: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.title}</span>
                         )}
-                        {/* Empty space fills the row and acts as click-to-open */}
+                        {/* Click-to-open area — minWidth keeps it clickable even
+                            when the title is long (title truncates instead). */}
                         <div onClick={() => setSubtaskPanel({ parentId: current.id, subId: sub.id })}
                           title="Open subtask details"
-                          style={{ flex: 1, cursor: 'pointer', alignSelf: 'stretch' }} />
-                        <div onClick={() => toggleSubtaskNext(current.id, sub.id)} style={{ cursor: 'pointer', fontSize: 15, color: sub.isNext ? 'var(--t-amber)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Next up">★</div>
+                          style={{ flex: 1, minWidth: 48, cursor: 'pointer', alignSelf: 'stretch' }} />
+                        <div onClick={() => {
+                          // Starring this one displaces the current starred
+                          // subtask — mark both so only they animate.
+                          if (!sub.isNext) {
+                            markStarred(sub.id);
+                            markUnstarred(t.subtasks.find(s => s.isNext && !s.done)?.id);
+                          }
+                          toggleSubtaskNext(current.id, sub.id);
+                        }} style={{ cursor: 'pointer', fontSize: 15, color: sub.isNext ? 'var(--t-amber)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Next up">★</div>
                         <div onClick={() => deleteSubtask(current.id, sub.id)} style={{ cursor: 'pointer', fontSize: 14, color: 'var(--t-muted)', userSelect: 'none', flexShrink: 0 }} title="Remove">×</div>
                       </div>
                     );
-                  })}
+                    };
+
+                    const openSubs = t.subtasks.filter(s => !s.done && !s.isNext);
+                    const doneSubs = t.subtasks.filter(s => s.done);
+                    const visible = showAllSubs ? openSubs : openSubs.slice(0, 3);
+                    return (
+                      <>
+                        {visible.map(renderSubRow)}
+                        {showDoneSubs && doneSubs.map(renderSubRow)}
+                      </>
+                    );
+                  })()}
                   {/* Bottom drop zone — lets the last subtask be reachable */}
                   {subDragId && (
                     <div
@@ -661,12 +698,6 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                 </div>
               </div>
 
-              {/* Jira Description */}
-              <div>
-                <div style={fl}>Jira Description</div>
-                <ResizableTextarea taskId={current.id} fieldKey="description" value={t.description ?? ''} onChange={e => updateItem(current.id, { description: e.target.value })} rows={3} placeholder="Describe the ticket…" style={ta} />
-              </div>
-
               {/* Notes */}
               <div>
                 <div style={fl}>Notes</div>
@@ -678,6 +709,9 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                 <div style={fl}>Blockers</div>
                 <ResizableTextarea taskId={current.id} fieldKey="blockers" value={t.blockers} onChange={e => updateItem(current.id, { blockers: e.target.value })} rows={3} placeholder="Who can help?" style={ta} />
               </div>
+
+              {/* Waiting for (collapsible) */}
+              <WaitingForSection task={t} />
 
               {/* Estimates (collapsible) */}
               <EstimatesSection task={t} />
@@ -708,149 +742,8 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
                   {projects.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
-              {/* ── Jira section ── */}
-              {(() => {
-                const sInp: React.CSSProperties = { ...inp, flex: 1, fontSize: 13, padding: '7px 9px', borderRadius: 7 };
-                return (
-                  <div>
-                    {/* Primary ticket */}
-                    {editingLabel === 'jiraLink:primary'
-                      ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
-                          onBlur={() => { updateItem(current.id, { jiraLinkLabel: labelValue.trim() || undefined }); setEditingLabel(null); }}
-                          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
-                          style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 4 }} />
-                      : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel('jiraLink:primary'); setLabelValue(t.jiraLinkLabel || 'Jira ticket'); }}>{t.jiraLinkLabel || 'Jira ticket'}</div>
-                    }
-                    <div data-review-target="jira" style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
-                      <input value={t.jiraLink} onChange={e => updateItem(current.id, { jiraLink: e.target.value })} placeholder="PROJ-1234" style={sInp} />
-                      {t.jiraLink && <a href={`https://${jiraConfig?.host ?? ''}/browse/${t.jiraLink}`} target="_blank" rel="noreferrer" style={{ fontSize: 16, color: 'var(--t-acc)', textDecoration: 'none', flexShrink: 0 }} title={`Open ${t.jiraLink}`}>↗</a>}
-                    </div>
-                    {!t.jiraLink && jiraConfig && (
-                      <button onClick={handleCreateJira} disabled={creatingJira}
-                        style={{ marginBottom: 4, width: '100%', border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 12, fontWeight: 600, padding: '6px 0', borderRadius: 6, cursor: creatingJira ? 'wait' : 'pointer', opacity: creatingJira ? 0.6 : 1 }}>
-                        {creatingJira ? 'Creating…' : '+ Create in Jira'}
-                      </button>
-                    )}
-                    {!t.jiraLink && (
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--t-muted)', cursor: 'pointer', marginTop: 2 }}>
-                        <input type="checkbox" checked={!!t.noJira} onChange={e => updateItem(current.id, { noJira: e.target.checked })} style={{ cursor: 'pointer' }} />
-                        No Jira needed
-                      </label>
-                    )}
-                    {/* Extra tickets */}
-                    {t.jiraLink && (t.extraJiraLinks ?? []).map((link, i) => (
-                      <div key={i} style={{ marginTop: 6 }}>
-                        {editingLabel === `jiraLink:${i}`
-                          ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
-                              onBlur={() => { const ls = [...(t.extraJiraLinkLabels ?? [])]; ls[i] = labelValue.trim(); updateItem(current.id, { extraJiraLinkLabels: ls }); setEditingLabel(null); }}
-                              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
-                              style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 4 }} />
-                          : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel(`jiraLink:${i}`); setLabelValue(t.extraJiraLinkLabels?.[i] || `Jira ticket ${i + 2}`); }}>{t.extraJiraLinkLabels?.[i] || `Jira ticket ${i + 2}`}</div>
-                        }
-                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                          <input value={link} style={sInp} placeholder="PROJ-1234"
-                            onChange={e => { const n = [...(t.extraJiraLinks ?? [])]; n[i] = e.target.value; updateItem(current.id, { extraJiraLinks: n }); }}
-                            onBlur={() => { const links = t.extraJiraLinks ?? []; const labels = t.extraJiraLinkLabels ?? []; const pairs = links.map((l, j) => ({ l, lb: labels[j] ?? '' })).filter(p => p.l.trim()); updateItem(current.id, { extraJiraLinks: pairs.map(p => p.l), extraJiraLinkLabels: pairs.map(p => p.lb) }); }} />
-                          {link && <a href={`https://${jiraConfig?.host ?? ''}/browse/${link}`} target="_blank" rel="noreferrer" style={{ fontSize: 16, color: 'var(--t-acc)', textDecoration: 'none', flexShrink: 0 }} title={`Open ${link}`}>↗</a>}
-                        </div>
-                      </div>
-                    ))}
-                    {t.jiraLink && (
-                      <button onClick={() => updateItem(current.id, { extraJiraLinks: [...(t.extraJiraLinks ?? []), ''], extraJiraLinkLabels: [...(t.extraJiraLinkLabels ?? []), ''] })}
-                        style={{ marginTop: 8, width: '100%', border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, fontWeight: 500, padding: '5px 0', borderRadius: 6, cursor: 'pointer' }}>
-                        + Add another Jira ticket
-                      </button>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* ── ITSM section ── */}
-              {(() => {
-                const sInp: React.CSSProperties = { ...inp, flex: 1, fontSize: 13, padding: '7px 9px', borderRadius: 7 };
-                return (
-                  <div>
-                    {editingLabel === 'itsmTicket:primary'
-                      ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
-                          onBlur={() => { updateItem(current.id, { itsmTicketLabel: labelValue.trim() || undefined }); setEditingLabel(null); }}
-                          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
-                          style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 4 }} />
-                      : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel('itsmTicket:primary'); setLabelValue(t.itsmTicketLabel || 'ITSM ticket'); }}>{t.itsmTicketLabel || 'ITSM ticket'}</div>
-                    }
-                    <div data-review-target="itsm" style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
-                      <input value={t.itsmTicket ?? ''} onChange={e => updateItem(current.id, { itsmTicket: e.target.value })} placeholder="INC0001234" style={sInp} />
-                      {t.itsmTicket && <a href={`https://${itsmConfig?.host ?? ''}/incident.do?sysparm_query=number=${t.itsmTicket}`} target="_blank" rel="noreferrer" style={{ fontSize: 16, color: 'var(--t-acc)', textDecoration: 'none', flexShrink: 0 }} title={`Open ${t.itsmTicket}`}>↗</a>}
-                    </div>
-                    {t.itsmTicket && (t.extraItsmTickets ?? []).map((ticket, i) => (
-                      <div key={i} style={{ marginTop: 6 }}>
-                        {editingLabel === `itsmTicket:${i}`
-                          ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
-                              onBlur={() => { const ls = [...(t.extraItsmTicketLabels ?? [])]; ls[i] = labelValue.trim(); updateItem(current.id, { extraItsmTicketLabels: ls }); setEditingLabel(null); }}
-                              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
-                              style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%', marginBottom: 4 }} />
-                          : <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 }} title="Click to rename" onClick={() => { setEditingLabel(`itsmTicket:${i}`); setLabelValue(t.extraItsmTicketLabels?.[i] || `ITSM ticket ${i + 2}`); }}>{t.extraItsmTicketLabels?.[i] || `ITSM ticket ${i + 2}`}</div>
-                        }
-                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                          <input value={ticket} style={sInp} placeholder="INC0001234"
-                            onChange={e => { const n = [...(t.extraItsmTickets ?? [])]; n[i] = e.target.value; updateItem(current.id, { extraItsmTickets: n }); }}
-                            onBlur={() => { const tks = t.extraItsmTickets ?? []; const lbs = t.extraItsmTicketLabels ?? []; const pairs = tks.map((tk, j) => ({ tk, lb: lbs[j] ?? '' })).filter(p => p.tk.trim()); updateItem(current.id, { extraItsmTickets: pairs.map(p => p.tk), extraItsmTicketLabels: pairs.map(p => p.lb) }); }} />
-                          {ticket && <a href={`https://${itsmConfig?.host ?? ''}/incident.do?sysparm_query=number=${ticket}`} target="_blank" rel="noreferrer" style={{ fontSize: 16, color: 'var(--t-acc)', textDecoration: 'none', flexShrink: 0 }} title={`Open ${ticket}`}>↗</a>}
-                        </div>
-                      </div>
-                    ))}
-                    {t.itsmTicket && (
-                      <button onClick={() => updateItem(current.id, { extraItsmTickets: [...(t.extraItsmTickets ?? []), ''], extraItsmTicketLabels: [...(t.extraItsmTicketLabels ?? []), ''] })}
-                        style={{ marginTop: 8, width: '100%', border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, fontWeight: 500, padding: '5px 0', borderRadius: 6, cursor: 'pointer' }}>
-                        + Add another ITSM ticket
-                      </button>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {(() => {
-                const sInp: React.CSSProperties = { ...inp, flex: 1, fontSize: 13, padding: '7px 9px', borderRadius: 7 };
-                const ticketLblSt: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'text', marginBottom: 4 };
-                const ticketLblEdSt: React.CSSProperties = { ...ticketLblSt, border: 'none', outline: '1px solid var(--t-acc)', borderRadius: 3, padding: '1px 4px', background: 'transparent', width: '100%' };
-                return (
-                  <div>
-                    {/* Primary link */}
-                    {editingLabel === 'generalLink:primary'
-                      ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
-                          onBlur={() => { updateItem(current.id, {}); setEditingLabel(null); }}
-                          onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
-                          style={ticketLblEdSt} />
-                      : <div style={ticketLblSt} title="Click to rename" onClick={() => { setEditingLabel('generalLink:primary'); setLabelValue('Link'); }}>Link</div>
-                    }
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
-                      <input value={t.generalLink} onChange={e => updateItem(current.id, { generalLink: e.target.value })} placeholder="Any URL or ref" style={sInp} />
-                      {t.generalLink && <a href={t.generalLink.startsWith('http') ? t.generalLink : `https://${t.generalLink}`} target="_blank" rel="noreferrer" style={{ fontSize: 16, color: 'var(--t-acc)', textDecoration: 'none', flexShrink: 0 }} title="Open link">↗</a>}
-                    </div>
-                    {/* Extra links */}
-                    {(t.extraGeneralLinks ?? []).map((link, i) => (
-                      <div key={i} style={{ marginTop: 6 }}>
-                        {editingLabel === `generalLink:${i}`
-                          ? <input autoFocus value={labelValue} onChange={e => setLabelValue(e.target.value)}
-                              onBlur={() => { const ls = [...(t.extraGeneralLinkLabels ?? [])]; ls[i] = labelValue.trim(); updateItem(current.id, { extraGeneralLinkLabels: ls }); setEditingLabel(null); }}
-                              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setEditingLabel(null); }}
-                              style={ticketLblEdSt} />
-                          : <div style={ticketLblSt} title="Click to rename" onClick={() => { setEditingLabel(`generalLink:${i}`); setLabelValue(t.extraGeneralLinkLabels?.[i] || `Link ${i + 2}`); }}>{t.extraGeneralLinkLabels?.[i] || `Link ${i + 2}`}</div>
-                        }
-                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                          <input value={link} style={sInp} placeholder="Any URL or ref"
-                            onChange={e => { const n = [...(t.extraGeneralLinks ?? [])]; n[i] = e.target.value; updateItem(current.id, { extraGeneralLinks: n }); }}
-                            onBlur={() => { const links = t.extraGeneralLinks ?? []; const labels = t.extraGeneralLinkLabels ?? []; const pairs = links.map((l, j) => ({ l, lb: labels[j] ?? '' })).filter(p => p.l.trim()); updateItem(current.id, { extraGeneralLinks: pairs.map(p => p.l), extraGeneralLinkLabels: pairs.map(p => p.lb) }); }} />
-                          {link && <a href={link.startsWith('http') ? link : `https://${link}`} target="_blank" rel="noreferrer" style={{ fontSize: 16, color: 'var(--t-acc)', textDecoration: 'none', flexShrink: 0 }} title="Open link">↗</a>}
-                        </div>
-                      </div>
-                    ))}
-                    <button onClick={() => updateItem(current.id, { extraGeneralLinks: [...(t.extraGeneralLinks ?? []), ''], extraGeneralLinkLabels: [...(t.extraGeneralLinkLabels ?? []), ''] })}
-                      style={{ marginTop: 8, width: '100%', border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, fontWeight: 500, padding: '5px 0', borderRadius: 6, cursor: 'pointer' }}>
-                      + Add another {t.generalLinkLabel || 'link'}
-                    </button>
-                  </div>
-                );
-              })()}
+              {/* Jira / ITSM / Link sections — shared with the task popup */}
+              <TicketSections task={t} onToast={onToast} />
             </div>
             {/* Communication — separate panel below the metadata/ticket panel */}
             <CommunicationSection taskId={current.id} fields={getCommunications(t.communications)} />
@@ -909,11 +802,9 @@ export function CardFeed({ onToast, focusSearchTrigger }: Props) {
           </div>
         )}
 
-        {/* Search + action buttons row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0' }}>
-          <div style={{ flex: 1 }}>
-            <SearchBar onPin={handlePin} onQuickCreate={handleQuickCreate} inputRef={searchRef} />
-          </div>
+        {/* Action buttons row — search lives in the Explore tab (Cmd+F) */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '10px 0' }}>
+          <div style={{ flex: 1 }} />
           {current && (
             <>
               <button onClick={handleContinue} disabled={queue.length <= 1}

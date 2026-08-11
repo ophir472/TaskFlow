@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { DailyPlay } from '../DailyPlay/DailyPlay';
+import { ReminderModal } from '../ReminderPopup/ReminderModal';
 import { scoreItem, duplicateTask } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
 import type { Item, Task, Reminder } from '../../types';
@@ -105,6 +106,7 @@ export function Table() {
   const [editValue, setEditValue] = useState('');
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
   const [modalTaskId, setModalTaskId] = useState<string | null>(null);
+  const [reminderModalId, setReminderModalId] = useState<string | null>(null);
   const [dailyOpen, setDailyOpen] = useState(false);
   const colWidths = tableColWidthsStore;
   const [hoveredResize, setHoveredResize] = useState<string | null>(null);
@@ -361,6 +363,10 @@ export function Table() {
   function commitEdit() { if (editCell) saveEdit(editValue, editCell.colKey, editCell.rowId); }
 
   function openTask(id: string) {
+    // Reminders get the simple ReminderModal (plain state, no URL) — the
+    // task modal doesn't know how to render them.
+    const item = items.find(it => it.id === id);
+    if (item?.kind === 'reminder') { setReminderModalId(id); return; }
     // Push URL so browser back closes the modal
     window.location.hash = `table/task/${id}`;
   }
@@ -812,6 +818,7 @@ export function Table() {
     </div>
     {modalTaskId && <TaskModal taskId={modalTaskId} allIds={rows.map(r => r.id)} onNavigate={navigateModal} onClose={closeTaskModal} />}
     {dailyOpen && <DailyPlay onClose={() => setDailyOpen(false)} />}
+    {reminderModalId && <ReminderModal reminderId={reminderModalId} onClose={() => setReminderModalId(null)} />}
     </>
   );
 }

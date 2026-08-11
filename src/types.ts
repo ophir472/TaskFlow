@@ -8,14 +8,24 @@ export interface OnceSchedule { type: 'once'; at: number }
 export type RecurFreq = 'daily' | 'weekly' | 'monthly';
 export interface DailyRule { freq: 'daily'; every: number }
 export interface WeeklyRule { freq: 'weekly'; every: number; days: number[] }
-export interface MonthlyDayRule { freq: 'monthly'; variant: 'dayOfMonth'; day: number }
+// `every` on monthly rules: fire every N months (3 = quarterly). Optional for
+// backward compatibility — absent means 1.
+export interface MonthlyDayRule { freq: 'monthly'; variant: 'dayOfMonth'; day: number; every?: number }
 export interface MonthlyOrdinalRule {
   freq: 'monthly'; variant: 'ordinal';
   ordinal: 1 | 2 | 3 | 4 | -1;
   dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  every?: number;
 }
 export type RecurRule = DailyRule | WeeklyRule | MonthlyDayRule | MonthlyOrdinalRule;
-export interface RecurringSchedule { type: 'recurring'; rule: RecurRule }
+export interface RecurringSchedule {
+  type: 'recurring';
+  rule: RecurRule;
+  // Time of day occurrences fire at. Optional for backward compatibility:
+  // absent keeps the legacy behavior (daily/weekly inherit the trigger's
+  // clock time, monthly fires at 09:00).
+  time?: { hour: number; minute: number };
+}
 export type ScheduleSpec = OnceSchedule | RecurringSchedule;
 
 // ── Custom fields ───────────────────────────────────────────────
@@ -44,12 +54,19 @@ export interface Subtask {
 }
 
 export interface JiraConfig {
+  // Stable id — used as React key + as the identifier for update/remove
+  // actions. Generated on creation, never reused.
+  id: string;
   host: string;
   username: string;
   apiToken: string;
   projectKey: string;
   component: string;
   defaultAssigneeId: string;
+  // Exactly one entry has isDefault=true. The default is used for "Create Jira"
+  // (in the card and in Green Play review) and as the fallback host when a
+  // pasted ticket's project prefix doesn't match any configured entry.
+  isDefault: boolean;
 }
 
 export interface ItsmConfig {
@@ -60,6 +77,18 @@ export interface CommunicationField {
   id: string;
   label: string;
   value: string;
+}
+
+// "Waiting for" table on a card: user-defined columns (2 by default), rows
+// that can be struck through (done=true) when the wait is over.
+export interface WaitingForRow {
+  id: string;
+  cells: string[];
+  done: boolean;
+}
+export interface WaitingForTable {
+  columns: string[];
+  rows: WaitingForRow[];
 }
 
 export interface Task {
@@ -109,6 +138,7 @@ export interface Task {
   // Per-field resize memory. Key = field key (e.g. "notes", "blockers",
   // "description", "cf:<id>"). Value = height in pixels the user resized to.
   fieldSizes?: Record<string, number>;
+  waitingFor?: WaitingForTable;
   // Timestamp of the last time this task was walked through the Green Play review.
   // undefined means "never reviewed". Compared against createdAt/updatedAt to decide
   // whether the task is still in the review queue.

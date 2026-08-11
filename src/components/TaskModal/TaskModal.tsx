@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
-import type { Task } from '../../types';
+import type { Task, Subtask as SubtaskT } from '../../types';
 import { scoreItem } from '../../engine';
 import { EstimatesSection } from '../Common/EstimatesSection';
+import { WaitingForSection } from '../Common/WaitingForSection';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
 import { ResizableTextarea } from '../Common/ResizableTextarea';
+import { TicketSections } from '../Common/TicketSections';
 
 interface Props {
   taskId: string;
@@ -39,6 +41,21 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
   const updateItemCustomValue = useStore(s => s.updateItemCustomValue);
 
   const [newSubtask, setNewSubtask] = useState('');
+  const [showAllSubs, setShowAllSubs] = useState(false);
+  const [showDoneSubs, setShowDoneSubs] = useState(false);
+  useEffect(() => { setShowAllSubs(false); setShowDoneSubs(false); }, [taskId]);
+  const [justStarred, setJustStarred] = useState<string | null>(null);
+  const [justUnstarred, setJustUnstarred] = useState<string | null>(null);
+  function markStarred(id: string | undefined) {
+    if (!id) return;
+    setJustStarred(id);
+    setTimeout(() => setJustStarred(cur => (cur === id ? null : cur)), 400);
+  }
+  function markUnstarred(id: string | undefined) {
+    if (!id) return;
+    setJustUnstarred(id);
+    setTimeout(() => setJustUnstarred(cur => (cur === id ? null : cur)), 400);
+  }
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
   const [editingSubTitle, setEditingSubTitle] = useState('');
   const [subId, setSubId] = useState<string | null>(null);
@@ -226,8 +243,9 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
         {/* Body */}
         <div style={{ display: 'flex', alignItems: 'flex-start' }}>
 
-          {/* Left: main fields */}
-          <div style={{ flex: 1, padding: '18px 20px 24px 26px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Left: main fields — minWidth 0 so long titles can't push the
+              fixed-width sidebar out of the modal */}
+          <div style={{ flex: 1, minWidth: 0, padding: '18px 20px 24px 26px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
             {/* Tags */}
             <div>
@@ -254,12 +272,53 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
 
             {/* Subtasks */}
             <div data-review-target="subtasks">
-              <div style={{ ...fl, marginBottom: 8 }}>Subtasks {task.subtasks.length > 0 && `(${task.subtasks.filter(s => s.done).length}/${task.subtasks.length})`}</div>
+              <div style={{ ...fl, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span>Subtasks {task.subtasks.length > 0 && `(${task.subtasks.filter(s => s.done).length}/${task.subtasks.length})`}</span>
+                {(() => {
+                  const openCount = task.subtasks.filter(s => !s.done && !s.isNext).length;
+                  const doneCount = task.subtasks.filter(s => s.done).length;
+                  const hdrBtn: React.CSSProperties = { border: 'none', background: 'transparent', color: 'var(--t-muted)', fontSize: 11.5, fontWeight: 600, padding: '1px 4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, textTransform: 'none', letterSpacing: 'normal' };
+                  const chev = (on: boolean): React.CSSProperties => ({ display: 'inline-block', transform: on ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', fontSize: 11, lineHeight: 1 });
+                  return (
+                    <>
+                      {openCount > 3 && (
+                        <button onClick={() => setShowAllSubs(v => !v)} style={hdrBtn}>
+                          <span style={chev(showAllSubs)}>›</span>
+                          {showAllSubs ? 'Show less' : `${openCount - 3} more`}
+                        </button>
+                      )}
+                      {doneCount > 0 && (
+                        <button onClick={() => setShowDoneSubs(v => !v)} style={hdrBtn}>
+                          <span style={chev(showDoneSubs)}>›</span>
+                          {showDoneSubs ? 'Hide completed' : `${doneCount} completed`}
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+              {/* Starred ("next up") subtasks get their own highlighted spot */}
+              {task.subtasks.filter(s => s.isNext && !s.done).length > 0 && (
+                <div style={{ marginBottom: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {task.subtasks.filter(s => s.isNext && !s.done).map(s => (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', border: '1.5px solid var(--t-amber-brd)', borderRadius: 9, background: 'var(--t-amber-bg)', animation: justStarred === s.id ? 'starRise 0.28s ease' : undefined }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--t-amber)', textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>★ Next up</span>
+                      <input type="checkbox" checked={s.done} onChange={() => toggleSubtaskDone(taskId, s.id)} style={{ width: 15, height: 15, cursor: 'pointer', flexShrink: 0 }} />
+                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--t-txt)', flexShrink: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</span>
+                      <div onClick={() => openSubtask(s.id)}
+                        title="Open subtask details"
+                        style={{ flex: 1, minWidth: 48, cursor: 'pointer', alignSelf: 'stretch' }} />
+                      <div onClick={() => { markUnstarred(s.id); toggleSubtaskNext(taskId, s.id); }} style={{ cursor: 'pointer', fontSize: 15, color: 'var(--t-amber)', userSelect: 'none', flexShrink: 0 }} title="Unstar — return to the list">★</div>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {task.subtasks.map(s => {
+                {(() => {
+                const renderSubRow = (s: SubtaskT) => {
                   const isEditing = editingSubId === s.id;
                   return (
-                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid var(--t-brd2)', borderRadius: 9, background: 'var(--t-surf2)' }}>
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: '1px solid var(--t-brd2)', borderRadius: 9, background: 'var(--t-surf2)', animation: justUnstarred === s.id ? 'starDrop 0.28s ease' : undefined }}>
                       <input type="checkbox" checked={s.done} onChange={() => toggleSubtaskDone(taskId, s.id)} style={{ width: 15, height: 15, cursor: 'pointer', flexShrink: 0 }} />
                       {isEditing ? (
                         <input autoFocus value={editingSubTitle}
@@ -278,17 +337,35 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
                       ) : (
                         <span onClick={() => { setEditingSubId(s.id); setEditingSubTitle(s.title); }}
                           title="Click to rename"
-                          style={{ fontSize: 14, cursor: 'text', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--t-muted)' : 'var(--t-txt)' }}>{s.title}</span>
+                          style={{ fontSize: 14, cursor: 'text', textDecoration: s.done ? 'line-through' : 'none', color: s.done ? 'var(--t-muted)' : 'var(--t-txt)', flexShrink: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</span>
                       )}
-                      {/* Empty space fills the row and acts as click-to-open */}
+                      {/* Click-to-open area — minWidth keeps it clickable even
+                          when the title is long (title truncates instead). */}
                       <div onClick={() => openSubtask(s.id)}
                         title="Open subtask details"
-                        style={{ flex: 1, cursor: 'pointer', alignSelf: 'stretch' }} />
-                      <div onClick={() => toggleSubtaskNext(taskId, s.id)} style={{ cursor: 'pointer', fontSize: 15, color: s.isNext ? 'var(--t-amber)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Next up">★</div>
+                        style={{ flex: 1, minWidth: 48, cursor: 'pointer', alignSelf: 'stretch' }} />
+                      <div onClick={() => {
+                        if (!s.isNext) {
+                          markStarred(s.id);
+                          markUnstarred(task.subtasks.find(x => x.isNext && !x.done)?.id);
+                        }
+                        toggleSubtaskNext(taskId, s.id);
+                      }} style={{ cursor: 'pointer', fontSize: 15, color: s.isNext ? 'var(--t-amber)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Next up">★</div>
                       <span onClick={() => deleteSubtask(taskId, s.id)} style={{ cursor: 'pointer', fontSize: 14, color: 'var(--t-muted)', flexShrink: 0 }}>×</span>
                     </div>
                   );
-                })}
+                };
+
+                const openSubs = task.subtasks.filter(s => !s.done && !s.isNext);
+                const doneSubs = task.subtasks.filter(s => s.done);
+                const visible = showAllSubs ? openSubs : openSubs.slice(0, 3);
+                return (
+                  <>
+                    {visible.map(renderSubRow)}
+                    {showDoneSubs && doneSubs.map(renderSubRow)}
+                  </>
+                );
+                })()}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input value={newSubtask} onChange={e => setNewSubtask(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && newSubtask.trim()) { addSubtask(taskId, newSubtask.trim()); setNewSubtask(''); } }}
@@ -297,12 +374,6 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
                     style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 18, width: 34, height: 34, borderRadius: 8, cursor: 'pointer', opacity: newSubtask.trim() ? 1 : 0.4, flexShrink: 0 }}>+</button>
                 </div>
               </div>
-            </div>
-
-            {/* Jira Description */}
-            <div>
-              <div style={fl}>Jira Description</div>
-              <ResizableTextarea taskId={taskId} fieldKey="description" value={task.description ?? ''} onChange={e => updateItem(taskId, { description: e.target.value })} rows={3} placeholder="Describe the ticket…" style={ta} />
             </div>
 
             {/* Notes */}
@@ -316,6 +387,9 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
               <div style={fl}>Blockers</div>
               <ResizableTextarea taskId={taskId} fieldKey="blockers" value={task.blockers} onChange={e => updateItem(taskId, { blockers: e.target.value })} rows={2} placeholder="Who can help?" style={ta} />
             </div>
+
+            {/* Waiting for (collapsible) */}
+            <WaitingForSection task={task} />
 
             {/* Estimates (collapsible) */}
             <EstimatesSection task={task} />
@@ -355,22 +429,8 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
                   {projects.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
-              <div>
-                <div style={fl}>Jira</div>
-                <div data-review-target="jira">
-                  <input value={task.jiraLink} onChange={e => updateItem(taskId, { jiraLink: e.target.value })} placeholder="PROJ-1234" style={{ ...inp, fontSize: 13, padding: '7px 9px' }} />
-                  {!task.jiraLink && (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--t-muted)', cursor: 'pointer', marginTop: 4 }}>
-                      <input type="checkbox" checked={!!task.noJira} onChange={e => updateItem(taskId, { noJira: e.target.checked })} style={{ cursor: 'pointer' }} />
-                      No Jira needed
-                    </label>
-                  )}
-                </div>
-              </div>
-              <div>
-                <div style={fl}>General link</div>
-                <input value={task.generalLink} onChange={e => updateItem(taskId, { generalLink: e.target.value })} placeholder="Any URL or ref" style={{ ...inp, fontSize: 13, padding: '7px 9px' }} />
-              </div>
+              {/* Jira / ITSM / Link — same shared sections as the card feed */}
+              <TicketSections task={task} />
             </div>
             {/* Communication — separate panel below the metadata/ticket panel */}
             <CommunicationSection taskId={taskId} fields={getCommunications(task.communications)} />

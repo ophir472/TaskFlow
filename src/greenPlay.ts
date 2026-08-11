@@ -45,7 +45,7 @@ export function stepsFor(t: Task): Step[] {
   if (!t.noJira) {
     out.push({ kind: 'createJira', label: 'Create Jira', description: 'Add a Jira ticket for this task (or mark "no Jira needed").', target: 'jira' });
   }
-  out.push({ kind: 'breakdown', label: 'Break into subtasks', description: 'Split this task into smaller subtasks.', target: 'subtasks' });
+  out.push({ kind: 'breakdown', label: 'Break into subtasks', description: 'Split the work into concrete subtasks — and sanity-check the existing ones.', target: 'subtasks' });
   out.push({ kind: 'estimate', label: 'Estimate time', description: 'Fill per-subtask estimates and the total (e.g. "2h", "30h").', target: 'estimate' });
   if (!t.noJira) {
     out.push({ kind: 'updateJira', label: 'Update Jira', description: 'Keep the Jira ticket in sync with the work you did.', target: 'jira' });

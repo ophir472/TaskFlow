@@ -12,7 +12,13 @@ const COLUMNS: { key: TaskStatus; label: string }[] = [
 export function Kanban() {
   const items = useStore(s => s.items);
   const updateItem = useStore(s => s.updateItem);
-  const tasks = items.filter(it => it.kind === 'task' && !it.archived) as Task[];
+  // Done tasks are auto-archived (status ⇄ archive link in the store), so the
+  // Done column must include archived tasks with status 'done' — otherwise
+  // cards would vanish from the board the moment they're dropped there.
+  // Dragging one back to an active column un-archives it via the same link.
+  const tasks = items.filter(it =>
+    it.kind === 'task' && (!it.archived || it.status === 'done')
+  ) as Task[];
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<TaskStatus | null>(null);
   const [overCard, setOverCard] = useState<string | null>(null);

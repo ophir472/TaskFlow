@@ -18,11 +18,16 @@ const PROMOTION_GOAL = 3;
 // changes the URL, which would flip this flag mid-session).
 const IS_PREVIEW_MODE = typeof window !== 'undefined' && window.location.hash.startsWith('#preview/');
 
-export type View = 'feed' | 'kanban' | 'table' | 'archive' | 'settings';
+export type View = 'feed' | 'explore' | 'kanban' | 'table' | 'archive' | 'settings';
 
 interface AppState {
   items: Item[];
   requesters: string[];
+  // Requester name → Jira account ID. Used as the Reporter on tickets created
+  // for a task whose requester is mapped here. Kept as a parallel map (not an
+  // object array) so every existing consumer of `requesters: string[]` keeps
+  // working untouched.
+  requesterJiraIds: Record<string, string>;
   projects: string[];
   customFields: CustomField[];
   promotionsToday: number;
@@ -33,10 +38,15 @@ interface AppState {
   promotionGoal: number;
   displayId: string | null;
   triggerTagForId: string | null;
+  // Explore-tab search query. UI-only per tab (excluded from persist) so a
+  // search in one tab doesn't overwrite another tab's.
+  exploreQuery: string;
   themeId: string;
   customAccent: string | null;
   customBg: string | null;
-  jiraConfig: JiraConfig | null;
+  jiraConfigs: JiraConfig[];
+  // Global default for opening Jira links: in-app popup preview or a browser tab.
+  jiraOpenMode: 'popup' | 'tab';
   itsmConfig: ItsmConfig | null;
   taskOrder: string[];
   tableVisibleCols: string[] | null;
@@ -52,6 +62,7 @@ interface AppState {
 
   setDisplayId: (id: string | null) => void;
   setTriggerTagForId: (id: string | null) => void;
+  setExploreQuery: (q: string) => void;
   setTheme: (themeId: string, customAccent?: string | null, customBg?: string | null) => void;
   updateItem: (id: string, patch: Partial<Item>) => void;
   updateTask: (id: string, patch: Partial<Task>) => void;
@@ -71,6 +82,7 @@ interface AppState {
   unarchiveItem: (id: string) => void;
   addRequester: (name: string) => void;
   removeRequester: (name: string) => void;
+  setRequesterJiraId: (name: string, accountId: string) => void;
   addProject: (name: string) => void;
   removeProject: (name: string) => void;
   addCustomField: (field: CustomField) => void;
@@ -79,7 +91,11 @@ interface AppState {
   updateItemCustomValue: (itemId: string, fieldId: string, value: string) => void;
   setView: (v: View) => void;
   setSidebarCollapsed: (v: boolean) => void;
-  setJiraConfig: (config: JiraConfig | null) => void;
+  setJiraOpenMode: (mode: 'popup' | 'tab') => void;
+  addJiraConfig: (config: Omit<JiraConfig, 'id' | 'isDefault'>) => void;
+  updateJiraConfig: (id: string, patch: Partial<Omit<JiraConfig, 'id' | 'isDefault'>>) => void;
+  removeJiraConfig: (id: string) => void;
+  setDefaultJiraConfig: (id: string) => void;
   setItsmConfig: (config: ItsmConfig | null) => void;
   setTaskOrder: (order: string[]) => void;
   resetManualOrder: () => void;
@@ -119,6 +135,7 @@ export const useStore = create<AppState>()(
     (set, get) => ({
       items: [],
       requesters: [],
+      requesterJiraIds: {},
       projects: [],
       customFields: [],
       promotionsToday: 0,
@@ -129,10 +146,12 @@ export const useStore = create<AppState>()(
       promotionGoal: PROMOTION_GOAL,
       displayId: null,
       triggerTagForId: null,
+      exploreQuery: '',
       themeId: 'sand',
       customAccent: null,
       customBg: null,
-      jiraConfig: null,
+      jiraConfigs: [],
+      jiraOpenMode: 'popup',
       itsmConfig: null,
       taskOrder: [],
       tableVisibleCols: null,
@@ -145,6 +164,7 @@ export const useStore = create<AppState>()(
 
       setDisplayId: (id) => set({ displayId: id }),
       setTriggerTagForId: (id) => set({ triggerTagForId: id }),
+      setExploreQuery: (q) => set({ exploreQuery: q }),
       setTheme: (themeId, customAccent = null, customBg = null) => {
         slog('theme:set', { themeId, customAccent, customBg });
         set({ themeId, customAccent, customBg });
@@ -153,7 +173,20 @@ export const useStore = create<AppState>()(
       updateItem: (id, patch) => {
         slog('item:update', { id, fields: Object.keys(patch), patch });
         set(s => ({
-          items: s.items.map(it => it.id === id ? { ...it, ...patch, updatedAt: Date.now() } as Item : it),
+          items: s.items.map(it => {
+            if (it.id !== id) return it;
+            let merged = { ...it, ...patch, updatedAt: Date.now() } as Item;
+            // Status ⇄ archive stay linked for tasks, no matter where the
+            // status was changed (modal dropdown, table inline edit, kanban
+            // drag): Done ⇒ archived (shows up in the Archive table);
+            // archived + moved to an active status ⇒ un-archived.
+            const nextStatus = (patch as Partial<Task>).status;
+            if (it.kind === 'task' && nextStatus !== undefined) {
+              if (nextStatus === 'done') merged = { ...merged, archived: true } as Item;
+              else if (nextStatus !== 'archived' && it.archived) merged = { ...merged, archived: false } as Item;
+            }
+            return merged;
+          }),
           history: pushHistory(s.history, { ts: Date.now(), type: 'update', id, patch: patch as Partial<Item> })
         }));
       },
@@ -277,10 +310,14 @@ export const useStore = create<AppState>()(
 
       rescheduleReminder: (id, schedule) => {
         slog('reminder:reschedule', { id, schedule });
+        // Keep nextFireAt in lockstep with the new schedule — the popup
+        // scheduler fires off nextFireAt, so leaving it stale would ring at
+        // the OLD time regardless of the new schedule.
+        const nextFireAt = schedule.type === 'once' ? schedule.at : nextOccurrence(schedule, Date.now());
         set(s => ({
           items: s.items.map(it =>
             it.id === id && it.kind === 'reminder'
-              ? { ...it, schedule, bumpedAt: Date.now(), updatedAt: Date.now() }
+              ? { ...it, schedule, nextFireAt, bumpedAt: Date.now(), updatedAt: Date.now() }
               : it
           ),
           history: pushHistory(s.history, { ts: Date.now(), type: 'reschedule', id })
@@ -349,7 +386,23 @@ export const useStore = create<AppState>()(
       },
 
       addRequester: (name) => { slog('requester:add', { name }); set(s => ({ requesters: [...s.requesters, name] })); },
-      removeRequester: (name) => { slog('requester:remove', { name }); set(s => ({ requesters: s.requesters.filter(r => r !== name) })); },
+      removeRequester: (name) => {
+        slog('requester:remove', { name });
+        set(s => {
+          const ids = { ...s.requesterJiraIds };
+          delete ids[name];
+          return { requesters: s.requesters.filter(r => r !== name), requesterJiraIds: ids };
+        });
+      },
+      setRequesterJiraId: (name, accountId) => {
+        slog('requester:set-jira-id', { name, hasId: !!accountId.trim() });
+        set(s => {
+          const ids = { ...s.requesterJiraIds };
+          if (accountId.trim()) ids[name] = accountId.trim();
+          else delete ids[name];
+          return { requesterJiraIds: ids };
+        });
+      },
       addProject: (name) => { slog('project:add', { name }); set(s => ({ projects: [...s.projects, name] })); },
       removeProject: (name) => { slog('project:remove', { name }); set(s => ({ projects: s.projects.filter(p => p !== name) })); },
 
@@ -373,7 +426,43 @@ export const useStore = create<AppState>()(
       // UI-only mutations — no need to log
       setView: (v) => set({ view: v }),
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
-      setJiraConfig: (config) => { slog('jira-config:set', { host: config?.host, hasToken: !!config?.apiToken }); set({ jiraConfig: config }); },
+      setJiraOpenMode: (mode) => {
+        slog('jira-open-mode:set', { mode });
+        set({ jiraOpenMode: mode });
+      },
+      addJiraConfig: (config) => {
+        const id = 'j' + Date.now() + Math.random().toString(36).slice(2, 5);
+        slog('jira-config:add', { id, host: config.host, projectKey: config.projectKey });
+        set(s => {
+          // First entry becomes default automatically.
+          const isDefault = s.jiraConfigs.length === 0;
+          return { jiraConfigs: [...s.jiraConfigs, { ...config, id, isDefault }] };
+        });
+      },
+      updateJiraConfig: (id, patch) => {
+        slog('jira-config:update', { id, keys: Object.keys(patch) });
+        set(s => ({
+          jiraConfigs: s.jiraConfigs.map(c => c.id === id ? { ...c, ...patch } : c),
+        }));
+      },
+      removeJiraConfig: (id) => {
+        slog('jira-config:remove', { id });
+        set(s => {
+          const removed = s.jiraConfigs.find(c => c.id === id);
+          const remaining = s.jiraConfigs.filter(c => c.id !== id);
+          // If we just removed the default, promote the first remaining entry.
+          if (removed?.isDefault && remaining.length > 0 && !remaining.some(c => c.isDefault)) {
+            remaining[0] = { ...remaining[0], isDefault: true };
+          }
+          return { jiraConfigs: remaining };
+        });
+      },
+      setDefaultJiraConfig: (id) => {
+        slog('jira-config:set-default', { id });
+        set(s => ({
+          jiraConfigs: s.jiraConfigs.map(c => ({ ...c, isDefault: c.id === id })),
+        }));
+      },
       setItsmConfig: (config) => { slog('itsm-config:set', { host: config?.host }); set({ itsmConfig: config }); },
       setTaskOrder: (order) => { slog('task-order:set', { count: order.length }); set({ taskOrder: order }); },
       setTableVisibleCols: (cols) => { slog('table-cols:set', cols); set({ tableVisibleCols: cols }); },
@@ -406,11 +495,20 @@ export const useStore = create<AppState>()(
       updateCommunicationField: (taskId, fieldId, patch) => {
         slog('comm:update', { taskId, fieldId, patch });
         set(s => ({
-          items: s.items.map(it =>
-            it.id === taskId && it.kind === 'task'
-              ? { ...it, communications: (it.communications ?? []).map(c => c.id === fieldId ? { ...c, ...patch } : c), updatedAt: Date.now() }
-              : it
-          ),
+          items: s.items.map(it => {
+            if (it.id !== taskId || it.kind !== 'task') return it;
+            const list = it.communications ?? [];
+            const exists = list.some(c => c.id === fieldId);
+            // Upsert. The UI renders a synthetic default "Teams" field for
+            // tasks with no persisted communications (older data, auto-
+            // generated tasks, restored backups). The first keystroke arrives
+            // with an id the store doesn't know — without the append branch,
+            // .map() dropped it silently and the field vanished after one char.
+            const communications = exists
+              ? list.map(c => c.id === fieldId ? { ...c, ...patch } : c)
+              : [...list, { id: fieldId, label: 'Teams', value: '', ...patch }];
+            return { ...it, communications, updatedAt: Date.now() };
+          }),
         }));
       },
       deleteCommunicationField: (taskId, fieldId) => {
@@ -581,11 +679,15 @@ export const useStore = create<AppState>()(
       snoozeReminderTo: (id, at) => {
         slog('reminder:snooze', { id, at });
         set(s => ({
-          items: s.items.map(it =>
-            it.id === id && it.kind === 'reminder'
-              ? { ...it, nextFireAt: at, updatedAt: Date.now() }
-              : it
-          ),
+          items: s.items.map(it => {
+            if (it.id !== id || it.kind !== 'reminder') return it;
+            // One-time reminders: move the schedule too, so displays that
+            // read schedule.at (Table's Status/Schedule column, the feed's
+            // "Scheduled:" line) stop saying "Due now" after a snooze.
+            // Recurring reminders keep their rule — only the next fire moves.
+            const schedule = it.schedule.type === 'once' ? { type: 'once' as const, at } : it.schedule;
+            return { ...it, nextFireAt: at, schedule, updatedAt: Date.now() };
+          }),
           pendingReminderIds: s.pendingReminderIds.filter(x => x !== id),
         }));
       },
@@ -678,7 +780,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'taskflow-store',
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => IS_PREVIEW_MODE ? sessionStorage : localStorage),
       skipHydration: IS_PREVIEW_MODE,
       // UI-only fields: kept in-memory per-tab, NOT persisted. Otherwise every
@@ -687,13 +789,15 @@ export const useStore = create<AppState>()(
       // Each tab restores its own view/displayId from the URL hash on mount.
       partialize: (state) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { view, displayId, triggerTagForId, pendingReminderIds, ...rest } = state;
+        const { view, displayId, triggerTagForId, exploreQuery, pendingReminderIds, ...rest } = state;
         return rest;
       },
       // v3: drop legacy kind='responsibility' items (replaced by the standalone
       // Responsibility store slice).
       // v4: seed Reminder.nextFireAt from schedule so the popup scheduler has
       // something to compare against.
+      // v5: single jiraConfig → jiraConfigs array (multi-host support). The
+      // old entry becomes the first host and is marked default.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       migrate: (persisted: any, fromVersion: number) => {
         if (!persisted) return persisted;
@@ -711,6 +815,15 @@ export const useStore = create<AppState>()(
               : it.schedule ? nextOccurrence(it.schedule, it.createdAt ?? Date.now()) : Date.now();
             return { ...it, nextFireAt: seed };
           });
+        }
+        if (fromVersion < 5) {
+          if (!Array.isArray(persisted.jiraConfigs)) {
+            const old = persisted.jiraConfig;
+            persisted.jiraConfigs = (old && old.host)
+              ? [{ ...old, id: 'j' + Date.now() + Math.random().toString(36).slice(2, 5), isDefault: true }]
+              : [];
+          }
+          delete persisted.jiraConfig;
         }
         return persisted;
       },

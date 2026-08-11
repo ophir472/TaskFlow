@@ -90,7 +90,9 @@ export function triggerDownload(filename: string): void {
 // Defaults for every field added since v1 — ensures old backups load cleanly
 const STATE_DEFAULTS: Record<string, unknown> = {
   taskOrder: [],
-  jiraConfig: null,
+  jiraConfigs: [],
+  jiraOpenMode: 'popup',
+  requesterJiraIds: {},
   itsmConfig: null,
   tableVisibleCols: null,
   archiveVisibleCols: null,

@@ -4,6 +4,7 @@ import { flaggedTasks } from '../../greenPlay';
 
 const NAV: { key: View; label: string; icon: string }[] = [
   { key: 'feed', label: 'Card Feed', icon: '🂡' },
+  { key: 'explore', label: 'Explore', icon: '⌕' },
   { key: 'kanban', label: 'Kanban', icon: '⫴' },
   { key: 'table', label: 'Table', icon: '☰' },
   { key: 'archive', label: 'Archive', icon: '🗑' },
@@ -90,13 +91,13 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
       </div>
 
       {/* Nav items */}
-      {NAV.map(nav => {
+      {NAV.map((nav, i) => {
         const active = view === nav.key;
         return (
           <div
             key={nav.key}
             onClick={e => { e.stopPropagation(); setView(nav.key); }}
-            title={collapsed ? nav.label : undefined}
+            title={`${nav.label} — press ${i + 1}`}
             style={{
               padding: collapsed ? '8px 0' : '9px 10px',
               borderRadius: 8,
