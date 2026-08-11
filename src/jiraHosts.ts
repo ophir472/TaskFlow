@@ -40,3 +40,32 @@ export function jiraTicketUrl(configs: JiraConfig[], ticketKey: string): string 
   if (!cfg) return null;
   return `https://${cfg.host}/browse/${ticketKey}`;
 }
+
+/**
+ * Apply the host's summary template to a task title. "<TASK NAME>" (case-
+ * insensitive) is replaced with the title; no template → title as-is.
+ */
+export function applySummaryTemplate(cfg: JiraConfig | null, taskTitle: string): string {
+  const tpl = cfg?.summaryTemplate?.trim();
+  if (!tpl) return taskTitle;
+  return tpl.replace(/<task name>/gi, taskTitle);
+}
+
+/**
+ * Build the pre-filled create URL from the host's override template. The
+ * template is fully self-contained (host, pid, issuetype, priority, assignee,
+ * component…); only summary/description are injected — via {summary} /
+ * {description} placeholders when present, otherwise appended as query params.
+ * Returns null when the host has no override (caller should use the API).
+ */
+export function buildJiraCreateUrl(cfg: JiraConfig, summary: string, description: string): string | null {
+  let u = cfg.createUrlTemplate?.trim();
+  if (!u) return null;
+  const enc = encodeURIComponent;
+  if (/\{summary\}|\{description\}/i.test(u)) {
+    u = u.replace(/\{summary\}/gi, enc(summary)).replace(/\{description\}/gi, enc(description));
+  } else {
+    u += (u.includes('?') ? '&' : '?') + `summary=${enc(summary)}&description=${enc(description)}`;
+  }
+  return /^https?:\/\//i.test(u) ? u : `https://${u}`;
+}

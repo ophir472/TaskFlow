@@ -91,7 +91,7 @@ export function triggerDownload(filename: string): void {
 const STATE_DEFAULTS: Record<string, unknown> = {
   taskOrder: [],
   jiraConfigs: [],
-  jiraOpenMode: 'popup',
+  jiraBoards: [],
   requesterJiraIds: {},
   itsmConfig: null,
   tableVisibleCols: null,

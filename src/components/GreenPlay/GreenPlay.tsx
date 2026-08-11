@@ -1,13 +1,12 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
 import { useStore } from '../../store';
-import type { Task } from '../../types';
+import type { Task, ItsmConfig } from '../../types';
 import { flaggedTasks, stepsFor, type Step } from '../../greenPlay';
 import { EstimatesSection } from '../Common/EstimatesSection';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
 import { createJiraIssue, addJiraComment, closeJiraIssue } from '../../jira';
-import { getDefaultJiraConfig, getJiraConfigForKey } from '../../jiraHosts';
-import { useJiraOpener } from '../Common/JiraPreviewModal';
-import { taskFieldChangedSince } from '../../snapshots';
+import { getDefaultJiraConfig, getJiraConfigForKey, applySummaryTemplate, buildJiraCreateUrl } from '../../jiraHosts';
+import { itsmTicketUrl } from '../../itsm';
 
 interface Props {
   onClose: () => void;
@@ -74,9 +73,14 @@ export function GreenPlay({ onClose }: Props) {
   const [arrow, setArrow] = useState<ArrowGeom | null>(null);
   const [creatingJira, setCreatingJira] = useState(false);
   const [jiraError, setJiraError] = useState<string | null>(null);
-  const { openJira, jiraModal } = useJiraOpener();
-  // "Create Jira" step: description for the ticket about to be created.
+  const openJira = (url: string, _key: string) => window.open(url, '_blank');
+  // "Create Jira" step: summary + description for the ticket about to be created.
   const [createJiraDesc, setCreateJiraDesc] = useState('');
+  const [createJiraSummary, setCreateJiraSummary] = useState('');
+  const [urlCreateStatus, setUrlCreateStatus] = useState<string | null>(null);
+  // Host has a create-URL override → creation opens that URL in a new tab
+  // (pre-filled Jira create screen) instead of calling the REST API.
+  const urlCreate = !!defaultJira?.createUrlTemplate?.trim();
   // "Update Jira" step: suggested comment text + posting state.
   const [jiraUpdateText, setJiraUpdateText] = useState('');
   const [addingComment, setAddingComment] = useState(false);
@@ -92,10 +96,25 @@ export function GreenPlay({ onClose }: Props) {
   const handleCreateJira = useCallback(async () => {
     if (!currentTask || !defaultJira) return;
     setJiraError(null);
+    const summary = createJiraSummary.trim() || currentTask.title;
+
+    if (urlCreate) {
+      // URL mode: the configured URL carries pid/issuetype/priority/etc.
+      // Jira's create screen opens pre-filled in a new tab; the resulting key
+      // isn't knowable here, so the user pastes it into the Jira field.
+      const url = buildJiraCreateUrl(defaultJira, summary, createJiraDesc);
+      if (url) {
+        window.open(url, '_blank');
+        updateItem(currentTask.id, { description: createJiraDesc });
+        setUrlCreateStatus('Opened Jira create form — paste the ticket key into the Jira field once created');
+      }
+      return;
+    }
+
     setCreatingJira(true);
     try {
       const result = await createJiraIssue(defaultJira, {
-        summary: currentTask.title,
+        summary,
         description: createJiraDesc,
         requestedBy: currentTask.requester ?? '',
         reporterAccountId: currentTask.requester ? requesterJiraIds[currentTask.requester] : undefined,
@@ -106,7 +125,7 @@ export function GreenPlay({ onClose }: Props) {
     } finally {
       setCreatingJira(false);
     }
-  }, [currentTask, defaultJira, requesterJiraIds, createJiraDesc, updateItem]);
+  }, [currentTask, defaultJira, urlCreate, requesterJiraIds, createJiraSummary, createJiraDesc, updateItem]);
 
   // Clear the transient jira states whenever we move to another step/card.
   useEffect(() => {
@@ -115,36 +134,33 @@ export function GreenPlay({ onClose }: Props) {
     setClosePickerOpen(false);
   }, [stepIdx, cardIdx]);
 
-  // Prefill the "Update Jira" summary box: names of subtasks created since the
-  // card's last review, plus the whole notes section when the logs show notes
-  // were edited since then. The async notes check only overwrites if the user
-  // hasn't already typed over the prefill.
-  // Prefill the Create-Jira description with the task's stored description.
+  // Prefill the Create-Jira description with the task's stored description
+  // and the summary from the host's summary template.
   useEffect(() => {
-    if (currentStep?.kind === 'createJira' && currentTask) setCreateJiraDesc(currentTask.description ?? '');
+    if (currentStep?.kind === 'createJira' && currentTask) {
+      setCreateJiraDesc(currentTask.description ?? '');
+      setCreateJiraSummary(applySummaryTemplate(defaultJira, currentTask.title));
+      setUrlCreateStatus(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTask?.id, currentStep?.kind]);
 
+  // Prefill the "Update Jira" summary box: names of subtasks created since the
+  // card's last review, plus the whole notes section when notes changed since
+  // then. Both checks are pure store data (createdAt / notesChangedAt vs the
+  // review baseline) — the forensic logs are never consulted.
   useEffect(() => {
     setCommentStatus(null);
     setCommentPickerOpen(false);
     if (currentStep?.kind !== 'updateJira' || !currentTask) { setJiraUpdateText(''); return; }
     const baseline = initialReviewedAt[currentTask.id] ?? currentTask.createdAt;
     const newSubs = currentTask.subtasks.filter(s => s.createdAt > baseline);
-    const syncText = newSubs.length ? `New subtasks:\n${newSubs.map(s => `- ${s.title}`).join('\n')}` : '';
-    setJiraUpdateText(syncText);
-    let cancelled = false;
-    const notes = currentTask.notes?.trim();
-    if (notes) {
-      taskFieldChangedSince(currentTask.id, 'notes', baseline).then(changed => {
-        if (cancelled || !changed) return;
-        const notesBlock = `Notes:\n${currentTask.notes}`;
-        setJiraUpdateText(prev => prev === syncText
-          ? (syncText ? `${syncText}\n\n${notesBlock}` : notesBlock)
-          : prev);
-      }).catch(() => { /* logs unavailable — leave prefill as-is */ });
+    const parts: string[] = [];
+    if (newSubs.length) parts.push(`New subtasks:\n${newSubs.map(s => `- ${s.title}`).join('\n')}`);
+    if (currentTask.notes?.trim() && (currentTask.notesChangedAt ?? 0) > baseline) {
+      parts.push(`Notes:\n${currentTask.notes}`);
     }
-    return () => { cancelled = true; };
+    setJiraUpdateText(parts.join('\n\n'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTask?.id, currentStep?.kind]);
 
@@ -340,7 +356,7 @@ export function GreenPlay({ onClose }: Props) {
               newSubtaskIds={newSubtaskIds}
               jiraOpenUrl={(key) => { const cfg = getJiraConfigForKey(jiraConfigs, key); return cfg ? `https://${cfg.host}/browse/${key}` : null; }}
               onOpenJira={openJira}
-              itsmHost={itsmConfig?.host}
+              itsmConfig={itsmConfig}
               onUpdate={patch => updateItem(currentTask.id, patch)}
               onAddSubtask={title => addSubtask(currentTask.id, title)}
               onToggleSubtaskDone={subId => toggleSubtaskDone(currentTask.id, subId)}
@@ -382,6 +398,15 @@ export function GreenPlay({ onClose }: Props) {
                 ) : defaultJira ? (
                   <>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                      Jira summary
+                    </div>
+                    <input
+                      value={createJiraSummary}
+                      onChange={e => setCreateJiraSummary(e.target.value)}
+                      placeholder={currentTask.title}
+                      style={{ width: '100%', fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', boxSizing: 'border-box', outline: 'none', marginBottom: 8 }}
+                    />
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
                       Jira description
                     </div>
                     <textarea
@@ -393,8 +418,13 @@ export function GreenPlay({ onClose }: Props) {
                     />
                     <button onClick={handleCreateJira} disabled={creatingJira}
                       style={{ width: '100%', border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 14, fontWeight: 600, padding: '10px 14px', borderRadius: 8, cursor: creatingJira ? 'wait' : 'pointer', opacity: creatingJira ? 0.6 : 1 }}>
-                      {creatingJira ? 'Creating…' : `+ Create in ${defaultJira.projectKey || defaultJira.host}`}
+                      {creatingJira ? 'Creating…' : urlCreate ? 'Open create form ↗' : `+ Create in ${defaultJira.projectKey || defaultJira.host}`}
                     </button>
+                    {urlCreateStatus && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--t-acc-dk)', padding: '8px 10px', background: 'var(--t-acc-bg)', borderRadius: 6 }}>
+                        {urlCreateStatus}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div style={{ fontSize: 12, color: 'var(--t-muted)', padding: '10px 12px', border: '1px dashed var(--t-brd)', borderRadius: 8 }}>
@@ -559,7 +589,6 @@ export function GreenPlay({ onClose }: Props) {
           )}
         </div>
       </div>
-      {jiraModal}
     </div>
   );
 }
@@ -594,13 +623,13 @@ interface CardProps {
   /** Resolves a ticket key to its URL via the multi-host config (null if none). */
   jiraOpenUrl: (key: string) => string | null;
   onOpenJira: (url: string, key: string) => void;
-  itsmHost: string | undefined;
+  itsmConfig: ItsmConfig | null;
   onUpdate: (patch: Partial<Task>) => void;
   onAddSubtask: (title: string) => void;
   onToggleSubtaskDone: (subId: string) => void;
 }
 
-function ReviewCard({ task, currentTarget, newSubtaskIds, jiraOpenUrl, onOpenJira, itsmHost, onUpdate, onAddSubtask, onToggleSubtaskDone }: CardProps) {
+function ReviewCard({ task, currentTarget, newSubtaskIds, jiraOpenUrl, onOpenJira, itsmConfig, onUpdate, onAddSubtask, onToggleSubtaskDone }: CardProps) {
   const [newSubTitle, setNewSubTitle] = useState('');
   const dimStyle = (target: Step['target']): React.CSSProperties => {
     if (!currentTarget) return {};
@@ -708,8 +737,8 @@ function ReviewCard({ task, currentTarget, newSubtaskIds, jiraOpenUrl, onOpenJir
           <div style={fl}>ServiceNow ticket</div>
           <div data-review-target="itsm" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <input value={task.itsmTicket ?? ''} onChange={e => onUpdate({ itsmTicket: e.target.value })} placeholder="INC0001234" style={{ ...inp, flex: 1 }} />
-            {task.itsmTicket && itsmHost && (
-              <a href={`https://${itsmHost}/incident.do?sysparm_query=number=${task.itsmTicket}`} target="_blank" rel="noreferrer" style={{ fontSize: 18, color: 'var(--t-acc)', textDecoration: 'none' }}>↗</a>
+            {task.itsmTicket && itsmTicketUrl(itsmConfig, task.itsmTicket) && (
+              <a href={itsmTicketUrl(itsmConfig, task.itsmTicket)!} target="_blank" rel="noreferrer" style={{ fontSize: 18, color: 'var(--t-acc)', textDecoration: 'none' }}>↗</a>
             )}
           </div>
         </div>

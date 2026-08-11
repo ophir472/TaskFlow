@@ -22,6 +22,16 @@ export function Kanban() {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<TaskStatus | null>(null);
   const [overCard, setOverCard] = useState<string | null>(null);
+  // One button per configured board, each opening a real browser tab (board
+  // hosts typically send X-Frame-Options, so embedding isn't an option).
+  const jiraBoards = useStore(s => s.jiraBoards);
+  const boards = jiraBoards
+    .filter(b => b.url.trim())
+    .map(b => ({
+      ...b,
+      // Values saved before protocol normalization existed may lack https://.
+      url: /^https?:\/\//i.test(b.url) ? b.url : `https://${b.url}`,
+    }));
 
   function handleDrop(colKey: TaskStatus) {
     if (dragId) updateItem(dragId, { status: colKey } as Partial<Task>);
@@ -31,7 +41,20 @@ export function Kanban() {
   const dragTask = dragId ? tasks.find(t => t.id === dragId) : null;
 
   return (
-    <div style={{ flex: 1, display: 'flex', gap: 14, padding: '8px 36px 36px', overflowX: 'auto' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      {boards.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '0 36px 4px', flexWrap: 'wrap' }}>
+          {boards.map(b => (
+            <button key={b.id}
+              onClick={() => window.open(b.url, '_blank')}
+              title={b.url}
+              style={{ border: '1px solid var(--t-acc)', background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', fontSize: 13, fontWeight: 600, padding: '7px 14px', borderRadius: 999, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+              ⫴ {b.label || 'Jira board'} ↗
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{ flex: 1, display: 'flex', gap: 14, padding: '8px 36px 36px', overflowX: 'auto' }}>
       {COLUMNS.map(col => {
         const cards = tasks.filter(t => t.status === col.key);
         const isOver = overCol === col.key;
@@ -93,6 +116,7 @@ export function Kanban() {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

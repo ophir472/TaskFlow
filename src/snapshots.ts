@@ -661,7 +661,7 @@ export function formatDetailed(s: ChangeSummary, maxDetails = 8): string[] {
       lines.push(`${d.action}${subPart} in task "${d.parentTitle}"${fieldPart}`);
     } else {
       const extra = d.extra ? ` (${d.extra})` : '';
-      lines.push(`${d.action}: "${d.title}"${extra}`);
+      lines.push(d.title ? `${d.action}: "${d.title}"${extra}` : `${d.action}${extra}`);
     }
   }
   if (s.details.length > maxDetails) {
@@ -744,7 +744,7 @@ const COALESCE_DATA_EVENTS = new Set([
   'customfield:add', 'customfield:remove', 'customfield:update',
   'requester:add', 'requester:remove', 'requester:set-jira-id',
   'project:add', 'project:remove',
-  'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'itsm-config:set',
+  'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'jira-board-url:set', 'jira-board:add', 'jira-board:update', 'jira-board:remove', 'itsm-config:set',
   'theme:set',
   // Per-card UI preferences that the user cares to preserve across versions.
   'card:resize',
@@ -839,7 +839,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'customfield:add', 'customfield:remove', 'customfield:update',
     'requester:add', 'requester:remove', 'requester:set-jira-id',
     'project:add', 'project:remove',
-    'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'itsm-config:set', 'theme:set',
+    'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'jira-board-url:set', 'jira-board:add', 'jira-board:update', 'jira-board:remove', 'itsm-config:set', 'theme:set',
     'card:resize',
     'responsibility:add', 'responsibility:update', 'responsibility:remove',
     'responsibility:toggle-active', 'responsibility:generate-tasks',
@@ -865,7 +865,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'customfield:add', 'customfield:remove', 'customfield:update',
     'requester:add', 'requester:remove', 'requester:set-jira-id',
     'project:add', 'project:remove',
-    'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'itsm-config:set', 'theme:set',
+    'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'jira-board-url:set', 'jira-board:add', 'jira-board:update', 'jira-board:remove', 'itsm-config:set', 'theme:set',
     'card:resize',
     'responsibility:add', 'responsibility:update', 'responsibility:remove',
     'responsibility:toggle-active', 'responsibility:generate-tasks',
@@ -1000,6 +1000,22 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
         s.otherChanges++;
         s.details.push({ action: 'changed Jira link opening', title: d.mode === 'tab' ? 'new tab' : 'popup preview' });
         break;
+      case 'jira-board-url:set':
+        s.otherChanges++;
+        s.details.push({ action: d.hasUrl ? 'set Jira board URL' : 'cleared Jira board URL', title: d.url || '' });
+        break;
+      case 'jira-board:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added Jira board', title: d.label || '' });
+        break;
+      case 'jira-board:update':
+        s.otherChanges++;
+        s.details.push({ action: 'updated Jira board', title: d.label || '', extra: d.url || undefined });
+        break;
+      case 'jira-board:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'removed Jira board', title: d.label || '' });
+        break;
       case 'itsm-config:set':
         s.otherChanges++;
         s.details.push({ action: 'updated ServiceNow config', title: d.host || '' });
@@ -1070,22 +1086,6 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
 // ── Log reading ─────────────────────────────────────────────────────
 
 interface LogRecord extends LogEntry { _time: number }
-
-/**
- * True when a specific field of a task was edited after `since`, per the
- * mutation logs. Used by the review flow to decide whether to include the
- * notes section in the suggested Jira comment. Returns false when no log
- * directory is configured (can't know → assume unchanged).
- */
-export async function taskFieldChangedSince(taskId: string, field: string, since: number): Promise<boolean> {
-  const logs = await readAllLogs();
-  return logs.some(e => {
-    if (e._time <= since || e.event !== 'item:update') return false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const d = e.data as any;
-    return d?.id === taskId && Array.isArray(d?.fields) && d.fields.includes(field);
-  });
-}
 
 async function readAllLogs(): Promise<LogRecord[]> {
   const handle = await getSnapshotDir();

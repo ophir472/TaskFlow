@@ -200,7 +200,7 @@ export function Settings() {
 
   const [itsm, setItsm] = useState<ItsmConfig>(() => itsmConfig ?? { host: '' });
   function saveItsm() {
-    setItsmConfig(itsm.host ? itsm : null);
+    setItsmConfig(itsm.host.trim() || itsm.customUrl?.trim() ? itsm : null);
   }
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -561,16 +561,17 @@ export function Settings() {
           <div style={card}>
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 4 }}>ITSM Integration</div>
             <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: 16 }}>
-              ServiceNow or any ITSM tool. Tickets open at: https://HOST/incident.do?sysparm_query=number=TICKET
+              ServiceNow or any ITSM tool. Tickets open at: https://HOST/incident.do?sysparm_query=number=TICKET — or set a <b>custom URL</b> and the ticket number from the card is appended directly after it.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
               {field('Host', <input value={itsm.host} onChange={e => setItsm(i => ({ ...i, host: e.target.value }))} placeholder="mycompany.service-now.com" style={fi} />)}
+              {field('Custom Ticket URL', <input value={itsm.customUrl ?? ''} onChange={e => setItsm(i => ({ ...i, customUrl: e.target.value }))} placeholder="https://itsm/nav_to.do?uri=incident.do?number=" style={fi} />)}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <button onClick={saveItsm} style={addBtn}>Save</button>
               {itsmConfig && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'oklch(0.5 0.14 150)' }}>
-                  <span>✓ Connected · {itsmConfig.host}</span>
+                  <span>✓ Connected · {itsmConfig.host || itsmConfig.customUrl}</span>
                   <span onClick={() => { setItsmConfig(null); setItsm({ host: '' }); }}
                     style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 16 }}>×</span>
                 </div>

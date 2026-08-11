@@ -36,10 +36,12 @@ export async function createJiraIssue(
 
   const body: Record<string, unknown> = {
     fields: {
-      project: { key: config.projectKey },
+      // Numeric project id (pid) wins over the key when configured.
+      project: config.pid?.trim() ? { id: config.pid.trim() } : { key: config.projectKey },
       summary: fields.summary,
       description: buildDescription(fields.description, fields.requestedBy),
-      issuetype: { name: 'Task' },
+      issuetype: config.issueTypeId?.trim() ? { id: config.issueTypeId.trim() } : { name: 'Task' },
+      ...(config.priorityId?.trim() ? { priority: { id: config.priorityId.trim() } } : {}),
       ...(config.component ? { components: [{ name: config.component }] } : {}),
       ...(config.defaultAssigneeId ? { assignee: { id: config.defaultAssigneeId } } : {}),
       // Requester's mapped Jira account (Settings → Requesters). Setting

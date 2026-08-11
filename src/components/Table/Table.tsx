@@ -4,6 +4,7 @@ import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { DailyPlay } from '../DailyPlay/DailyPlay';
 import { ReminderModal } from '../ReminderPopup/ReminderModal';
+import { jiraTicketUrl } from '../../jiraHosts';
 import { scoreItem, duplicateTask } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
 import type { Item, Task, Reminder } from '../../types';
@@ -77,6 +78,8 @@ export function Table() {
   const updateItem = useStore(s => s.updateItem);
   const updateItemCustomValue = useStore(s => s.updateItemCustomValue);
   const setForToday = useStore(s => s.setForToday);
+  const jiraConfigs = useStore(s => s.jiraConfigs);
+  const openJira = (url: string, _key: string) => window.open(url, '_blank');
   const toggleTag = useStore(s => s.toggleTag);
   const archiveItem = useStore(s => s.archiveItem);
   const deleteItem = useStore(s => s.deleteItem);
@@ -761,6 +764,8 @@ export function Table() {
                     );
                   }
                   const cellKey = `${it.id}:${col.key}`;
+                  const jiraKey = col.key === 'jira' && it.kind === 'task' ? ((it as Task).jiraLink ?? '').trim() : '';
+                  const jiraCellUrl = jiraKey ? jiraTicketUrl(jiraConfigs, jiraKey) : null;
                   return (
                     <td key={col.key}
                       onClick={isEditable ? e => startEdit(e, it.id, col.key) : undefined}
@@ -768,6 +773,14 @@ export function Table() {
                       onMouseLeave={() => setHoveredCell(null)}
                       style={{ ...td, textAlign: col.align ?? 'left', fontWeight: col.key === 'title' ? 500 : 400, color: col.key === 'title' ? 'var(--t-txt)' : 'var(--t-txt2)', cursor: isEditable ? 'text' : 'default', background: hoveredCell === cellKey ? 'var(--t-acc-bg)' : undefined }}>
                       {String(col.getValue(it) || '—')}
+                      {jiraCellUrl && (
+                        <span
+                          onClick={e => { e.stopPropagation(); openJira(jiraCellUrl, jiraKey); }}
+                          title={`Open ${jiraKey}`}
+                          style={{ marginLeft: 6, fontSize: 14, color: 'var(--t-acc)', cursor: 'pointer', userSelect: 'none' }}>
+                          ↗
+                        </span>
+                      )}
                     </td>
                   );
                 })}

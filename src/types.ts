@@ -63,14 +63,45 @@ export interface JiraConfig {
   projectKey: string;
   component: string;
   defaultAssigneeId: string;
+  // Numeric project id (the `pid` in Jira create URLs). When set, API creates
+  // use project:{id} instead of project:{key}.
+  pid?: string;
+  // Numeric issue type id (e.g. "3"). Absent → issuetype name "Task".
+  issueTypeId?: string;
+  // Numeric priority id (e.g. "3"). Absent → project default priority.
+  priorityId?: string;
+  // Summary template applied when creating a ticket from a task.
+  // "<TASK NAME>" is replaced with the TaskFlow task title, e.g.
+  // "blah 123456 <TASK NAME> more words". Empty → title used as-is. The
+  // result is still editable per-ticket in the create prompt.
+  summaryTemplate?: string;
+  // Override: a fully self-contained Jira create URL (host, pid, issuetype,
+  // priority, assignee, component all baked in). When set, "Create in Jira"
+  // OPENS this URL in a new tab instead of calling the REST API — only the
+  // dynamic parts (summary, description) are injected via {summary} /
+  // {description} placeholders, or appended as query params if no
+  // placeholders are present. Credentials above remain in use for comments,
+  // transitions and other API features.
+  createUrlTemplate?: string;
   // Exactly one entry has isDefault=true. The default is used for "Create Jira"
   // (in the card and in Green Play review) and as the fallback host when a
   // pasted ticket's project prefix doesn't match any configured entry.
   isDefault: boolean;
 }
 
+// A saved Jira kanban board — rendered as a button on the Kanban page.
+export interface JiraBoard {
+  id: string;
+  label: string;
+  url: string;
+}
+
 export interface ItsmConfig {
   host: string;
+  // Override for opening tickets: the ticket number from the card is appended
+  // directly after this URL (e.g. "https://itsm/nav?number=" + "INC0012345").
+  // Empty → default https://HOST/incident.do?sysparm_query=number=TICKET.
+  customUrl?: string;
 }
 
 export interface CommunicationField {
@@ -143,6 +174,10 @@ export interface Task {
   // undefined means "never reviewed". Compared against createdAt/updatedAt to decide
   // whether the task is still in the review queue.
   reviewedAt?: number;
+  // When the notes field last changed. Store-derived (set by updateItem), so
+  // features like the review's update-summary prefill never need to consult
+  // the forensic logs — logs are logs, not a functional dependency.
+  notesChangedAt?: number;
   // Set on tasks auto-created by a Responsibility. Points at Responsibility.id
   // so the task can display a "from: <name>" pill and the schedule can avoid
   // re-firing while an unfinished previous instance still exists.

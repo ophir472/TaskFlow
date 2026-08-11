@@ -8,10 +8,45 @@ const fl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t
 const addBtn: React.CSSProperties = { border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 13.5, fontWeight: 600, padding: '8px 14px', borderRadius: 7, cursor: 'pointer' };
 const ghostBtn: React.CSSProperties = { border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 13, fontWeight: 500, padding: '7px 12px', borderRadius: 7, cursor: 'pointer' };
 
+// One Jira board row: local drafts commit on blur so typing doesn't spam
+// the store/version history with per-keystroke events.
+function BoardRow({ id, label, url, onSave, onRemove }: {
+  id: string; label: string; url: string;
+  onSave: (patch: { label?: string; url?: string }) => void;
+  onRemove: () => void;
+}) {
+  const [labelDraft, setLabelDraft] = useState<string | null>(null);
+  const [urlDraft, setUrlDraft] = useState<string | null>(null);
+  const rowInp: React.CSSProperties = { fontSize: 12.5, padding: '5px 9px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', boxSizing: 'border-box' };
+  return (
+    <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+      <input
+        value={labelDraft ?? label}
+        onChange={e => setLabelDraft(e.target.value)}
+        onBlur={() => { if (labelDraft !== null) { onSave({ label: labelDraft }); setLabelDraft(null); } }}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        placeholder="Board name"
+        style={{ ...rowInp, width: 150, flexShrink: 0 }}
+      />
+      <input
+        value={urlDraft ?? url}
+        onChange={e => setUrlDraft(e.target.value)}
+        onBlur={() => { if (urlDraft !== null) { onSave({ url: urlDraft }); setUrlDraft(null); } }}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        placeholder="https://mycompany.atlassian.net/jira/software/projects/PROJ/boards/1"
+        style={{ ...rowInp, flex: 1, minWidth: 0 }}
+      />
+      <span onClick={onRemove} title="Remove board"
+        style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 15, lineHeight: 1, flexShrink: 0 }}>×</span>
+    </div>
+  );
+}
+
 type DraftEntry = Omit<JiraConfig, 'id' | 'isDefault'>;
 const EMPTY_DRAFT: DraftEntry = {
   host: '', username: '', apiToken: '', projectKey: '',
   component: '', defaultAssigneeId: '',
+  pid: '', issueTypeId: '', priorityId: '', summaryTemplate: '', createUrlTemplate: '',
 };
 
 export function JiraHostsSection() {
@@ -20,8 +55,10 @@ export function JiraHostsSection() {
   const updateJiraConfig = useStore(s => s.updateJiraConfig);
   const removeJiraConfig = useStore(s => s.removeJiraConfig);
   const setDefaultJiraConfig = useStore(s => s.setDefaultJiraConfig);
-  const jiraOpenMode = useStore(s => s.jiraOpenMode);
-  const setJiraOpenMode = useStore(s => s.setJiraOpenMode);
+  const jiraBoards = useStore(s => s.jiraBoards);
+  const addJiraBoard = useStore(s => s.addJiraBoard);
+  const updateJiraBoard = useStore(s => s.updateJiraBoard);
+  const removeJiraBoard = useStore(s => s.removeJiraBoard);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState<boolean>(jiraConfigs.length === 0);
@@ -38,6 +75,8 @@ export function JiraHostsSection() {
     setDraft({
       host: c.host, username: c.username, apiToken: c.apiToken,
       projectKey: c.projectKey, component: c.component, defaultAssigneeId: c.defaultAssigneeId,
+      pid: c.pid ?? '', issueTypeId: c.issueTypeId ?? '', priorityId: c.priorityId ?? '',
+      summaryTemplate: c.summaryTemplate ?? '', createUrlTemplate: c.createUrlTemplate ?? '',
     });
   }
   function cancelForm() {
@@ -72,26 +111,24 @@ export function JiraHostsSection() {
         Multiple hosts supported. Each entry has its own project key. When you paste a ticket (e.g. <b>C123456-6789</b>), the host is picked by matching the project key. The <b>default</b> host is used for <b>Create Jira</b> everywhere and as a fallback for tickets whose prefix doesn't match any configured project key.
       </div>
 
-      {/* Global open behavior — applies to every host */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, padding: '10px 14px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 9 }}>
-        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-txt2)' }}>Open Jira links in</span>
-        <div style={{ display: 'flex', gap: 4, background: 'var(--t-surf)', padding: 3, borderRadius: 999, border: '1px solid var(--t-brd)' }}>
-          {([['popup', 'Popup preview'], ['tab', 'New tab']] as const).map(([mode, label]) => (
-            <button key={mode} type="button" onClick={() => setJiraOpenMode(mode)}
-              style={{
-                padding: '5px 14px', borderRadius: 999, border: 'none',
-                fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-                background: jiraOpenMode === mode ? 'var(--t-acc)' : 'transparent',
-                color: jiraOpenMode === mode ? 'white' : 'var(--t-txt2)',
-                transition: 'background 0.12s, color 0.12s',
-              }}>
-              {label}
-            </button>
-          ))}
+      {/* Kanban boards — each becomes a button on the Kanban page that opens
+          the board in a new tab. */}
+      <div style={{ marginBottom: 18, padding: '10px 14px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 9 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: jiraBoards.length > 0 ? 8 : 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-txt2)' }}>Jira boards</span>
+          <span style={{ fontSize: 11.5, color: 'var(--t-muted)', flex: 1 }}>
+            Each board shows as a button on the Kanban page (opens in a new tab).
+          </span>
+          <button onClick={addJiraBoard}
+            style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            + Add board
+          </button>
         </div>
-        <span style={{ fontSize: 11.5, color: 'var(--t-muted)' }}>
-          The popup still has an "Open in new tab" button.
-        </span>
+        {jiraBoards.map(b => (
+          <BoardRow key={b.id} id={b.id} label={b.label} url={b.url}
+            onSave={(patch) => updateJiraBoard(b.id, patch)}
+            onRemove={() => removeJiraBoard(b.id)} />
+        ))}
       </div>
 
       {jiraConfigs.length === 0 && !formOpen && (
@@ -115,6 +152,12 @@ export function JiraHostsSection() {
                     {c.isDefault && (
                       <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                         Default
+                      </span>
+                    )}
+                    {!!c.createUrlTemplate?.trim() && (
+                      <span title="Tickets are created by opening the configured URL in a new tab, not via the API"
+                        style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'var(--t-surf3)', color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        URL create
                       </span>
                     )}
                   </div>
@@ -171,6 +214,33 @@ export function JiraHostsSection() {
             </div>
             <div><div style={fl}>Default Assignee Account ID</div>
               <input value={draft.defaultAssigneeId} onChange={e => setDraft(d => ({ ...d, defaultAssigneeId: e.target.value }))} placeholder="5d3f… (from Jira profile URL)" style={fi} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div><div style={fl}>Project ID (pid)</div>
+              <input value={draft.pid} onChange={e => setDraft(d => ({ ...d, pid: e.target.value }))} placeholder="10000 (optional)" style={fi} />
+            </div>
+            <div><div style={fl}>Issue Type ID</div>
+              <input value={draft.issueTypeId} onChange={e => setDraft(d => ({ ...d, issueTypeId: e.target.value }))} placeholder={'3 (optional, default "Task")'} style={fi} />
+            </div>
+            <div><div style={fl}>Priority ID</div>
+              <input value={draft.priorityId} onChange={e => setDraft(d => ({ ...d, priorityId: e.target.value }))} placeholder="3 (optional)" style={fi} />
+            </div>
+          </div>
+          <div>
+            <div style={fl}>Summary Template</div>
+            <input value={draft.summaryTemplate} onChange={e => setDraft(d => ({ ...d, summaryTemplate: e.target.value }))}
+              placeholder="blah 123456 <TASK NAME> more words" style={fi} />
+            <div style={{ fontSize: 11.5, color: 'var(--t-muted)', marginTop: 4 }}>
+              <b>&lt;TASK NAME&gt;</b> is replaced with the task's title. Leave empty to use the title as-is. You can still edit the result before each create.
+            </div>
+          </div>
+          <div>
+            <div style={fl}>Create-URL Override</div>
+            <input value={draft.createUrlTemplate} onChange={e => setDraft(d => ({ ...d, createUrlTemplate: e.target.value }))}
+              placeholder="https://host/secure/CreateIssueDetails!init.jspa?pid=10000&issuetype=3&priority=3&assignee=me&components=…" style={fi} />
+            <div style={{ fontSize: 11.5, color: 'var(--t-muted)', marginTop: 4 }}>
+              When set, <b>Create in Jira</b> opens this URL in a new tab instead of calling the API — put pid, issuetype, priority, assignee, component etc. directly in the URL; the fields above are ignored for creation (credentials still power comments / close / update). Use <b>{'{summary}'}</b> and <b>{'{description}'}</b> placeholders, or omit them and both are appended automatically.
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

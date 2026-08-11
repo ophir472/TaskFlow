@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { createJiraIssue } from '../../jira';
-import { getDefaultJiraConfig, jiraTicketUrl } from '../../jiraHosts';
-import { useJiraOpener } from './JiraPreviewModal';
+import { getDefaultJiraConfig, jiraTicketUrl, applySummaryTemplate, buildJiraCreateUrl } from '../../jiraHosts';
+import { itsmTicketUrl } from '../../itsm';
 
 interface Props {
   task: Task;
@@ -34,7 +34,11 @@ export function TicketSections({ task, onToast }: Props) {
   // index. The prompt asks for the ticket description before creating.
   const [createTarget, setCreateTarget] = useState<'primary' | number | null>(null);
   const [createDesc, setCreateDesc] = useState('');
-  const { openJira, jiraModal } = useJiraOpener();
+  const [createSummary, setCreateSummary] = useState('');
+  // Host has a create-URL override → creation opens that URL in a new tab
+  // (pre-filled Jira create screen) instead of calling the REST API.
+  const urlCreate = !!defaultJira?.createUrlTemplate?.trim();
+  const openJira = (url: string, _key: string) => window.open(url, '_blank');
 
   const t = task;
   const id = task.id;
@@ -59,14 +63,31 @@ export function TicketSections({ task, onToast }: Props) {
   function openCreatePrompt(target: 'primary' | number) {
     setCreateTarget(target);
     setCreateDesc(t.description ?? '');
+    setCreateSummary(applySummaryTemplate(defaultJira, t.title));
   }
 
   async function handleCreateConfirm() {
     if (!defaultJira || createTarget === null) return;
+    const summary = createSummary.trim() || t.title;
+
+    if (urlCreate) {
+      // URL mode: everything (pid, issuetype, priority, assignee…) lives in
+      // the configured URL. Jira's own create screen opens pre-filled; we
+      // can't know the resulting key, so the ticket field stays for pasting.
+      const url = buildJiraCreateUrl(defaultJira, summary, createDesc);
+      if (url) {
+        window.open(url, '_blank');
+        updateItem(id, { description: createDesc });
+        onToast?.('Opened Jira create form — paste the ticket key here once created');
+        setCreateTarget(null);
+      }
+      return;
+    }
+
     setCreatingJira(true);
     try {
       const result = await createJiraIssue(defaultJira, {
-        summary: t.title,
+        summary,
         description: createDesc,
         requestedBy: t.requester,
         reporterAccountId: t.requester ? requesterJiraIds[t.requester] : undefined,
@@ -92,6 +113,14 @@ export function TicketSections({ task, onToast }: Props) {
   function createPrompt() {
     return (
       <div style={{ marginTop: 6, marginBottom: 4, padding: 10, border: '1px solid var(--t-acc-fo)', borderRadius: 8, background: 'var(--t-surf)' }}>
+        <div style={{ ...lblSt, cursor: 'default' }}>Jira summary</div>
+        <input
+          value={createSummary}
+          onChange={e => setCreateSummary(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') setCreateTarget(null); }}
+          placeholder={t.title}
+          style={{ width: '100%', fontSize: 13, padding: '7px 9px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', boxSizing: 'border-box', outline: 'none', marginBottom: 8 }}
+        />
         <div style={{ ...lblSt, cursor: 'default' }}>Jira description</div>
         <textarea
           autoFocus
@@ -105,7 +134,7 @@ export function TicketSections({ task, onToast }: Props) {
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           <button onClick={handleCreateConfirm} disabled={creatingJira}
             style={{ flex: 1, border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 12, fontWeight: 600, padding: '6px 0', borderRadius: 6, cursor: creatingJira ? 'wait' : 'pointer', opacity: creatingJira ? 0.6 : 1 }}>
-            {creatingJira ? 'Creating…' : 'Create'}
+            {creatingJira ? 'Creating…' : urlCreate ? 'Open create form ↗' : 'Create'}
           </button>
           <button onClick={() => setCreateTarget(null)}
             style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 6, cursor: 'pointer' }}>
@@ -182,7 +211,7 @@ export function TicketSections({ task, onToast }: Props) {
         {label('itsmTicket:primary', t.itsmTicketLabel, 'ITSM ticket', v => updateItem(id, { itsmTicketLabel: v || undefined }))}
         <div data-review-target="itsm" style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4 }}>
           <input value={t.itsmTicket ?? ''} onChange={e => updateItem(id, { itsmTicket: e.target.value })} placeholder="INC0001234" style={sInp} />
-          {t.itsmTicket && <a href={`https://${itsmConfig?.host ?? ''}/incident.do?sysparm_query=number=${t.itsmTicket}`} target="_blank" rel="noreferrer" style={extLink} title={`Open ${t.itsmTicket}`}>↗</a>}
+          {t.itsmTicket && (() => { const url = itsmTicketUrl(itsmConfig, t.itsmTicket); return url ? <a href={url} target="_blank" rel="noreferrer" style={extLink} title={`Open ${t.itsmTicket}`}>↗</a> : null; })()}
         </div>
         {t.itsmTicket && (t.extraItsmTickets ?? []).map((ticket, i) => (
           <div key={i} style={{ marginTop: 6 }}>
@@ -194,7 +223,7 @@ export function TicketSections({ task, onToast }: Props) {
               <input value={ticket} style={sInp} placeholder="INC0001234"
                 onChange={e => { const n = [...(t.extraItsmTickets ?? [])]; n[i] = e.target.value; updateItem(id, { extraItsmTickets: n }); }}
                 onBlur={() => { const tks = t.extraItsmTickets ?? []; const lbs = t.extraItsmTicketLabels ?? []; const pairs = tks.map((tk, j) => ({ tk, lb: lbs[j] ?? '' })).filter(p => p.tk.trim()); updateItem(id, { extraItsmTickets: pairs.map(p => p.tk), extraItsmTicketLabels: pairs.map(p => p.lb) }); }} />
-              {ticket && <a href={`https://${itsmConfig?.host ?? ''}/incident.do?sysparm_query=number=${ticket}`} target="_blank" rel="noreferrer" style={extLink} title={`Open ${ticket}`}>↗</a>}
+              {ticket && (() => { const url = itsmTicketUrl(itsmConfig, ticket); return url ? <a href={url} target="_blank" rel="noreferrer" style={extLink} title={`Open ${ticket}`}>↗</a> : null; })()}
             </div>
           </div>
         ))}
@@ -233,7 +262,6 @@ export function TicketSections({ task, onToast }: Props) {
         </button>
       </div>
 
-      {jiraModal}
     </>
   );
 }

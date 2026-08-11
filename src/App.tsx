@@ -162,7 +162,7 @@ export default function App() {
         s.projects !== prev.projects ||
         s.customFields !== prev.customFields ||
         s.jiraConfigs !== prev.jiraConfigs ||
-        s.jiraOpenMode !== prev.jiraOpenMode ||
+        s.jiraBoards !== prev.jiraBoards ||
         s.itsmConfig !== prev.itsmConfig ||
         s.themeId !== prev.themeId ||
         s.customAccent !== prev.customAccent ||
@@ -325,7 +325,13 @@ export default function App() {
 
   // View → URL: only update when switching views; preserve sub-path within
   // same view. Leave '#review' alone — it's an overlay route, not a view.
+  // Skips the first run: on load the URL is the source of truth and the
+  // store still holds its default view ('feed' — view isn't persisted), so
+  // writing here would stomp a refreshed page's hash back to #feed before
+  // the hash→view sync above has re-rendered.
+  const viewUrlSynced = useRef(false);
   useEffect(() => {
+    if (!viewUrlSynced.current) { viewUrlSynced.current = true; return; }
     const currentSeg = window.location.hash.slice(1).split('/')[0];
     if (currentSeg === 'review') return;
     if (currentSeg !== view) window.location.hash = view;

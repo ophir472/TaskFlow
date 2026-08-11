@@ -3,7 +3,6 @@ import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { parseEstimate, formatMinutes } from '../../estimateParser';
 import { jiraTicketUrl } from '../../jiraHosts';
-import { useJiraOpener } from '../Common/JiraPreviewModal';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { SubtaskPanel } from '../SubtaskPanel/SubtaskPanel';
 
@@ -25,7 +24,7 @@ export function DailyPlay({ onClose }: Props) {
     [items],
   );
 
-  const { openJira, jiraModal } = useJiraOpener();
+  const openJira = (url: string, _key: string) => window.open(url, '_blank');
   const [markedSubIds, setMarkedSubIds] = useState<Set<string>>(new Set());
   // Session-only visibility: completed subtasks are hidden by default (toggle
   // to show), and any row can be hidden manually. Both reset when the popup
@@ -243,7 +242,6 @@ export function DailyPlay({ onClose }: Props) {
           </button>
         </div>
       </div>
-      {jiraModal}
 
       {/* Task / subtask popups — wrapped so their backdrop clicks don't
           bubble to the Daily backdrop and close everything. */}

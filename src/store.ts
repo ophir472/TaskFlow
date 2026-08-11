@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility } from './types';
+import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard } from './types';
 import { triggerIfDue, computeNextDueAt } from './responsibilities';
 import { nextOccurrence } from './scheduleEngine';
 import { midnight } from './engine';
@@ -45,8 +45,9 @@ interface AppState {
   customAccent: string | null;
   customBg: string | null;
   jiraConfigs: JiraConfig[];
-  // Global default for opening Jira links: in-app popup preview or a browser tab.
-  jiraOpenMode: 'popup' | 'tab';
+  // Jira kanban boards — each shows as a button on the Kanban page that
+  // opens the board in a new tab.
+  jiraBoards: JiraBoard[];
   itsmConfig: ItsmConfig | null;
   taskOrder: string[];
   tableVisibleCols: string[] | null;
@@ -91,7 +92,9 @@ interface AppState {
   updateItemCustomValue: (itemId: string, fieldId: string, value: string) => void;
   setView: (v: View) => void;
   setSidebarCollapsed: (v: boolean) => void;
-  setJiraOpenMode: (mode: 'popup' | 'tab') => void;
+  addJiraBoard: () => void;
+  updateJiraBoard: (id: string, patch: Partial<Omit<JiraBoard, 'id'>>) => void;
+  removeJiraBoard: (id: string) => void;
   addJiraConfig: (config: Omit<JiraConfig, 'id' | 'isDefault'>) => void;
   updateJiraConfig: (id: string, patch: Partial<Omit<JiraConfig, 'id' | 'isDefault'>>) => void;
   removeJiraConfig: (id: string) => void;
@@ -151,7 +154,7 @@ export const useStore = create<AppState>()(
       customAccent: null,
       customBg: null,
       jiraConfigs: [],
-      jiraOpenMode: 'popup',
+      jiraBoards: [],
       itsmConfig: null,
       taskOrder: [],
       tableVisibleCols: null,
@@ -184,6 +187,12 @@ export const useStore = create<AppState>()(
             if (it.kind === 'task' && nextStatus !== undefined) {
               if (nextStatus === 'done') merged = { ...merged, archived: true } as Item;
               else if (nextStatus !== 'archived' && it.archived) merged = { ...merged, archived: false } as Item;
+            }
+            // Stamp notesChangedAt on real notes edits so consumers (review's
+            // update-summary prefill) can detect changes from store data alone.
+            const nextNotes = (patch as Partial<Task>).notes;
+            if (it.kind === 'task' && nextNotes !== undefined && nextNotes !== it.notes) {
+              merged = { ...merged, notesChangedAt: Date.now() } as Item;
             }
             return merged;
           }),
@@ -426,9 +435,27 @@ export const useStore = create<AppState>()(
       // UI-only mutations — no need to log
       setView: (v) => set({ view: v }),
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
-      setJiraOpenMode: (mode) => {
-        slog('jira-open-mode:set', { mode });
-        set({ jiraOpenMode: mode });
+      addJiraBoard: () => {
+        const id = 'b' + Date.now() + Math.random().toString(36).slice(2, 5);
+        slog('jira-board:add', { id });
+        set(s => ({ jiraBoards: [...s.jiraBoards, { id, label: `Board ${s.jiraBoards.length + 1}`, url: '' }] }));
+      },
+      updateJiraBoard: (id, patch) => {
+        // Normalize the URL: without a protocol the browser resolves it
+        // relative to the app origin (localhost/…), opening the wrong page.
+        const normalized = { ...patch };
+        if (normalized.url !== undefined) {
+          const trimmed = normalized.url.trim();
+          normalized.url = trimmed && !/^https?:\/\//i.test(trimmed) ? `https://${trimmed}` : trimmed;
+        }
+        const existing = get().jiraBoards.find(b => b.id === id);
+        slog('jira-board:update', { id, label: normalized.label ?? existing?.label, url: normalized.url });
+        set(s => ({ jiraBoards: s.jiraBoards.map(b => b.id === id ? { ...b, ...normalized } : b) }));
+      },
+      removeJiraBoard: (id) => {
+        const existing = get().jiraBoards.find(b => b.id === id);
+        slog('jira-board:remove', { id, label: existing?.label });
+        set(s => ({ jiraBoards: s.jiraBoards.filter(b => b.id !== id) }));
       },
       addJiraConfig: (config) => {
         const id = 'j' + Date.now() + Math.random().toString(36).slice(2, 5);
@@ -780,7 +807,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'taskflow-store',
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => IS_PREVIEW_MODE ? sessionStorage : localStorage),
       skipHydration: IS_PREVIEW_MODE,
       // UI-only fields: kept in-memory per-tab, NOT persisted. Otherwise every
@@ -815,6 +842,15 @@ export const useStore = create<AppState>()(
               : it.schedule ? nextOccurrence(it.schedule, it.createdAt ?? Date.now()) : Date.now();
             return { ...it, nextFireAt: seed };
           });
+        }
+        if (fromVersion < 6) {
+          // Single jiraBoardUrl → jiraBoards list.
+          if (!Array.isArray(persisted.jiraBoards)) {
+            persisted.jiraBoards = persisted.jiraBoardUrl
+              ? [{ id: 'b' + Date.now(), label: 'Board 1', url: persisted.jiraBoardUrl }]
+              : [];
+          }
+          delete persisted.jiraBoardUrl;
         }
         if (fromVersion < 5) {
           if (!Array.isArray(persisted.jiraConfigs)) {
