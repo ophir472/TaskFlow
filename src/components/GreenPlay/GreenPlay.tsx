@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
+import { backdropCloseProps } from '../../backdrop';
 import { useStore } from '../../store';
 import type { Task, ItsmConfig } from '../../types';
 import { flaggedTasks, stepsFor, type Step } from '../../greenPlay';
@@ -311,7 +312,7 @@ export function GreenPlay({ onClose }: Props) {
   if (tasks.length === 0) {
     const clearAndClose = () => { endReview(); onClose(); };
     return (
-      <div style={backdropSt} onClick={clearAndClose}>
+      <div style={backdropSt} {...backdropCloseProps(clearAndClose)}>
         <div style={{ ...popupSt, width: 480 }} onClick={e => e.stopPropagation()}>
           <div style={{ padding: '48px 32px', textAlign: 'center' }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>✓</div>
@@ -332,7 +333,7 @@ export function GreenPlay({ onClose }: Props) {
   );
 
   return (
-    <div style={backdropSt} onClick={handleClose}>
+    <div style={backdropSt} {...backdropCloseProps(handleClose)}>
       <div style={popupSt} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid var(--t-brd)' }}>
@@ -765,7 +766,7 @@ function ReviewCard({ task, currentTarget, newSubtaskIds, jiraOpenUrl, onOpenJir
 // ── Styles ────────────────────────────────────────────────────────
 
 const backdropSt: React.CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
   zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center',
   padding: 24,
 };

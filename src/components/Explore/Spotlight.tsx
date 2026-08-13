@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { backdropCloseProps } from '../../backdrop';
 import { useStore } from '../../store';
 import { nextId, scoreItem } from '../../engine';
 import { searchItems } from './Explore';
@@ -123,10 +124,10 @@ export function Spotlight({ onClose, onToast }: Props) {
 
   return (
     <div
-      onClick={onClose}
+      {...backdropCloseProps(onClose)}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)',
-        backdropFilter: 'blur(3px)', zIndex: 85,
+        backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 85,
         display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         paddingTop: '15vh',
       }}>

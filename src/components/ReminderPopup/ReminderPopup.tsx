@@ -104,7 +104,7 @@ function formatDelta(ms: number): string {
 
 const backdropSt: React.CSSProperties = {
   position: 'fixed', inset: 0,
-  background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)',
+  background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
   zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center',
   padding: 20,
 };

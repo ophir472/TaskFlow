@@ -4,6 +4,7 @@ import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { DailyPlay } from '../DailyPlay/DailyPlay';
 import { ReminderModal } from '../ReminderPopup/ReminderModal';
+import { AiAssignModal } from './AiAssignModal';
 import { jiraTicketUrl } from '../../jiraHosts';
 import { scoreItem, duplicateTask } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
@@ -110,6 +111,7 @@ export function Table() {
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
   const [modalTaskId, setModalTaskId] = useState<string | null>(null);
   const [reminderModalId, setReminderModalId] = useState<string | null>(null);
+  const [aiTaskId, setAiTaskId] = useState<string | null>(null);
   const [dailyOpen, setDailyOpen] = useState(false);
   const colWidths = tableColWidthsStore;
   const [hoveredResize, setHoveredResize] = useState<string | null>(null);
@@ -242,6 +244,7 @@ export function Table() {
     if (quickFilters.has('updatedToday') && it.updatedAt < todayStart) return false;
     if (quickFilters.has('forToday') && !(it.kind === 'task' && (it as Task).forToday)) return false;
     if (quickFilters.has('untagged') && !(it.kind === 'task' && !(it as Task).urgent && !(it as Task).important && !(it as Task).quick && !(it as Task).noTag)) return false;
+    if (quickFilters.has('mail') && !(it.kind === 'task' && (it as Task).type === 'mail')) return false;
     return true;
   });
 
@@ -504,6 +507,7 @@ export function Table() {
           { key: 'updatedToday', label: 'Updated today' },
           { key: 'forToday', label: 'Marked today' },
           { key: 'untagged', label: 'Untagged' },
+          { key: 'mail', label: '✉ Mail' },
         ] as const).map(({ key, label }) => {
           const active = quickFilters.has(key);
           return (
@@ -555,6 +559,19 @@ export function Table() {
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
               ✕ Delete
             </button>
+            {selCount === 1 && (() => {
+              const selItem = rows.find(r => selected.has(r.id));
+              if (!selItem || selItem.kind !== 'task') return null;
+              return (
+                <button onClick={() => setAiTaskId(selItem.id)}
+                  title="Send this task to the configured AI model — the reply goes to the log"
+                  style={{ ...ghostBtn, color: 'var(--t-acc)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-acc-bg)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  ✦ Assign to AI
+                </button>
+              );
+            })()}
           </>
         )}
 
@@ -600,6 +617,7 @@ export function Table() {
       <table style={{ width: 'auto', minWidth: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden', tableLayout: 'fixed' }}>
         <thead>
           <tr style={{ background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd)' }}>
+            <th style={{ ...th, width: 34, cursor: 'default' }}></th>
             <th style={{ ...th, width: 40, cursor: 'default' }} onClick={e => e.stopPropagation()}>
               <input ref={selectAllRef} type="checkbox" checked={allChecked} onChange={toggleSelectAll} style={{ cursor: 'pointer', width: 15, height: 15 }} />
             </th>
@@ -658,6 +676,11 @@ export function Table() {
                 style={{ ...rowStyle, cursor: 'default' }}
                 onMouseEnter={e => { if (!isSelected && !isDragging) e.currentTarget.style.background = isToday ? 'var(--t-amber-bg)' : 'var(--t-surf2)'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = rowBg; }}>
+                <td onClick={e => e.stopPropagation()} style={{ ...td, width: 34, textAlign: 'center' }}>
+                  <span onClick={() => { openTask(it.id); }}
+                    style={{ fontSize: 15, color: 'var(--t-acc)', cursor: 'pointer', fontWeight: 600 }}
+                    title="Open task">→</span>
+                </td>
                 <td style={{ ...td, width: 40 }} onClick={e => { e.stopPropagation(); toggleRow(it.id); }}>
                   <input type="checkbox" checked={isSelected} onChange={() => toggleRow(it.id)} onClick={e => e.stopPropagation()} style={{ cursor: 'pointer', width: 15, height: 15 }} />
                 </td>
@@ -764,6 +787,30 @@ export function Table() {
                     );
                   }
                   const cellKey = `${it.id}:${col.key}`;
+                  // Title cell: the text keeps to ~70% so there's always an
+                  // empty strip at the end of the cell — clicking it opens the
+                  // task (clicking the text still edits it inline).
+                  if (col.key === 'title') {
+                    return (
+                      <td key={col.key}
+                        onMouseEnter={() => { if (isEditable) setHoveredCell(cellKey); }}
+                        onMouseLeave={() => setHoveredCell(null)}
+                        style={{ ...td, padding: 0, fontWeight: 500, color: 'var(--t-txt)', background: hoveredCell === cellKey ? 'var(--t-acc-bg)' : undefined }}>
+                        <div style={{ display: 'flex', alignItems: 'stretch', width: '100%' }}>
+                          <span
+                            onClick={isEditable ? e => startEdit(e, it.id, col.key) : undefined}
+                            title={String(col.getValue(it) || '')}
+                            style={{ maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: isEditable ? 'text' : 'default', padding: '10px 0 10px 14px' }}>
+                            {String(col.getValue(it) || '—')}
+                          </span>
+                          <span
+                            onClick={e => { e.stopPropagation(); openTask(it.id); }}
+                            title="Open task"
+                            style={{ flex: 1, minWidth: 34, cursor: 'pointer' }} />
+                        </div>
+                      </td>
+                    );
+                  }
                   const jiraKey = col.key === 'jira' && it.kind === 'task' ? ((it as Task).jiraLink ?? '').trim() : '';
                   const jiraCellUrl = jiraKey ? jiraTicketUrl(jiraConfigs, jiraKey) : null;
                   return (
@@ -795,16 +842,13 @@ export function Table() {
                       style={{ fontSize: 14, color: 'var(--t-acc)', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
                       title="Duplicate task">⧉</span>
                   )}
-                  <span onClick={() => { openTask(it.id); }}
-                    style={{ fontSize: 15, color: 'var(--t-acc)', cursor: 'pointer', fontWeight: 600 }}
-                    title="Open task">→</span>
                 </td>
               </tr>
             );
           })}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={cols.length + 4} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
+              <td colSpan={cols.length + 5} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
             </tr>
           )}
           {/* Drop zone below last row — lets user drag to the very end */}
@@ -822,7 +866,7 @@ export function Table() {
                 setSort(null); setDragId(null); setDragOverId(null);
               }}
               style={{ borderTop: dragOverId === '__bottom__' ? '2px solid var(--t-acc)' : undefined }}>
-              <td colSpan={cols.length + 4} style={{ height: 28 }} />
+              <td colSpan={cols.length + 5} style={{ height: 28 }} />
             </tr>
           )}
         </tbody>
@@ -832,6 +876,10 @@ export function Table() {
     {modalTaskId && <TaskModal taskId={modalTaskId} allIds={rows.map(r => r.id)} onNavigate={navigateModal} onClose={closeTaskModal} />}
     {dailyOpen && <DailyPlay onClose={() => setDailyOpen(false)} />}
     {reminderModalId && <ReminderModal reminderId={reminderModalId} onClose={() => setReminderModalId(null)} />}
+    {aiTaskId && (() => {
+      const t = rows.find(r => r.id === aiTaskId);
+      return t && t.kind === 'task' ? <AiAssignModal task={t as Task} onClose={() => setAiTaskId(null)} /> : null;
+    })()}
     </>
   );
 }

@@ -17,7 +17,7 @@ export function Kanban() {
   // cards would vanish from the board the moment they're dropped there.
   // Dragging one back to an active column un-archives it via the same link.
   const tasks = items.filter(it =>
-    it.kind === 'task' && (!it.archived || it.status === 'done')
+    it.kind === 'task' && it.type !== 'mail' && (!it.archived || it.status === 'done')
   ) as Task[];
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<TaskStatus | null>(null);

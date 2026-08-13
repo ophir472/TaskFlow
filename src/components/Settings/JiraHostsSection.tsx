@@ -3,9 +3,10 @@ import { useStore } from '../../store';
 import type { JiraConfig } from '../../types';
 
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
-const fi: React.CSSProperties = { fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', width: '100%', boxSizing: 'border-box' };
+const fi: React.CSSProperties = { fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)', width: '100%', boxSizing: 'border-box' };
 const fl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 };
 const addBtn: React.CSSProperties = { border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 13.5, fontWeight: 600, padding: '8px 14px', borderRadius: 7, cursor: 'pointer' };
+const grp: React.CSSProperties = { fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--t-txt2)', margin: '2px 0 -6px' };
 const ghostBtn: React.CSSProperties = { border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 13, fontWeight: 500, padding: '7px 12px', borderRadius: 7, cursor: 'pointer' };
 
 // One Jira board row: local drafts commit on blur so typing doesn't spam
@@ -17,7 +18,7 @@ function BoardRow({ id, label, url, onSave, onRemove }: {
 }) {
   const [labelDraft, setLabelDraft] = useState<string | null>(null);
   const [urlDraft, setUrlDraft] = useState<string | null>(null);
-  const rowInp: React.CSSProperties = { fontSize: 12.5, padding: '5px 9px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', boxSizing: 'border-box' };
+  const rowInp: React.CSSProperties = { fontSize: 12.5, padding: '5px 9px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)', outline: 'none', boxSizing: 'border-box' };
   return (
     <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
       <input
@@ -113,9 +114,9 @@ export function JiraHostsSection() {
 
       {/* Kanban boards — each becomes a button on the Kanban page that opens
           the board in a new tab. */}
-      <div style={{ marginBottom: 18, padding: '10px 14px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 9 }}>
+      <div style={{ marginBottom: 18, padding: '10px 14px', background: 'color-mix(in oklab, var(--t-txt) 3%, var(--t-surf2))', border: '1px solid color-mix(in oklab, var(--t-txt) 10%, var(--t-brd2))', borderRadius: 9 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: jiraBoards.length > 0 ? 8 : 0 }}>
-          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--t-txt2)' }}>Jira boards</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-txt)' }}>Jira boards</span>
           <span style={{ fontSize: 11.5, color: 'var(--t-muted)', flex: 1 }}>
             Each board shows as a button on the Kanban page (opens in a new tab).
           </span>
@@ -142,7 +143,7 @@ export function JiraHostsSection() {
             return (
               <div key={c.id} style={{
                 display: 'flex', alignItems: 'center', gap: 18,
-                padding: '16px 18px', background: 'var(--t-surf2)',
+                padding: '16px 18px', background: 'color-mix(in oklab, var(--t-txt) 3%, var(--t-surf2))',
                 border: `1px solid ${c.isDefault ? 'var(--t-acc-fo)' : 'var(--t-brd2)'}`,
                 borderRadius: 10,
               }}>
@@ -186,16 +187,17 @@ export function JiraHostsSection() {
 
       {formOpen && (
         <div style={{
-          padding: 16, background: 'var(--t-surf2)',
-          border: '1px solid var(--t-brd)', borderRadius: 10,
+          padding: 16, background: 'color-mix(in oklab, var(--t-txt) 3%, var(--t-surf2))', border: '1px solid color-mix(in oklab, var(--t-txt) 10%, var(--t-brd2))',
+          borderRadius: 10,
           display: 'flex', flexDirection: 'column', gap: 14,
         }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-txt2)' }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--t-txt)' }}>
             {editingId ? 'Edit host' : 'New Jira host'}
           </div>
           <div style={{ fontSize: 12, color: 'var(--t-muted)' }}>
             Use an <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer" style={{ color: 'var(--t-acc)' }}>Atlassian API token</a> (not your password). Fields marked * are required.
           </div>
+          <div style={grp}>Connection</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div><div style={fl}>Host *</div>
               <input value={draft.host} onChange={e => setDraft(d => ({ ...d, host: e.target.value }))} placeholder="mycompany.atlassian.net" style={fi} />
@@ -216,6 +218,7 @@ export function JiraHostsSection() {
               <input value={draft.defaultAssigneeId} onChange={e => setDraft(d => ({ ...d, defaultAssigneeId: e.target.value }))} placeholder="5d3f… (from Jira profile URL)" style={fi} />
             </div>
           </div>
+          <div style={grp}>Ticket create defaults (API)</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <div><div style={fl}>Project ID (pid)</div>
               <input value={draft.pid} onChange={e => setDraft(d => ({ ...d, pid: e.target.value }))} placeholder="10000 (optional)" style={fi} />
@@ -227,6 +230,7 @@ export function JiraHostsSection() {
               <input value={draft.priorityId} onChange={e => setDraft(d => ({ ...d, priorityId: e.target.value }))} placeholder="3 (optional)" style={fi} />
             </div>
           </div>
+          <div style={grp}>Templates &amp; URL override</div>
           <div>
             <div style={fl}>Summary Template</div>
             <input value={draft.summaryTemplate} onChange={e => setDraft(d => ({ ...d, summaryTemplate: e.target.value }))}

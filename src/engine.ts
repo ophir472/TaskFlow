@@ -12,6 +12,7 @@ export function buildQueue(items: Item[]): Item[] {
   const active = items.filter(it => {
     if (it.archived) return false;
     if (it.kind === 'task') {
+      if ((it as Task).type === 'mail') return false;
       return it.status !== 'done' && it.status !== 'archived' &&
         (it.status !== 'waiting' || it.priorityBoost);
     }

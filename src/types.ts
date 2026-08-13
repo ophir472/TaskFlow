@@ -102,6 +102,98 @@ export interface ItsmConfig {
   // directly after this URL (e.g. "https://itsm/nav?number=" + "INC0012345").
   // Empty → default https://HOST/incident.do?sysparm_query=number=TICKET.
   customUrl?: string;
+  // REST credentials for status sync (Table API, Basic auth). Both empty →
+  // sync is off and the card shows no status indicators.
+  username?: string;
+  apiToken?: string;
+}
+
+// ── ServiceNow ticket creation ──────────────────────────────────
+
+export type SnTicketType = 'INC' | 'CHG';
+
+// One ServiceNow field the organization uses — the list is dynamic and
+// settings-controlled. `key` is the exact parameter name sent to ServiceNow;
+// `label` is display-only in the template editors.
+export interface SnField {
+  id: string;
+  key: string;
+  label: string;
+}
+
+export interface SnTemplate {
+  id: string;
+  name: string;
+  type: SnTicketType;
+  templateNumber: string;
+  instructions: string;
+  confluenceLink: string;
+  exampleTicket: string;
+  emailDL: string;
+  // SnField.id → value. Values containing "FILL" are prompted for in the
+  // create menu before the ServiceNow URL opens.
+  fieldValues: Record<string, string>;
+}
+
+export interface SnConfig {
+  // Create-URL template per ticket type — fully org-controlled. {fields} is
+  // replaced with all non-empty key=value pairs (values URL-encoded) joined
+  // by fieldSeparator; {<field key>} injects a single value anywhere in the
+  // URL/URI. With no tokens, pairs are appended as query params.
+  incUrlTemplate: string;
+  chgUrlTemplate: string;
+  fieldSeparator: string;
+  fields: SnField[];
+  templates: SnTemplate[];
+  // Per-type default ticket: a field a template leaves empty inherits its
+  // type's default here. SnField.id → value.
+  defaultFieldValues: Record<SnTicketType, Record<string, string>>;
+}
+
+// ── Docs (notebook > category > page, OneNote-style) ────────────
+
+export type DocPageType = 'doc' | 'links';
+
+export interface DocPage {
+  id: string;
+  title: string;
+  // 'doc' renders markdown-lite (headings fold, checkboxes toggle);
+  // 'links' renders "NAME: URL" lines as clickable squares.
+  type: DocPageType;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DocCategory {
+  id: string;
+  name: string;
+  pages: DocPage[];
+}
+
+export interface DocNotebook {
+  id: string;
+  name: string;
+  categories: DocCategory[];
+}
+
+// ── AI assignment ───────────────────────────────────────────────
+
+export type AiApiFormat = 'openai' | 'anthropic';
+
+// Fully org-controlled AI endpoint: the exact URL is POSTed to, the format
+// only decides body shape + auth header style. The model's reply is shown
+// once and written to the forensic log — never stored in app state.
+export interface AiConfig {
+  endpointUrl: string;
+  format: AiApiFormat;
+  model: string;
+  apiKey: string;
+  // Optional JSON object merged into the request headers (corporate gateways).
+  extraHeaders: string;
+  // Prompt template. <TITLE>, <DESCRIPTION>, <NOTES>, <BLOCKERS>, <SUBTASKS>,
+  // <JIRA>, <ITSM>, <LINK>, <REQUESTER>, <PROJECT> are filled from the task.
+  promptTemplate: string;
 }
 
 export interface CommunicationField {
@@ -139,6 +231,12 @@ export interface Task {
   quick: boolean;
   noTag: boolean;
   noJira?: boolean;
+  // Communication-assistant entry (fast mail/Teams triage). Mail tasks live
+  // in the table/archive but are excluded from the card-feed queue, Kanban
+  // and the review flow.
+  type?: 'mail';
+  whatIWantToSay?: string;
+  mailToSend?: string;
   forToday: boolean;
   manuallyMoved?: boolean;
   extraJiraLinks?: string[];
@@ -174,6 +272,13 @@ export interface Task {
   // undefined means "never reviewed". Compared against createdAt/updatedAt to decide
   // whether the task is still in the review queue.
   reviewedAt?: number;
+  // ServiceNow sync for the primary ITSM ticket: last fetched status +
+  // server-side update time, and when the user last opened the ticket (↗).
+  // Set QUIETLY (no updatedAt bump / history) so background sync never flags
+  // the task as changed for the review queue or version history.
+  itsmStatus?: string;
+  itsmUpdatedOn?: number;
+  itsmViewedAt?: number;
   // When the notes field last changed. Store-derived (set by updateItem), so
   // features like the review's update-summary prefill never need to consult
   // the forensic logs — logs are logs, not a functional dependency.

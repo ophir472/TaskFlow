@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { backdropCloseProps } from '../../backdrop';
 import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import { nextId } from '../../engine';
@@ -87,8 +88,8 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
   });
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}
+      {...backdropCloseProps(onClose)}>
       <div style={{ width: 520, maxWidth: '92vw', maxHeight: '88vh', overflow: 'auto', background: 'var(--t-surf)', borderRadius: 16, padding: '26px 28px', display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.25)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--t-txt)' }}>New item</div>

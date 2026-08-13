@@ -11,7 +11,7 @@ export function isFlagged(t: Task): boolean {
 }
 
 export function flaggedTasks(items: Item[]): Task[] {
-  return items.filter(it => it.kind === 'task' && isFlagged(it as Task)) as Task[];
+  return items.filter(it => it.kind === 'task' && (it as Task).type !== 'mail' && isFlagged(it as Task)) as Task[];
 }
 
 export type StepKind =

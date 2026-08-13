@@ -82,6 +82,7 @@ export function Archive() {
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [closedToday, setClosedToday] = useState(false);
+  const [mailOnly, setMailOnly] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
@@ -206,6 +207,7 @@ export function Archive() {
     // "Closed today" — archiving (complete / done / archive) stamps updatedAt,
     // so items whose last update is today were closed today.
     if (closedToday && it.updatedAt < todayStart) return false;
+    if (mailOnly && !(it.kind === 'task' && (it as Task).type === 'mail')) return false;
     return true;
   });
 
@@ -381,8 +383,15 @@ export function Archive() {
               onMouseLeave={e => { if (!closedToday) e.currentTarget.style.background = 'transparent'; }}>
               Closed today
             </button>
-            {(typeFilter || reqFilter || projFilter || statusFilter || closedToday) && (
-              <button onClick={() => { setTypeFilter(''); setReqFilter(''); setProjFilter(''); setStatusFilter(''); setClosedToday(false); }}
+            <button
+              onClick={() => setMailOnly(v => !v)}
+              style={{ fontSize: 12.5, padding: '5px 11px', borderRadius: 6, border: 'none', background: mailOnly ? 'var(--t-acc-bg)' : 'transparent', color: mailOnly ? 'var(--t-acc-dk)' : 'var(--t-muted)', cursor: 'pointer', fontWeight: mailOnly ? 600 : 400, whiteSpace: 'nowrap' }}
+              onMouseEnter={e => { if (!mailOnly) e.currentTarget.style.background = 'var(--t-surf2)'; }}
+              onMouseLeave={e => { if (!mailOnly) e.currentTarget.style.background = 'transparent'; }}>
+              ✉ Mail
+            </button>
+            {(typeFilter || reqFilter || projFilter || statusFilter || closedToday || mailOnly) && (
+              <button onClick={() => { setTypeFilter(''); setReqFilter(''); setProjFilter(''); setStatusFilter(''); setClosedToday(false); setMailOnly(false); }}
                 style={{ ...ghostBtn, fontSize: 12 }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}

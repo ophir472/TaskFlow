@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { backdropCloseProps } from '../../backdrop';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 
@@ -30,8 +31,8 @@ export function SubtaskPanel({ parentId, subId, onClose, onExpand }: Props) {
   if (!parent || !sub) return null;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', justifyContent: 'flex-end', zIndex: 50 }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'flex-end', zIndex: 50 }}
+      {...backdropCloseProps(onClose)}>
       <div style={{ width: 420, maxWidth: '90vw', height: '100%', background: 'var(--t-surf)', boxShadow: '-8px 0 30px rgba(0,0,0,0.2)', padding: 26, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>

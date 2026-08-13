@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard } from './types';
+import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType } from './types';
+import { EMPTY_SN_CONFIG } from './servicenow';
+import { EMPTY_AI_CONFIG } from './ai';
 import { triggerIfDue, computeNextDueAt } from './responsibilities';
 import { nextOccurrence } from './scheduleEngine';
 import { midnight } from './engine';
@@ -18,7 +20,7 @@ const PROMOTION_GOAL = 3;
 // changes the URL, which would flip this flag mid-session).
 const IS_PREVIEW_MODE = typeof window !== 'undefined' && window.location.hash.startsWith('#preview/');
 
-export type View = 'feed' | 'explore' | 'kanban' | 'table' | 'archive' | 'settings';
+export type View = 'feed' | 'explore' | 'kanban' | 'table' | 'archive' | 'docs' | 'settings';
 
 interface AppState {
   items: Item[];
@@ -49,6 +51,9 @@ interface AppState {
   // opens the board in a new tab.
   jiraBoards: JiraBoard[];
   itsmConfig: ItsmConfig | null;
+  snConfig: SnConfig;
+  aiConfig: AiConfig;
+  notebooks: DocNotebook[];
   taskOrder: string[];
   tableVisibleCols: string[] | null;
   archiveVisibleCols: string[] | null;
@@ -100,6 +105,27 @@ interface AppState {
   removeJiraConfig: (id: string) => void;
   setDefaultJiraConfig: (id: string) => void;
   setItsmConfig: (config: ItsmConfig | null) => void;
+  setItsmSyncInfo: (taskId: string, info: { status: string; updatedOn: number }) => void;
+  markItsmViewed: (taskId: string) => void;
+  setAiConfig: (patch: Partial<AiConfig>) => void;
+  addNotebook: (name: string) => void;
+  renameNotebook: (id: string, name: string) => void;
+  removeNotebook: (id: string) => void;
+  addDocCategory: (notebookId: string, name: string) => void;
+  renameDocCategory: (notebookId: string, id: string, name: string) => void;
+  removeDocCategory: (notebookId: string, id: string) => void;
+  addDocPage: (notebookId: string, categoryId: string, title: string, type: DocPageType) => string;
+  renameDocPage: (pageId: string, title: string) => void;
+  removeDocPage: (pageId: string) => void;
+  setDocPageContent: (pageId: string, content: string) => void;
+  updateSnUrls: (patch: Partial<Pick<SnConfig, 'incUrlTemplate' | 'chgUrlTemplate' | 'fieldSeparator'>>) => void;
+  addSnField: () => void;
+  updateSnField: (id: string, patch: Partial<Omit<SnField, 'id'>>) => void;
+  removeSnField: (id: string) => void;
+  setSnDefaultValue: (type: SnTicketType, fieldId: string, value: string) => void;
+  addSnTemplate: (tpl: Omit<SnTemplate, 'id'>) => void;
+  updateSnTemplate: (id: string, patch: Partial<Omit<SnTemplate, 'id'>>) => void;
+  removeSnTemplate: (id: string) => void;
   setTaskOrder: (order: string[]) => void;
   resetManualOrder: () => void;
   setTableVisibleCols: (cols: string[]) => void;
@@ -129,6 +155,10 @@ interface AppState {
   checkDailyReset: () => void;
 }
 
+function mapDocPages(nbs: DocNotebook[], fn: (p: DocPage) => DocPage): DocNotebook[] {
+  return nbs.map(nb => ({ ...nb, categories: nb.categories.map(c => ({ ...c, pages: c.pages.map(fn) })) }));
+}
+
 function pushHistory(history: ChangeRecord[], record: ChangeRecord): ChangeRecord[] {
   return [...history, record].slice(-100);
 }
@@ -156,6 +186,9 @@ export const useStore = create<AppState>()(
       jiraConfigs: [],
       jiraBoards: [],
       itsmConfig: null,
+      snConfig: EMPTY_SN_CONFIG,
+      aiConfig: EMPTY_AI_CONFIG,
+      notebooks: [],
       taskOrder: [],
       tableVisibleCols: null,
       archiveVisibleCols: null,
@@ -491,6 +524,135 @@ export const useStore = create<AppState>()(
         }));
       },
       setItsmConfig: (config) => { slog('itsm-config:set', { host: config?.host }); set({ itsmConfig: config }); },
+      // Quiet updates: no updatedAt bump, no history entry — background sync
+      // must never flag a task as user-changed (review queue, version history).
+      setItsmSyncInfo: (taskId, info) => {
+        const it = get().items.find(i => i.id === taskId);
+        if (!it || it.kind !== 'task') return;
+        if (it.itsmStatus === info.status && it.itsmUpdatedOn === info.updatedOn) return;
+        slog('itsm:sync', { id: taskId, status: info.status });
+        set(s => ({ items: s.items.map(i => i.id === taskId ? { ...i, itsmStatus: info.status, itsmUpdatedOn: info.updatedOn } : i) }));
+      },
+      markItsmViewed: (taskId) => {
+        slog('itsm:viewed', { id: taskId });
+        set(s => ({ items: s.items.map(i => i.id === taskId ? { ...i, itsmViewedAt: Date.now() } : i) }));
+      },
+      addNotebook: (name) => {
+        const id = 'nb' + Date.now() + Math.random().toString(36).slice(2, 5);
+        slog('doc:notebook:add', { id, name });
+        set(s => ({ notebooks: [...s.notebooks, { id, name, categories: [] }] }));
+      },
+      renameNotebook: (id, name) => {
+        slog('doc:notebook:rename', { id, name });
+        set(s => ({ notebooks: s.notebooks.map(nb => nb.id === id ? { ...nb, name } : nb) }));
+      },
+      removeNotebook: (id) => {
+        const nb = get().notebooks.find(n => n.id === id);
+        slog('doc:notebook:remove', { id, name: nb?.name });
+        set(s => ({ notebooks: s.notebooks.filter(n => n.id !== id) }));
+      },
+      addDocCategory: (notebookId, name) => {
+        const id = 'dc' + Date.now() + Math.random().toString(36).slice(2, 5);
+        slog('doc:category:add', { id, name });
+        set(s => ({ notebooks: s.notebooks.map(nb => nb.id === notebookId ? { ...nb, categories: [...nb.categories, { id, name, pages: [] }] } : nb) }));
+      },
+      renameDocCategory: (notebookId, id, name) => {
+        slog('doc:category:rename', { id, name });
+        set(s => ({ notebooks: s.notebooks.map(nb => nb.id === notebookId ? { ...nb, categories: nb.categories.map(c => c.id === id ? { ...c, name } : c) } : nb) }));
+      },
+      removeDocCategory: (notebookId, id) => {
+        const c = get().notebooks.find(n => n.id === notebookId)?.categories.find(x => x.id === id);
+        slog('doc:category:remove', { id, name: c?.name });
+        set(s => ({ notebooks: s.notebooks.map(nb => nb.id === notebookId ? { ...nb, categories: nb.categories.filter(x => x.id !== id) } : nb) }));
+      },
+      addDocPage: (notebookId, categoryId, title, type) => {
+        const id = 'dp' + Date.now() + Math.random().toString(36).slice(2, 5);
+        const now = Date.now();
+        slog('doc:page:add', { id, title, type });
+        set(s => ({
+          notebooks: s.notebooks.map(nb => nb.id === notebookId ? {
+            ...nb,
+            categories: nb.categories.map(c => c.id === categoryId ? { ...c, pages: [...c.pages, { id, title, type, content: '', createdAt: now, updatedAt: now }] } : c),
+          } : nb),
+        }));
+        return id;
+      },
+      renameDocPage: (pageId, title) => {
+        slog('doc:page:rename', { pageId, title });
+        set(s => ({ notebooks: mapDocPages(s.notebooks, p => p.id === pageId ? { ...p, title, updatedAt: Date.now() } : p) }));
+      },
+      removeDocPage: (pageId) => {
+        let title: string | undefined;
+        get().notebooks.forEach(nb => nb.categories.forEach(c => c.pages.forEach(p => { if (p.id === pageId) title = p.title; })));
+        slog('doc:page:remove', { pageId, title });
+        set(s => ({ notebooks: s.notebooks.map(nb => ({ ...nb, categories: nb.categories.map(c => ({ ...c, pages: c.pages.filter(p => p.id !== pageId) })) })) }));
+      },
+      setDocPageContent: (pageId, content) => {
+        let title: string | undefined;
+        get().notebooks.forEach(nb => nb.categories.forEach(c => c.pages.forEach(p => { if (p.id === pageId) title = p.title; })));
+        slog('doc:page:content', { pageId, title });
+        set(s => ({ notebooks: mapDocPages(s.notebooks, p => p.id === pageId ? { ...p, content, updatedAt: Date.now() } : p) }));
+      },
+      setAiConfig: (patch) => {
+        // Log which keys changed, never the values (apiKey!).
+        slog('ai-config:set', { keys: Object.keys(patch) });
+        set(s => ({ aiConfig: { ...s.aiConfig, ...patch } }));
+      },
+      updateSnUrls: (patch) => {
+        slog('sn:urls', patch);
+        set(s => ({ snConfig: { ...s.snConfig, ...patch } }));
+      },
+      addSnField: () => {
+        const id = 'sf' + Date.now() + Math.random().toString(36).slice(2, 5);
+        slog('sn:field:add', { id });
+        set(s => ({ snConfig: { ...s.snConfig, fields: [...s.snConfig.fields, { id, key: '', label: '' }] } }));
+      },
+      updateSnField: (id, patch) => {
+        const existing = get().snConfig.fields.find(f => f.id === id);
+        slog('sn:field:update', { id, key: patch.key ?? existing?.key });
+        set(s => ({ snConfig: { ...s.snConfig, fields: s.snConfig.fields.map(f => f.id === id ? { ...f, ...patch } : f) } }));
+      },
+      removeSnField: (id) => {
+        const existing = get().snConfig.fields.find(f => f.id === id);
+        slog('sn:field:remove', { id, key: existing?.key });
+        const strip = (m: Record<string, string>) => { const n = { ...m }; delete n[id]; return n; };
+        set(s => ({
+          snConfig: {
+            ...s.snConfig,
+            fields: s.snConfig.fields.filter(f => f.id !== id),
+            templates: s.snConfig.templates.map(t => ({ ...t, fieldValues: strip(t.fieldValues) })),
+            defaultFieldValues: { INC: strip(s.snConfig.defaultFieldValues.INC), CHG: strip(s.snConfig.defaultFieldValues.CHG) },
+          },
+        }));
+      },
+      setSnDefaultValue: (type, fieldId, value) => {
+        const key = get().snConfig.fields.find(f => f.id === fieldId)?.key;
+        slog('sn:default:set', { type, fieldId, key });
+        set(s => ({
+          snConfig: {
+            ...s.snConfig,
+            defaultFieldValues: {
+              ...s.snConfig.defaultFieldValues,
+              [type]: { ...s.snConfig.defaultFieldValues[type], [fieldId]: value },
+            },
+          },
+        }));
+      },
+      addSnTemplate: (tpl) => {
+        const id = 'st' + Date.now() + Math.random().toString(36).slice(2, 5);
+        slog('sn:template:add', { id, name: tpl.name, type: tpl.type });
+        set(s => ({ snConfig: { ...s.snConfig, templates: [...s.snConfig.templates, { ...tpl, id }] } }));
+      },
+      updateSnTemplate: (id, patch) => {
+        const existing = get().snConfig.templates.find(t => t.id === id);
+        slog('sn:template:update', { id, name: patch.name ?? existing?.name });
+        set(s => ({ snConfig: { ...s.snConfig, templates: s.snConfig.templates.map(t => t.id === id ? { ...t, ...patch } : t) } }));
+      },
+      removeSnTemplate: (id) => {
+        const existing = get().snConfig.templates.find(t => t.id === id);
+        slog('sn:template:remove', { id, name: existing?.name });
+        set(s => ({ snConfig: { ...s.snConfig, templates: s.snConfig.templates.filter(t => t.id !== id) } }));
+      },
       setTaskOrder: (order) => { slog('task-order:set', { count: order.length }); set({ taskOrder: order }); },
       setTableVisibleCols: (cols) => { slog('table-cols:set', cols); set({ tableVisibleCols: cols }); },
       setArchiveVisibleCols: (cols) => { slog('archive-cols:set', cols); set({ archiveVisibleCols: cols }); },

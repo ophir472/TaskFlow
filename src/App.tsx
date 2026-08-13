@@ -3,7 +3,7 @@ import { useStore } from './store';
 import { getThemeVars } from './themes';
 import type { View } from './store';
 
-const VALID_VIEWS: View[] = ['feed', 'explore', 'kanban', 'table', 'archive', 'settings'];
+const VALID_VIEWS: View[] = ['feed', 'explore', 'kanban', 'table', 'archive', 'docs', 'settings'];
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { CardFeed } from './components/CardFeed/CardFeed';
 import { Explore } from './components/Explore/Explore';
@@ -12,12 +12,15 @@ import { Kanban } from './components/Kanban/Kanban';
 import { Table } from './components/Table/Table';
 import { Archive } from './components/Archive/Archive';
 import { Settings } from './components/Settings/Settings';
+import { Docs } from './components/Docs/Docs';
 import { CreateModal } from './components/CreateModal/CreateModal';
 import { GreenPlay } from './components/GreenPlay/GreenPlay';
+import { SnCreateMenu } from './components/ServiceNow/SnCreateMenu';
+import { MailAssistant } from './components/Mail/MailAssistant';
 import { ReminderPopup } from './components/ReminderPopup/ReminderPopup';
 import { Toast } from './components/Toast/Toast';
 import { restoreFromData, pickAndRegisterRestoreFile } from './backup';
-import { writeSnapshot, writeLiveFile, log, logDebug, getDebugMode, getTabId, listSnapshots, readSnapshot, getSnapshotDir, subscribePermission, requestDirPermission, runIntegrityCheck, isPreviewMode, summarizeRange, formatSummary, formatDetailed } from './snapshots';
+import { writeSnapshot, writeLiveFile, readLiveFile, log, logDebug, getDebugMode, getTabId, listSnapshots, readSnapshot, getSnapshotDir, subscribePermission, requestDirPermission, pickSnapshotDir, runIntegrityCheck, isPreviewMode, summarizeRange, formatSummary, formatDetailed } from './snapshots';
 import type { IntegrityResult, ChangeSummary } from './snapshots';
 import { Confetti } from './components/Confetti';
 import { nextOccurrence } from './scheduleEngine';
@@ -25,7 +28,7 @@ import { nextOccurrence } from './scheduleEngine';
 export type SyncState = 'idle' | 'syncing' | 'saved';
 
 const VIEW_TITLES: Record<string, string> = {
-  explore: 'Explore', kanban: 'Kanban', table: 'All Items', archive: 'Archive', settings: 'Settings',
+  explore: 'Explore', kanban: 'Kanban', table: 'All Items', archive: 'Archive', docs: 'Docs', settings: 'Settings',
 };
 
 export default function App() {
@@ -65,14 +68,24 @@ export default function App() {
       const dir = await getSnapshotDir();
       if (!dir) { setRestoreState('manual'); return; }
       try {
+        // Candidates: the newest snapshot AND the live mirror (current.json,
+        // written every ~500ms) — the live file is usually newer, so restoring
+        // only the snapshot would silently drop the last minutes of work.
         const list = await listSnapshots();
-        if (list.length === 0) { setRestoreState('manual'); return; }
-        const data = await readSnapshot(list[0].filename);
+        const snapData = list.length > 0 ? await readSnapshot(list[0].filename) : null;
+        const liveData = await readLiveFile();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const count = (data as any)?.state?.items?.length ?? 0;
-        if (!data || count === 0) { setRestoreState('manual'); return; }
-        setFoundBackupHandle({ name: list[0].filename } as FileSystemFileHandle);
-        setFoundBackupData(data);
+        const count = (d: any) => d?.state?.items?.length ?? 0;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const savedAt = (d: any) => Date.parse(d?.savedAt ?? '') || 0;
+        let best: { data: Record<string, unknown>; name: string } | null = null;
+        if (snapData && count(snapData) > 0) best = { data: snapData, name: list[0].filename };
+        if (liveData && count(liveData) > 0 && (!best || savedAt(liveData) > savedAt(best.data))) {
+          best = { data: liveData, name: 'current.json (live backup)' };
+        }
+        if (!best) { setRestoreState('manual'); return; }
+        setFoundBackupHandle({ name: best.name } as FileSystemFileHandle);
+        setFoundBackupData(best.data);
         setRestoreState('found');
       } catch {
         setRestoreState('manual');
@@ -110,6 +123,8 @@ export default function App() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [snMenuOpen, setSnMenuOpen] = useState(false);
+  const [mailOpen, setMailOpen] = useState(false);
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -123,6 +138,7 @@ export default function App() {
   const idleSnapshotTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [permError, setPermError] = useState<string | null>(null);
+  const [noDirWarn, setNoDirWarn] = useState(false);
   const [integrityAlert, setIntegrityAlert] = useState<IntegrityResult | null>(null);
   const [previewSummary, setPreviewSummary] = useState<ChangeSummary | null>(null);
 
@@ -164,6 +180,8 @@ export default function App() {
         s.jiraConfigs !== prev.jiraConfigs ||
         s.jiraBoards !== prev.jiraBoards ||
         s.itsmConfig !== prev.itsmConfig ||
+        s.snConfig !== prev.snConfig ||
+        s.aiConfig !== prev.aiConfig ||
         s.themeId !== prev.themeId ||
         s.customAccent !== prev.customAccent ||
         s.customBg !== prev.customBg ||
@@ -195,6 +213,14 @@ export default function App() {
 
   // Subscribe to permission changes → show banner
   useEffect(() => subscribePermission(setPermError), []);
+
+  // Durability warning: data exists but no backup folder is configured →
+  // everything lives only in this browser's localStorage.
+  useEffect(() => {
+    if (isPreviewMode() || items.length === 0) return;
+    getSnapshotDir().then(h => setNoDirWarn(!h));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Global handlers: errors always logged; clicks/keys only in debug mode
   useEffect(() => {
@@ -312,6 +338,8 @@ export default function App() {
       if (VALID_VIEWS.includes(seg as View)) setView(seg as View);
       else if (!window.location.hash) setView('feed');
       setReviewOpen(seg === 'review');
+      setSnMenuOpen(seg === 'sncreate');
+      setMailOpen(seg === 'mail');
       // Snapshot on every navigation. Async, non-blocking.
       writeSnapshot().then(written => {
         if (written) log('snapshot:navigate', { hash: window.location.hash });
@@ -333,7 +361,7 @@ export default function App() {
   useEffect(() => {
     if (!viewUrlSynced.current) { viewUrlSynced.current = true; return; }
     const currentSeg = window.location.hash.slice(1).split('/')[0];
-    if (currentSeg === 'review') return;
+    if (currentSeg === 'review' || currentSeg === 'sncreate' || currentSeg === 'mail') return;
     if (currentSeg !== view) window.location.hash = view;
   }, [view]);
 
@@ -345,6 +373,15 @@ export default function App() {
   const closeReview = useCallback(() => {
     if (window.location.hash.slice(1).split('/')[0] === 'review') history.back();
     else setReviewOpen(false);
+  }, []);
+  // The ServiceNow create menu is the same kind of URL overlay (#sncreate).
+  const closeSnMenu = useCallback(() => {
+    if (window.location.hash.slice(1).split('/')[0] === 'sncreate') history.back();
+    else setSnMenuOpen(false);
+  }, []);
+  const closeMail = useCallback(() => {
+    if (window.location.hash.slice(1).split('/')[0] === 'mail') history.back();
+    else setMailOpen(false);
   }, []);
 
   // Apply theme CSS variables
@@ -451,6 +488,12 @@ export default function App() {
           t.isContentEditable
         );
         if (onFormControl) return;
+        // 'm' opens the mail assistant.
+        if (e.key === 'm' || e.code === 'KeyM') {
+          e.preventDefault();
+          if (window.location.hash.slice(1).split('/')[0] !== 'mail') window.location.hash = 'mail';
+          return;
+        }
         // 'r' opens Green Play review.
         if (e.key === 'r' || e.code === 'KeyR') {
           e.preventDefault();
@@ -495,6 +538,16 @@ export default function App() {
         </div>
       )}
       {/* Persistent alert banners */}
+      {noDirWarn && !permError && (
+        <div style={{ position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)', zIndex: 400, display: 'flex', alignItems: 'center', gap: 12, background: 'var(--t-amber-bg)', border: '1px solid var(--t-amber-brd)', color: 'var(--t-amber)', borderRadius: 12, padding: '10px 16px', fontSize: 13, boxShadow: '0 6px 24px rgba(0,0,0,0.12)' }}>
+          <span>⚠️ No backup folder — your data lives only in this browser. Pick a folder to get versioned 7-day backups.</span>
+          <button onClick={() => { pickSnapshotDir().then(h => { if (h) { setNoDirWarn(false); writeSnapshot(); writeLiveFile(); } }); }}
+            style={{ border: 'none', background: 'var(--t-amber)', color: 'white', fontSize: 12.5, fontWeight: 700, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            Choose folder
+          </button>
+          <span onClick={() => setNoDirWarn(false)} style={{ cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>×</span>
+        </div>
+      )}
       {permError && (
         <div style={{ padding: '10px 20px', background: '#ff8a3d', color: '#231a10', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid rgba(0,0,0,0.1)', zIndex: 100 }}>
           <span>⚠️ {permError}</span>
@@ -543,6 +596,7 @@ export default function App() {
         {view === 'kanban' && <Kanban />}
         {view === 'table' && <Table />}
         {view === 'archive' && <Archive />}
+        {view === 'docs' && <Docs />}
         {view === 'settings' && <Settings />}
       </div>
 
@@ -556,6 +610,8 @@ export default function App() {
         />
       )}
       {reviewOpen && <GreenPlay onClose={closeReview} />}
+      {snMenuOpen && <SnCreateMenu onClose={closeSnMenu} />}
+      {mailOpen && <MailAssistant onClose={closeMail} />}
       {spotlightOpen && <Spotlight onClose={() => setSpotlightOpen(false)} onToast={toastTimer} />}
       {pendingReminderIds.length > 0 && <ReminderPopup />}
     </div>{/* end sidebar+content wrapper */}

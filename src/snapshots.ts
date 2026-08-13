@@ -745,6 +745,11 @@ const COALESCE_DATA_EVENTS = new Set([
   'requester:add', 'requester:remove', 'requester:set-jira-id',
   'project:add', 'project:remove',
   'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'jira-board-url:set', 'jira-board:add', 'jira-board:update', 'jira-board:remove', 'itsm-config:set',
+    'sn:urls', 'sn:field:add', 'sn:field:update', 'sn:field:remove', 'sn:default:set',
+    'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
+    'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
+    'doc:category:add', 'doc:category:rename', 'doc:category:remove',
+    'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content',
   'theme:set',
   // Per-card UI preferences that the user cares to preserve across versions.
   'card:resize',
@@ -790,7 +795,15 @@ function coalesceRapidEdits(events: LogRecord[]): LogRecord[] {
       // Dragging the custom accent/background color pickers fires theme:set
       // continuously.
       const isSameThemeEdit = e.event === 'theme:set' && last.event === 'theme:set';
-      if (isSameItemFieldEdit || isSameSubtaskFieldEdit || isSameCustomValueEdit || isSameCommFieldEdit || isSameResize || isSameThemeEdit) {
+      // Typing into a docs page fires doc:page:content per keystroke.
+      const isSameDocEdit =
+        e.event === 'doc:page:content' && last.event === 'doc:page:content' &&
+        d.pageId === p.pageId;
+      // Renaming a docs page fires doc:page:rename per keystroke too.
+      const isSameDocRename =
+        e.event === 'doc:page:rename' && last.event === 'doc:page:rename' &&
+        d.pageId === p.pageId;
+      if (isSameItemFieldEdit || isSameSubtaskFieldEdit || isSameCustomValueEdit || isSameCommFieldEdit || isSameResize || isSameThemeEdit || isSameDocEdit || isSameDocRename) {
         result[result.length - 1] = e;
         last = e;
         continue;
@@ -839,7 +852,12 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'customfield:add', 'customfield:remove', 'customfield:update',
     'requester:add', 'requester:remove', 'requester:set-jira-id',
     'project:add', 'project:remove',
-    'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'jira-board-url:set', 'jira-board:add', 'jira-board:update', 'jira-board:remove', 'itsm-config:set', 'theme:set',
+    'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'jira-board-url:set', 'jira-board:add', 'jira-board:update', 'jira-board:remove', 'itsm-config:set',
+    'sn:urls', 'sn:field:add', 'sn:field:update', 'sn:field:remove', 'sn:default:set',
+    'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
+    'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
+    'doc:category:add', 'doc:category:rename', 'doc:category:remove',
+    'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
     'card:resize',
     'responsibility:add', 'responsibility:update', 'responsibility:remove',
     'responsibility:toggle-active', 'responsibility:generate-tasks',
@@ -852,6 +870,8 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'restore:start', 'restore:complete', 'restore:failed', 'item:import',
     'snapshot-dir:configured',
     'review:mark-task', 'review:begin', 'review:end', 'review:extend',
+    'itsm:sync', 'itsm:viewed',
+    'ai:request', 'ai:response', 'ai:error',
   ]);
 
   // Events that represent actual user-facing data changes.
@@ -865,7 +885,12 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'customfield:add', 'customfield:remove', 'customfield:update',
     'requester:add', 'requester:remove', 'requester:set-jira-id',
     'project:add', 'project:remove',
-    'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'jira-board-url:set', 'jira-board:add', 'jira-board:update', 'jira-board:remove', 'itsm-config:set', 'theme:set',
+    'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'jira-board-url:set', 'jira-board:add', 'jira-board:update', 'jira-board:remove', 'itsm-config:set',
+    'sn:urls', 'sn:field:add', 'sn:field:update', 'sn:field:remove', 'sn:default:set',
+    'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
+    'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
+    'doc:category:add', 'doc:category:rename', 'doc:category:remove',
+    'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
     'card:resize',
     'responsibility:add', 'responsibility:update', 'responsibility:remove',
     'responsibility:toggle-active', 'responsibility:generate-tasks',
@@ -1015,6 +1040,82 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
       case 'jira-board:remove':
         s.otherChanges++;
         s.details.push({ action: 'removed Jira board', title: d.label || '' });
+        break;
+      case 'sn:urls':
+        s.otherChanges++;
+        s.details.push({ action: 'updated ServiceNow URLs', title: '' });
+        break;
+      case 'sn:field:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added ServiceNow field', title: d.key || '' });
+        break;
+      case 'sn:field:update':
+        s.otherChanges++;
+        s.details.push({ action: 'updated ServiceNow field', title: d.key || '' });
+        break;
+      case 'sn:field:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'removed ServiceNow field', title: d.key || '' });
+        break;
+      case 'sn:default:set':
+        s.otherChanges++;
+        s.details.push({ action: `updated default ${d.type || 'SN'} ticket`, title: d.key || '' });
+        break;
+      case 'sn:template:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added SN template', title: d.name || '' });
+        break;
+      case 'sn:template:update':
+        s.otherChanges++;
+        s.details.push({ action: 'updated SN template', title: d.name || '' });
+        break;
+      case 'sn:template:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'removed SN template', title: d.name || '' });
+        break;
+      case 'ai-config:set':
+        s.otherChanges++;
+        s.details.push({ action: 'updated AI settings', title: '' });
+        break;
+      case 'doc:notebook:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added notebook', title: d.name || '' });
+        break;
+      case 'doc:notebook:rename':
+        s.otherChanges++;
+        s.details.push({ action: 'renamed notebook', title: d.name || '' });
+        break;
+      case 'doc:notebook:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'removed notebook', title: d.name || '' });
+        break;
+      case 'doc:category:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added docs section', title: d.name || '' });
+        break;
+      case 'doc:category:rename':
+        s.otherChanges++;
+        s.details.push({ action: 'renamed docs section', title: d.name || '' });
+        break;
+      case 'doc:category:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'removed docs section', title: d.name || '' });
+        break;
+      case 'doc:page:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added docs page', title: d.title || '' });
+        break;
+      case 'doc:page:rename':
+        s.otherChanges++;
+        s.details.push({ action: 'renamed docs page', title: d.title || '' });
+        break;
+      case 'doc:page:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'removed docs page', title: d.title || '' });
+        break;
+      case 'doc:page:content':
+        s.otherChanges++;
+        s.details.push({ action: 'edited docs page', title: d.title || '' });
         break;
       case 'itsm-config:set':
         s.otherChanges++;

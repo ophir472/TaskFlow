@@ -8,6 +8,7 @@ const NAV: { key: View; label: string; icon: string }[] = [
   { key: 'kanban', label: 'Kanban', icon: '⫴' },
   { key: 'table', label: 'Table', icon: '☰' },
   { key: 'archive', label: 'Archive', icon: '🗑' },
+  { key: 'docs', label: 'Docs', icon: '▤' },
   { key: 'settings', label: 'Settings', icon: '⚙' },
 ];
 
@@ -31,6 +32,7 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
   // any un-walked cards left in the session PLUS any newly-flagged tasks
   // that aren't in the session yet (they'll be appended by
   // syncReviewSessionWithFlags when the popup mounts).
+  const mailCount = items.filter(it => it.kind === 'task' && it.type === 'mail' && !it.archived).length;
   const flaggedCount = (() => {
     const flagged = flaggedTasks(items);
     if (!reviewSession) return flagged.length;
@@ -120,6 +122,32 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
       })}
 
       <div style={{ flex: 1 }} />
+
+      {/* Communication assistant (mail capture) */}
+      <button
+        onClick={e => { e.stopPropagation(); window.location.hash = 'mail'; }}
+        title={collapsed ? `Mail assistant (${mailCount})` : undefined}
+        style={{
+          border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt2)',
+          fontSize: collapsed ? 15 : 13, fontWeight: 600,
+          padding: collapsed ? '7px 0' : '8px 14px', borderRadius: 9, cursor: 'pointer',
+          marginBottom: 8, whiteSpace: 'nowrap', width: '100%', lineHeight: 1,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          position: 'relative',
+        }}>
+        <span style={{ fontSize: collapsed ? 14 : 12 }}>✉</span>
+        {!collapsed && <span>Mail</span>}
+        {mailCount > 0 && (
+          <span style={{
+            position: 'absolute', top: -5, right: -5,
+            minWidth: 17, height: 17, padding: '0 4px', boxSizing: 'border-box',
+            borderRadius: 999, background: 'var(--t-urgent)', color: 'white',
+            fontSize: 10, fontWeight: 700, lineHeight: 1,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: '2px solid var(--t-surf)',
+          }}>{mailCount > 99 ? '99+' : mailCount}</span>
+        )}
+      </button>
 
       {/* Green Play review button */}
       <button

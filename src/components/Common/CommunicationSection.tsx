@@ -9,9 +9,10 @@ interface Props {
   emphasized?: boolean;
 }
 
-// The first field (index 0, typically "Teams") is treated as the primary field
-// and stays even when its value is blank. Additional fields get removed on blur
-// if their value is left empty — matching the Jira/ITSM "extra tickets" pattern.
+// Fields removed on blur when their value is left empty — matching the
+// Jira/ITSM "extra tickets" pattern. The first field only survives empty when
+// it's the ONLY one (it's the default seed); with others present it's deleted
+// and the next field becomes the first.
 // The "+ Add field" button only appears once the primary field has a value.
 export function CommunicationSection({ taskId, fields, emphasized }: Props) {
   const addField = useStore(s => s.addCommunicationField);
@@ -80,9 +81,10 @@ export function CommunicationSection({ taskId, fields, emphasized }: Props) {
                 placeholder={placeholderFor(f.label)}
                 onChange={e => updateField(taskId, f.id, { value: e.target.value })}
                 onBlur={() => {
-                  // Non-primary fields auto-remove when left empty on blur —
-                  // same behavior as extra Jira/ITSM tickets.
-                  if (!isPrimary && !f.value.trim()) deleteField(taskId, f.id);
+                  if (f.value.trim()) return;
+                  // Empty on blur → remove the field; the primary is only
+                  // kept when it's the last one left (default seed).
+                  if (!isPrimary || fields.length > 1) deleteField(taskId, f.id);
                 }}
                 style={sInp}
               />

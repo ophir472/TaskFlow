@@ -9,16 +9,23 @@ interface Props {
 const DEFAULT_COLUMNS = ['Waiting for', 'From'];
 
 // Collapsible "Waiting for" table on a card. Two columns by default, "+" in
-// the header adds more. Rows strike out via the ✓ toggle; when every row is
-// struck (or there are none) the section auto-collapses.
+// the header adds more. Rows strike out via the ✓ toggle; struck rows sink to
+// the bottom and hide behind "Show N completed". Open rows reorder by drag
+// (⋮⋮ handle). When every row is struck (or there are none) the section
+// auto-collapses.
 export function WaitingForSection({ task }: Props) {
   const updateItem = useStore(s => s.updateItem);
   const wf: WaitingForTable = task.waitingFor ?? { columns: DEFAULT_COLUMNS, rows: [] };
-  const openRows = wf.rows.filter(r => !r.done).length;
+  const activeRows = wf.rows.filter(r => !r.done);
+  const doneRows = wf.rows.filter(r => r.done);
+  const openRows = activeRows.length;
 
   const [open, setOpen] = useState(openRows > 0);
+  const [showCompleted, setShowCompleted] = useState(false);
   const [editingCol, setEditingCol] = useState<number | null>(null);
   const [colDraft, setColDraft] = useState('');
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
 
   // Auto-collapse when the last open row gets struck; auto-expand when an
   // open row (re)appears. Manual toggling still works in between.
@@ -31,6 +38,7 @@ export function WaitingForSection({ task }: Props) {
   useEffect(() => {
     const rows = task.waitingFor?.rows ?? [];
     setOpen(rows.some(r => !r.done));
+    setShowCompleted(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task.id]);
 
@@ -61,6 +69,23 @@ export function WaitingForSection({ task }: Props) {
   function renameColumn(idx: number, name: string) {
     save({ ...wf, columns: wf.columns.map((c, i) => i === idx ? (name.trim() || c) : c) });
   }
+  function handleDrop(targetId: string) {
+    if (!dragId || dragId === targetId) { setDragId(null); setOverId(null); return; }
+    const from = activeRows.findIndex(r => r.id === dragId);
+    const to = activeRows.findIndex(r => r.id === targetId);
+    if (from >= 0 && to >= 0) {
+      const next = [...activeRows];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      // Normalized order on disk: open rows first, completed at the bottom.
+      save({ ...wf, rows: [...next, ...doneRows] });
+    }
+    setDragId(null);
+    setOverId(null);
+  }
+
+  const displayRows = showCompleted ? [...activeRows, ...doneRows] : activeRows;
+  const gridCols = `16px repeat(${wf.columns.length}, 1fr) 24px 24px`;
 
   const hdrSt: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'text', padding: '2px 0' };
   const cellInp: React.CSSProperties = { width: '100%', fontSize: 13, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', boxSizing: 'border-box', outline: 'none' };
@@ -85,7 +110,8 @@ export function WaitingForSection({ task }: Props) {
       {open && (
         <div style={{ padding: '2px 14px 12px' }}>
           {/* Column headers + add-column */}
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${wf.columns.length}, 1fr) 24px 24px`, gap: 6, alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 6, alignItems: 'center', marginBottom: 6 }}>
+            <span />
             {wf.columns.map((col, i) => (
               editingCol === i ? (
                 <input key={i} autoFocus value={colDraft}
@@ -102,10 +128,28 @@ export function WaitingForSection({ task }: Props) {
             <span />
           </div>
 
-          {/* Rows */}
+          {/* Rows — open ones draggable, completed pinned at the bottom */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {wf.rows.map(row => (
-              <div key={row.id} style={{ display: 'grid', gridTemplateColumns: `repeat(${wf.columns.length}, 1fr) 24px 24px`, gap: 6, alignItems: 'center', opacity: row.done ? 0.55 : 1 }}>
+            {displayRows.map(row => (
+              <div key={row.id}
+                onDragOver={e => { if (dragId && !row.done) { e.preventDefault(); setOverId(row.id); } }}
+                onDragLeave={() => { if (overId === row.id) setOverId(null); }}
+                onDrop={e => { e.preventDefault(); if (!row.done) handleDrop(row.id); }}
+                style={{
+                  display: 'grid', gridTemplateColumns: gridCols, gap: 6, alignItems: 'center',
+                  opacity: dragId === row.id ? 0.4 : row.done ? 0.55 : 1,
+                  boxShadow: overId === row.id && dragId && dragId !== row.id ? 'inset 0 2px 0 var(--t-acc)' : 'none',
+                  borderRadius: 4,
+                }}>
+                {row.done ? (
+                  <span />
+                ) : (
+                  <span draggable
+                    onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragId(row.id); }}
+                    onDragEnd={() => { setDragId(null); setOverId(null); }}
+                    title="Drag to reorder"
+                    style={{ cursor: 'grab', color: 'var(--t-brd)', fontSize: 11, textAlign: 'center', userSelect: 'none', lineHeight: 1 }}>⋮⋮</span>
+                )}
                 {wf.columns.map((_, i) => (
                   <input key={i}
                     value={row.cells[i] ?? ''}
@@ -125,10 +169,19 @@ export function WaitingForSection({ task }: Props) {
             ))}
           </div>
 
-          <button onClick={addRow}
-            style={{ marginTop: 8, width: '100%', border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, fontWeight: 500, padding: '5px 0', borderRadius: 6, cursor: 'pointer' }}>
-            + Add row
-          </button>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+            <button onClick={addRow}
+              style={{ flex: 1, border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, fontWeight: 500, padding: '5px 0', borderRadius: 6, cursor: 'pointer' }}>
+              + Add row
+            </button>
+            {doneRows.length > 0 && (
+              <button onClick={() => setShowCompleted(v => !v)}
+                style={{ border: 'none', background: 'transparent', color: 'var(--t-muted)', fontSize: 11.5, fontWeight: 600, padding: '4px 6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                <span style={{ display: 'inline-block', transform: showCompleted ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', fontSize: 11, lineHeight: 1 }}>›</span>
+                {showCompleted ? 'Hide completed' : `${doneRows.length} completed`}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

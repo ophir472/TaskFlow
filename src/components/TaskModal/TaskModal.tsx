@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { backdropCloseProps } from '../../backdrop';
 import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import type { Task, Subtask as SubtaskT } from '../../types';
@@ -144,8 +145,8 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
   if (sub) {
     return (
       <div
-        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
-        onClick={fullyClose}>
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+        {...backdropCloseProps(fullyClose)}>
         <div
           style={{ width: 900, maxWidth: '96vw', maxHeight: '90vh', overflow: 'auto', background: 'var(--t-surf)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.28)', borderTop: '3px solid var(--t-acc)' }}
           onClick={e => e.stopPropagation()}>
@@ -204,8 +205,8 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
-      onClick={fullyClose}>
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+      {...backdropCloseProps(fullyClose)}>
       <div
         style={{ width: 900, maxWidth: '96vw', maxHeight: '90vh', overflow: 'auto', background: 'var(--t-surf)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.28)', borderTop: '3px solid var(--t-acc)' }}
         onClick={e => e.stopPropagation()}>
@@ -379,13 +380,13 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
             {/* Notes */}
             <div>
               <div style={fl}>Notes</div>
-              <ResizableTextarea taskId={taskId} fieldKey="notes" value={task.notes} onChange={e => updateItem(taskId, { notes: e.target.value })} rows={4} style={ta} />
+              <ResizableTextarea taskId={taskId} fieldKey="notes" value={task.notes} onChange={e => updateItem(taskId, { notes: e.target.value })} rows={5} style={ta} />
             </div>
 
             {/* Blockers */}
             <div>
               <div style={fl}>Blockers</div>
-              <ResizableTextarea taskId={taskId} fieldKey="blockers" value={task.blockers} onChange={e => updateItem(taskId, { blockers: e.target.value })} rows={2} placeholder="Who can help?" style={ta} />
+              <ResizableTextarea taskId={taskId} fieldKey="blockers" value={task.blockers} onChange={e => updateItem(taskId, { blockers: e.target.value })} rows={3} placeholder="Who can help?" style={ta} />
             </div>
 
             {/* Waiting for (collapsible) */}
@@ -398,7 +399,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
             {customFields.filter(f => f.showInCard).map(f => (
               <div key={f.id}>
                 <div style={fl}>{f.name}</div>
-                <input value={task.customValues?.[f.id] ?? ''} onChange={e => updateItemCustomValue(taskId, f.id, e.target.value)} style={inp} />
+                <ResizableTextarea taskId={taskId} fieldKey={`cf:${f.id}`} value={task.customValues?.[f.id] ?? ''} onChange={e => updateItemCustomValue(taskId, f.id, e.target.value)} rows={3} style={ta} />
               </div>
             ))}
           </div>

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { backdropCloseProps } from '../../backdrop';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { parseEstimate, formatMinutes } from '../../estimateParser';
@@ -65,7 +66,7 @@ export function DailyPlay({ onClose }: Props) {
 
 
   return (
-    <div style={backdropSt} onClick={onClose}>
+    <div style={backdropSt} {...backdropCloseProps(onClose)}>
       <div style={popupSt} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--t-brd)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -260,7 +261,7 @@ export function DailyPlay({ onClose }: Props) {
 }
 
 const backdropSt: React.CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
   zIndex: 55, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
 };
 const popupSt: React.CSSProperties = {

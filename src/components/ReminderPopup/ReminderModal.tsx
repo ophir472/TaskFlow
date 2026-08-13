@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { backdropCloseProps } from '../../backdrop';
 import { useStore } from '../../store';
 import { SchedulePicker } from '../SchedulePicker/SchedulePicker';
 import { nextOccurrence, formatSchedule } from '../../scheduleEngine';
@@ -44,8 +45,8 @@ export function ReminderModal({ reminderId, onClose }: Props) {
 
   return (
     <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-      onClick={onClose}>
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+      {...backdropCloseProps(onClose)}>
       <div
         style={{ width: 520, maxWidth: '94vw', maxHeight: '88vh', overflowY: 'auto', background: 'var(--t-surf)', borderRadius: 16, boxShadow: '0 8px 40px rgba(0,0,0,0.28)', borderTop: '3px solid var(--t-amber)', padding: '22px 26px' }}
         onClick={e => e.stopPropagation()}>

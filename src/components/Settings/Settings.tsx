@@ -5,6 +5,8 @@ import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
 import { ResponsibilitiesSection } from './ResponsibilitiesSection';
 import { JiraHostsSection } from './JiraHostsSection';
+import { ServiceNowSection } from './ServiceNowSection';
+import { AiSection } from './AiSection';
 import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload, pickAndRegisterRestoreFile } from '../../backup';
 import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log, trashSnapshot, summarizeRanges, formatSummary, formatDetailed, getDebugMode, setDebugMode, subscribeSnapshots } from '../../snapshots';
 import type { SnapshotEntry, ChangeSummary } from '../../snapshots';
@@ -16,7 +18,7 @@ import { TaskModal } from '../TaskModal/TaskModal';
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
 const listItem: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 12px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 8, fontSize: 14, color: 'var(--t-txt)' };
 const addBtn: React.CSSProperties = { border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 13.5, fontWeight: 600, padding: '8px 14px', borderRadius: 7, cursor: 'pointer' };
-const inp: React.CSSProperties = { flex: 1, fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)' };
+const inp: React.CSSProperties = { flex: 1, fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)' };
 
 // Requesters list — like ManagedList but each row also carries a Jira account
 // ID. When a card with this requester creates a Jira, that account becomes the
@@ -32,7 +34,7 @@ function RequestersList() {
   const submit = () => { if (input.trim()) { addRequester(input.trim()); setInput(''); } };
   return (
     <div style={{ ...card, flex: 1, minWidth: 280 }}>
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Requesters</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 4 }}>Requesters</div>
       <div style={{ fontSize: 12, color: 'var(--t-muted)', marginBottom: 14 }}>
         Jira account ID (optional) is set as <b>Reporter</b> on tickets created from this requester's tasks.
       </div>
@@ -165,7 +167,7 @@ function ManagedList({ title, items, onAdd, onRemove }: { title: string; items: 
   const submit = () => { if (input.trim()) { onAdd(input.trim()); setInput(''); } };
   return (
     <div style={{ ...card, flex: 1, minWidth: 240 }}>
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>{title}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 14 }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
         {items.length === 0 && <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>None yet</div>}
         {items.map(item => (
@@ -184,6 +186,21 @@ function ManagedList({ title, items, onAdd, onRemove }: { title: string; items: 
   );
 }
 
+const SETTINGS_TABS = [
+  { id: 'general', label: 'General' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'review', label: 'Review' },
+  { id: 'responsibilities', label: 'Responsibilities' },
+  { id: 'backup', label: 'Backup' },
+] as const;
+type SettingsTab = typeof SETTINGS_TABS[number]['id'];
+
+function tabFromHash(): SettingsTab {
+  const parts = window.location.hash.slice(1).split('/');
+  const t = parts[0] === 'settings' ? parts[1] : undefined;
+  return SETTINGS_TABS.some(x => x.id === t) ? (t as SettingsTab) : 'general';
+}
+
 export function Settings() {
   useLogMount('Settings');
   const projects = useStore(s => s.projects);
@@ -197,6 +214,14 @@ export function Settings() {
   const itsmConfig = useStore(s => s.itsmConfig);
   const setItsmConfig = useStore(s => s.setItsmConfig);
   const [page, setPage] = useState<'main' | 'appearance'>('main');
+  // Active tab lives in the URL (#settings/<tab>) so refresh and back/forward
+  // keep the spot. Bare #settings falls back to General.
+  const [tab, setTab] = useState<SettingsTab>(tabFromHash);
+  useEffect(() => {
+    const onHash = () => setTab(tabFromHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   const [itsm, setItsm] = useState<ItsmConfig>(() => itsmConfig ?? { host: '' });
   function saveItsm() {
@@ -347,7 +372,25 @@ export function Settings() {
   return (
     <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
+      {/* Tab menu */}
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--t-brd)' }}>
+        {SETTINGS_TABS.map(t => (
+          <button key={t.id}
+            onClick={() => { if (t.id !== tab) window.location.hash = `settings/${t.id}`; }}
+            style={{
+              border: 'none', background: 'transparent', cursor: 'pointer',
+              padding: '9px 16px', fontSize: 13.5, fontWeight: 600,
+              color: tab === t.id ? 'var(--t-acc-dk)' : 'var(--t-muted)',
+              borderBottom: `2px solid ${tab === t.id ? 'var(--t-acc)' : 'transparent'}`,
+              marginBottom: -1,
+            }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* Appearance */}
+      {tab === 'general' && (
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
@@ -364,8 +407,10 @@ export function Settings() {
           </button>
         </div>
       </div>
+      )}
 
       {/* Backup & Version History */}
+      {tab === 'backup' && (<>
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 6 }}>Backup & Version History</div>
         <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: 14 }}>
@@ -546,13 +591,15 @@ export function Settings() {
           )}
         </label>
       </div>
+      </>)}
 
       {/* Jira (multi-host) */}
+      {tab === 'integrations' && (<>
       <JiraHostsSection />
 
       {/* ITSM (ServiceNow) */}
       {(() => {
-        const fi: React.CSSProperties = { fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', width: '100%', boxSizing: 'border-box' as const };
+        const fi: React.CSSProperties = { fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)', width: '100%', boxSizing: 'border-box' as const };
         const fl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 5 };
         const field = (label: string, el: React.ReactNode) => (
           <div><div style={fl}>{label}</div>{el}</div>
@@ -566,6 +613,8 @@ export function Settings() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
               {field('Host', <input value={itsm.host} onChange={e => setItsm(i => ({ ...i, host: e.target.value }))} placeholder="mycompany.service-now.com" style={fi} />)}
               {field('Custom Ticket URL', <input value={itsm.customUrl ?? ''} onChange={e => setItsm(i => ({ ...i, customUrl: e.target.value }))} placeholder="https://itsm/nav_to.do?uri=incident.do?number=" style={fi} />)}
+              {field('Username (status sync)', <input value={itsm.username ?? ''} onChange={e => setItsm(i => ({ ...i, username: e.target.value }))} placeholder="Enables status sync on cards" style={fi} />)}
+              {field('Password / Token', <input type="password" value={itsm.apiToken ?? ''} onChange={e => setItsm(i => ({ ...i, apiToken: e.target.value }))} placeholder="••••••••" style={fi} />)}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <button onClick={saveItsm} style={addBtn}>Save</button>
@@ -581,19 +630,27 @@ export function Settings() {
         );
       })()}
 
+      <ServiceNowSection />
+
+      <AiSection />
+      </>)}
+
       {/* Managed lists row */}
+      {tab === 'general' && (
       <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
         <RequestersList />
         <ManagedList title="Projects" items={projects} onAdd={addProject} onRemove={removeProject} />
       </div>
+      )}
 
-      <ReviewQueueSection />
+      {tab === 'review' && <ReviewQueueSection />}
 
-      <ResponsibilitiesSection />
+      {tab === 'responsibilities' && <ResponsibilitiesSection />}
 
       {/* Custom fields */}
+      {tab === 'general' && (
       <div style={card}>
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Custom fields</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 6 }}>Custom fields</div>
         <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: 16 }}>Extra fields shown on the table and/or the card. Values are free text.</div>
 
         {/* Existing fields */}
@@ -625,6 +682,7 @@ export function Settings() {
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 }
