@@ -36,13 +36,13 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
   const flaggedCount = (() => {
     const flagged = flaggedTasks(items);
     if (!reviewSession) return flagged.length;
-    const inSession = new Set(reviewSession.taskIds);
-    const remainingInSession = reviewSession.taskIds
-      .slice(reviewSession.cardIdx)
-      .filter(id => items.some(it => it.id === id))
-      .length;
-    const newFlaggedNotInSession = flagged.filter(t => !inSession.has(t.id)).length;
-    return remainingInSession + newFlaggedNotInSession;
+    // Only the REMAINING session cards are "already queued" — a card walked
+    // earlier in the session that got edited since is flagged again and must
+    // count (it rejoins the session on next open).
+    const remainingIds = new Set(reviewSession.taskIds.slice(reviewSession.cardIdx));
+    const remainingInSession = [...remainingIds].filter(id => items.some(it => it.id === id)).length;
+    const newFlagged = flagged.filter(t => !remainingIds.has(t.id)).length;
+    return remainingInSession + newFlagged;
   })();
 
   const pieCount = Math.min(promotionsToday, promotionGoal);

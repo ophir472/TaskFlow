@@ -8,6 +8,7 @@ import { JiraHostsSection } from './JiraHostsSection';
 import { ServiceNowSection } from './ServiceNowSection';
 import { AiSection } from './AiSection';
 import { SprintQueueSection } from './SprintQueueSection';
+import { ShortcutsHelp } from './ShortcutsHelp';
 import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload, pickAndRegisterRestoreFile } from '../../backup';
 import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log, trashSnapshot, summarizeRanges, formatSummary, formatDetailed, getDebugMode, setDebugMode, subscribeSnapshots } from '../../snapshots';
 import type { SnapshotEntry, ChangeSummary } from '../../snapshots';
@@ -83,12 +84,14 @@ function ReviewQueueSection() {
   const flagged = flaggedTasks(items);
   let rows: { task: Task; inSession: boolean }[];
   if (reviewSession) {
-    const inSession = new Set(reviewSession.taskIds);
+    // Exclude only the REMAINING session cards — walked-then-edited cards are
+    // flagged again and belong back in the queue (they rejoin on next open).
+    const remainingIds = new Set(reviewSession.taskIds.slice(reviewSession.cardIdx));
     const remaining = reviewSession.taskIds.slice(reviewSession.cardIdx)
       .map(id => items.find(it => it.id === id))
       .filter((it): it is Task => !!it && it.kind === 'task')
       .map(t => ({ task: t, inSession: true }));
-    const fresh = flagged.filter(t => !inSession.has(t.id)).map(t => ({ task: t, inSession: false }));
+    const fresh = flagged.filter(t => !remainingIds.has(t.id)).map(t => ({ task: t, inSession: false }));
     rows = [...remaining, ...fresh];
   } else {
     rows = flagged.map(t => ({ task: t, inSession: false }));
@@ -218,6 +221,7 @@ export function Settings() {
   // Active tab lives in the URL (#settings/<tab>) so refresh and back/forward
   // keep the spot. Bare #settings falls back to General.
   const [tab, setTab] = useState<SettingsTab>(tabFromHash);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useEffect(() => {
     const onHash = () => setTab(tabFromHash());
     window.addEventListener('hashchange', onHash);
@@ -388,7 +392,13 @@ export function Settings() {
             {t.label}
           </button>
         ))}
+        <button onClick={() => setShortcutsOpen(true)}
+          title="Keyboard shortcuts"
+          style={{ marginLeft: 'auto', alignSelf: 'center', width: 26, height: 26, borderRadius: '50%', border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 13, fontWeight: 700, cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+          ?
+        </button>
       </div>
+      {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
 
       {/* Appearance */}
       {tab === 'general' && (

@@ -755,13 +755,29 @@ export const useStore = create<AppState>()(
             };
           }
           const existing = s.reviewSession;
+          // Compact on reopen: cards already walked (before cardIdx) leave the
+          // session — they're reviewed. If one was edited SINCE its walk it's
+          // flagged again and rejoins at the end; otherwise keeping it around
+          // made "Card 2 of 7" carry finished cards forever and, worse, the
+          // in-session filter hid its re-flag from every queue display.
+          const remaining = existing.taskIds.slice(existing.cardIdx);
+          const walked = existing.taskIds.slice(0, existing.cardIdx);
+          const flaggedSet = new Set(flaggedIds);
+          const reAdd = walked.filter(id => flaggedSet.has(id) && !remaining.includes(id));
           const newIds = flaggedIds.filter(id => !existing.taskIds.includes(id));
-          if (newIds.length === 0) return {};
-          slog('review:extend', { added: newIds.length });
+          const taskIds = [...remaining, ...newIds, ...reAdd];
+          if (taskIds.length === 0) {
+            slog('review:end', { reason: 'session-empty-on-sync' });
+            return { reviewSession: null };
+          }
+          if (walked.length === 0 && newIds.length === 0 && reAdd.length === 0) return {};
+          slog('review:extend', { added: newIds.length, readded: reAdd.length, compacted: walked.length - reAdd.length });
           return {
             reviewSession: {
               ...existing,
-              taskIds: [...existing.taskIds, ...newIds],
+              taskIds,
+              // Current card is now first; keep the mid-card step position.
+              cardIdx: 0,
               initialReviewedAt: { ...existing.initialReviewedAt, ...initialReviewedAt },
             },
           };
