@@ -25,6 +25,20 @@ A personal task-management app built with React, TypeScript, and Vite. All data 
 
 Everything is URL-driven (`#settings/backup`, `#docs/<page>`, `#mail`, `#sprint`, …) — refresh keeps your place, back closes overlays. Press **?** in Settings for the full keyboard-shortcut reference.
 
+## How it decides what's next (core logic)
+
+- **Queue eligibility** — the card feed considers non-archived items: tasks that aren't done/archived (tasks on *waiting* stay hidden until boosted back), active reminders, and never mail entries.
+- **"For today" override** — if any task is marked for today, the feed shows *only* those until they're done or unmarked.
+- **Untagged first** — tasks with no priority tag (and not marked "no tag") surface before everything else, so nothing enters the pool unclassified.
+- **Scoring** — urgent **6** + important **3** + quick **1** + staleness (0–1). Returning from hold adds a temporary **+100** that clears the moment you act on the card. Reminders score 0 (100 when boosted). Ties go to the least-recently-bumped.
+- **Hold / snooze** — Hold parks a task with a "to check" note and a schedule, remembers its pre-hold status, and auto-returns it (with the +100 boost) when due. Snooze has a global daily limit; reminders instead reschedule, which also moves their next-fire time.
+- **Done ⇄ archive** — marking done archives automatically; giving an archived task an active status un-archives it (Kanban's Done column includes archived-done cards for this reason).
+- **Review flagging** — a task is queued for review when it was created or edited after its personal `reviewedAt`. Finishing a card's walkthrough stamps it (without counting as an edit); any later change re-flags it. Sessions persist, resume mid-step, and compact walked cards on reopen.
+- **Sprint pool** — quick subtasks → Q-tagged tasks → pending mail entries, frozen at start; items completed elsewhere are skipped automatically.
+- **Reminders** — a precise timer fires the popup at `nextFireAt`; snoozing or completing an occurrence advances it (recurring rules are drift-free, day-31 clamped).
+- **Responsibilities** — a recurring rule generates its task when due, but never while a previously generated task is still open.
+- **Promotions pie** — task completions and subtask ticks fill the daily ring; it resets at midnight along with snooze counts.
+
 ## Setup on a new computer
 
 **Prerequisites:** [Node.js](https://nodejs.org/) (v18 or later) and [Git](https://git-scm.com/)
@@ -34,14 +48,21 @@ Everything is URL-driven (`#settings/backup`, `#docs/<page>`, `#mail`, `#sprint`
 git clone https://github.com/ophir472/TaskFlow.git
 cd TaskFlow/app
 
-# 2. Install dependencies
-npm install
+# 2. One-shot start — installs dependencies if needed, starts the dev
+#    server, and opens the browser:
+./start.sh
+```
 
-# 3. Start the dev server
-npm run dev
+Or manually:
+
+```bash
+npm install      # install dependencies (first time only)
+npm run dev      # start the dev server
 ```
 
 Then open [http://localhost:5173](http://localhost:5173) in your browser.
+
+`./start.sh --build` serves the production build instead (build + preview).
 
 ## Other commands
 
@@ -49,6 +70,20 @@ Then open [http://localhost:5173](http://localhost:5173) in your browser.
 npm run build    # production build
 npm run preview  # preview the production build locally
 ```
+
+## First run
+
+1. Pick a **backup folder** when the orange banner asks (ideally inside OneDrive/Dropbox for an offsite copy).
+2. **Settings → Integrations**: add Jira host(s) + token, ITSM host/credentials for status sync, ServiceNow create-URLs + fields + templates, AI endpoint if used.
+3. **Settings → General**: requesters, projects, custom fields, theme.
+4. Press **?** in Settings once — the shortcuts pay for themselves.
+
+## Troubleshooting
+
+- **A "fixed" bug still happens** → the browser is running an old bundle; hard-reload (Cmd+Shift+R) before debugging.
+- **Jira / ServiceNow / AI calls fail at work** → open DevTools Console: every request+response is logged in a collapsed `[jira:*]` / `[itsm:*]` group (credentials redacted). Network errors usually mean the host doesn't allow browser CORS from this origin.
+- **Backups stopped writing** → the folder permission was revoked (browser restart does this); a banner offers to re-grant. Version history lives in Settings → Backup.
+- **Something looks lost** → Settings → Backup → version history lets you preview any snapshot from the last 7 days in a read-only tab and restore it; the `current.json` live mirror in the backup folder is at most ~1s behind.
 
 ## Notes
 
