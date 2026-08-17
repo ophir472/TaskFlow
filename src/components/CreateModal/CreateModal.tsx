@@ -58,7 +58,7 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
   const disabled = !title || (type !== 'task' && !schedule);
   const now = Date.now();
 
-  const handleSubmit = () => {
+  const handleSubmit = (asQuick = false) => {
     if (disabled) return;
     const id = nextId(type === 'task' ? 't' : 'r');
     let item: Item;
@@ -69,7 +69,7 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
         // Seed the Teams communication field with the typed value (createItem
         // only auto-seeds when communications is absent).
         communications: [{ id: 'c' + now + Math.random().toString(36).slice(2, 5), label: 'Teams', value: communication }],
-        requester, project, status: 'backlog', forToday, urgent, important, quick, noTag,
+        requester, project, status: 'backlog', forToday, urgent, important, quick: quick || asQuick, noTag: (quick || asQuick) ? false : noTag,
         toCheck: '', priorityBoost: false, subtasks: [],
         bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false,
       };
@@ -109,7 +109,7 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
           <div style={lbl}>{type === 'task' ? 'Title' : type === 'reminder' ? 'Reminder text' : 'Responsibility name'}</div>
           <input value={title} onChange={e => setTitle(e.target.value)} autoFocus
             placeholder={type === 'task' ? 'What needs to get done?' : type === 'reminder' ? 'e.g. Call Dani about the proposal' : 'e.g. Maintain the sales dashboard'}
-            onKeyDown={e => { if (e.key === 'Enter' && !disabled) handleSubmit(); }} style={inp} />
+            onKeyDown={e => { if (e.key === 'Enter' && !disabled) handleSubmit(e.shiftKey); }} style={inp} />
         </div>
 
         {type === 'task' && (
@@ -167,7 +167,7 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
           </div>
         )}
 
-        <button onClick={handleSubmit} disabled={disabled}
+        <button onClick={() => handleSubmit()} disabled={disabled}
           style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 14, fontWeight: 600, padding: 12, borderRadius: 9, opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}>
           Create
         </button>

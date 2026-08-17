@@ -1,4 +1,5 @@
 import type { JiraConfig } from './types';
+import { logOpenUrl } from './apiLog';
 
 /**
  * The Jira config marked default. Used by "Create Jira" everywhere and as the
@@ -67,5 +68,7 @@ export function buildJiraCreateUrl(cfg: JiraConfig, summary: string, description
   } else {
     u += (u.includes('?') ? '&' : '?') + `summary=${enc(summary)}&description=${enc(description)}`;
   }
-  return /^https?:\/\//i.test(u) ? u : `https://${u}`;
+  const final = /^https?:\/\//i.test(u) ? u : `https://${u}`;
+  logOpenUrl('jira:create-url', final, { summaryChars: summary.length, descriptionChars: description.length });
+  return final;
 }

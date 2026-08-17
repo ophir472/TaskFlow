@@ -369,11 +369,13 @@ export function TicketSections({ task, onToast }: Props) {
               style={{ fontSize: 10, color: 'oklch(0.55 0.14 150)', flexShrink: 0, lineHeight: 1 }}>✓</span>
           )}
         </div>
-        <button onClick={() => { window.location.hash = 'sncreate'; }}
-          title="Open the ServiceNow template menu"
-          style={{ marginBottom: 4, width: '100%', border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '6px 0', borderRadius: 6, cursor: 'pointer' }}>
-          + Create SN ticket
-        </button>
+        {!(t.itsmTicket ?? '').trim() && (
+          <button onMouseDown={e => e.preventDefault()} onClick={() => { window.location.hash = 'sncreate'; }}
+            title="Open the ServiceNow template menu"
+            style={{ marginBottom: 4, width: '100%', border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '6px 0', borderRadius: 6, cursor: 'pointer' }}>
+            + Create SN ticket
+          </button>
+        )}
         {(t.extraItsmTickets ?? []).map((ticket, i) => (
           <div key={i} style={{ marginTop: 6 }}>
             {label(`itsmTicket:${i}`, t.extraItsmTicketLabels?.[i], `ITSM ticket ${i + 2}`, v => {
@@ -395,6 +397,13 @@ export function TicketSections({ task, onToast }: Props) {
                 }} />
               {ticket && (() => { const url = itsmTicketUrl(itsmConfig, ticket); return url ? <a href={url} target="_blank" rel="noreferrer" style={extLink} title={`Open ${ticket}`}>↗</a> : null; })()}
             </div>
+            {!ticket.trim() && (
+              <button onMouseDown={e => e.preventDefault()} onClick={() => { window.location.hash = 'sncreate'; }}
+                title="Open the ServiceNow template menu"
+                style={{ marginTop: 4, width: '100%', border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '6px 0', borderRadius: 6, cursor: 'pointer' }}>
+                + Create SN ticket
+              </button>
+            )}
           </div>
         ))}
         {(t.itsmTicket || (t.extraItsmTickets ?? []).length > 0) && (

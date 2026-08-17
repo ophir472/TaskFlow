@@ -747,7 +747,7 @@ function ReviewCard({ task, currentTarget, newSubtaskIds, jiraOpenUrl, onOpenJir
 
       {/* Communication (enlarged) */}
       <div style={dimStyle('communication')}>
-        <CommunicationSection taskId={task.id} fields={getCommunications(task.communications)} emphasized />
+        <CommunicationSection taskId={task.id} task={task} fields={getCommunications(task.communications)} emphasized />
       </div>
 
       {/* Notes (dim always if not focused) */}

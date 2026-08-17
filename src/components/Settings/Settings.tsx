@@ -7,6 +7,7 @@ import { ResponsibilitiesSection } from './ResponsibilitiesSection';
 import { JiraHostsSection } from './JiraHostsSection';
 import { ServiceNowSection } from './ServiceNowSection';
 import { AiSection } from './AiSection';
+import { SprintQueueSection } from './SprintQueueSection';
 import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownload, pickAndRegisterRestoreFile } from '../../backup';
 import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log, trashSnapshot, summarizeRanges, formatSummary, formatDetailed, getDebugMode, setDebugMode, subscribeSnapshots } from '../../snapshots';
 import type { SnapshotEntry, ChangeSummary } from '../../snapshots';
@@ -643,7 +644,10 @@ export function Settings() {
       </div>
       )}
 
-      {tab === 'review' && <ReviewQueueSection />}
+      {tab === 'review' && (<>
+        <ReviewQueueSection />
+        <SprintQueueSection />
+      </>)}
 
       {tab === 'responsibilities' && <ResponsibilitiesSection />}
 

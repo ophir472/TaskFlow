@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
 import type { SnTemplate, SnTicketType } from '../../types';
+import { SnTemplateForm, EMPTY_SN_TEMPLATE } from '../ServiceNow/SnTemplateForm';
 
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
-const fi: React.CSSProperties = { fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)', width: '100%', boxSizing: 'border-box' };
 const fl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 };
 const addBtn: React.CSSProperties = { border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 13.5, fontWeight: 600, padding: '8px 14px', borderRadius: 7, cursor: 'pointer' };
 const ghostBtn: React.CSSProperties = { border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 13, fontWeight: 500, padding: '7px 12px', borderRadius: 7, cursor: 'pointer' };
@@ -49,11 +49,6 @@ function DraftInput({ value, onCommit, placeholder, style, multiline }: {
   );
 }
 
-const EMPTY_TPL: Omit<SnTemplate, 'id'> = {
-  name: '', type: 'INC', templateNumber: '', instructions: '',
-  confluenceLink: '', exampleTicket: '', emailDL: '', fieldValues: {},
-};
-
 export function ServiceNowSection() {
   const snConfig = useStore(s => s.snConfig);
   const updateSnUrls = useStore(s => s.updateSnUrls);
@@ -67,34 +62,20 @@ export function ServiceNowSection() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState<Omit<SnTemplate, 'id'>>(EMPTY_TPL);
   const [defaultsOpen, setDefaultsOpen] = useState<SnTicketType | null>(null);
   const formOpen = adding || editingId !== null;
 
   function startAdd() {
     setAdding(true);
     setEditingId(null);
-    setDraft(EMPTY_TPL);
   }
   function startEdit(t: SnTemplate) {
     setEditingId(t.id);
     setAdding(false);
-    setDraft({
-      name: t.name, type: t.type, templateNumber: t.templateNumber, instructions: t.instructions,
-      confluenceLink: t.confluenceLink, exampleTicket: t.exampleTicket, emailDL: t.emailDL,
-      fieldValues: { ...t.fieldValues },
-    });
   }
   function cancelForm() {
     setAdding(false);
     setEditingId(null);
-    setDraft(EMPTY_TPL);
-  }
-  function saveForm() {
-    if (!draft.name.trim()) return;
-    if (editingId) updateSnTemplate(editingId, draft);
-    else addSnTemplate(draft);
-    cancelForm();
   }
   function handleDelete(t: SnTemplate) {
     if (!confirm(`Delete SN template "${t.name}"?`)) return;
@@ -225,76 +206,19 @@ export function ServiceNowSection() {
 
       {/* ── Template form ── */}
       {formOpen && (
-        <div style={{ padding: 16, background: 'color-mix(in oklab, var(--t-txt) 3%, var(--t-surf2))', border: '1px solid color-mix(in oklab, var(--t-txt) 10%, var(--t-brd2))', borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--t-txt)' }}>
-            {editingId ? 'Edit template' : 'New template'}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 12 }}>
-            <div><div style={fl}>Name *</div>
-              <input value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="Access request" style={fi} />
-            </div>
-            <div><div style={fl}>Type</div>
-              <select value={draft.type} onChange={e => setDraft(d => ({ ...d, type: e.target.value as SnTicketType }))}
-                style={{ ...fi, cursor: 'pointer' }}>
-                <option value="INC">INC</option>
-                <option value="CHG">CHG</option>
-              </select>
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div><div style={fl}>Template number</div>
-              <input value={draft.templateNumber} onChange={e => setDraft(d => ({ ...d, templateNumber: e.target.value }))} placeholder="If one exists" style={fi} />
-            </div>
-            <div><div style={fl}>Email DL</div>
-              <input value={draft.emailDL} onChange={e => setDraft(d => ({ ...d, emailDL: e.target.value }))} placeholder="team-dl@company.com" style={fi} />
-            </div>
-            <div><div style={fl}>Confluence page</div>
-              <input value={draft.confluenceLink} onChange={e => setDraft(d => ({ ...d, confluenceLink: e.target.value }))} placeholder="https://confluence/…" style={fi} />
-            </div>
-            <div><div style={fl}>Example ticket</div>
-              <input value={draft.exampleTicket} onChange={e => setDraft(d => ({ ...d, exampleTicket: e.target.value }))} placeholder="INC0012345" style={fi} />
-            </div>
-          </div>
-          <div>
-            <div style={fl}>Instructions</div>
-            <textarea value={draft.instructions} onChange={e => setDraft(d => ({ ...d, instructions: e.target.value }))}
-              rows={3} placeholder="How to create this ticket — description to use, assigned group, etc."
-              style={{ ...fi, resize: 'vertical', fontFamily: 'inherit' }} />
-          </div>
-
-          <div>
-            <div style={{ ...fl, marginBottom: 2 }}>ServiceNow fields</div>
-            <div style={{ ...hint, marginTop: 0, marginBottom: 10 }}>
-              Filled exactly as entered here. Use <b>FILL</b> where the value is per-ticket — you'll be prompted to replace it when creating. Empty fields inherit the {draft.type} default ticket.
-            </div>
-            {fields.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: 'var(--t-muted)' }}>No fields configured — add them in the Fields panel above.</div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                {fields.map(f => (
-                  <div key={f.id}>
-                    <div style={fl}>{f.label.trim() || f.key.trim() || 'unnamed field'}</div>
-                    <textarea
-                      value={draft.fieldValues[f.id] ?? ''}
-                      onChange={e => setDraft(d => ({ ...d, fieldValues: { ...d.fieldValues, [f.id]: e.target.value } }))}
-                      placeholder={(snConfig.defaultFieldValues[draft.type][f.id] ?? '').trim() ? `default: ${snConfig.defaultFieldValues[draft.type][f.id]}` : ''}
-                      rows={Math.min(6, Math.max(1, (draft.fieldValues[f.id] ?? '').split('\n').length))}
-                      style={{ ...fi, resize: 'vertical', fontFamily: 'inherit' }}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button onClick={cancelForm} style={ghostBtn}>Cancel</button>
-            <button onClick={saveForm} disabled={!draft.name.trim()}
-              style={{ ...addBtn, opacity: draft.name.trim() ? 1 : 0.5, cursor: draft.name.trim() ? 'pointer' : 'not-allowed' }}>
-              {editingId ? 'Save changes' : 'Add template'}
-            </button>
-          </div>
-        </div>
+        <SnTemplateForm
+          key={editingId ?? 'new'}
+          heading={editingId ? 'Edit template' : 'New template'}
+          saveLabel={editingId ? 'Save changes' : 'Add template'}
+          initial={(() => {
+            const t = editingId ? snConfig.templates.find(x => x.id === editingId) : null;
+            return t
+              ? { name: t.name, type: t.type, templateNumber: t.templateNumber, instructions: t.instructions, confluenceLink: t.confluenceLink, exampleTicket: t.exampleTicket, emailDL: t.emailDL, fieldValues: { ...t.fieldValues } }
+              : EMPTY_SN_TEMPLATE;
+          })()}
+          onSave={tpl => { if (editingId) updateSnTemplate(editingId, tpl); else addSnTemplate(tpl); cancelForm(); }}
+          onCancel={cancelForm}
+        />
       )}
     </div>
   );

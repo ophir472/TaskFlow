@@ -17,10 +17,11 @@ import { CreateModal } from './components/CreateModal/CreateModal';
 import { GreenPlay } from './components/GreenPlay/GreenPlay';
 import { SnCreateMenu } from './components/ServiceNow/SnCreateMenu';
 import { MailAssistant } from './components/Mail/MailAssistant';
+import { SprintMode } from './components/Sprint/SprintMode';
 import { ReminderPopup } from './components/ReminderPopup/ReminderPopup';
 import { Toast } from './components/Toast/Toast';
 import { restoreFromData, pickAndRegisterRestoreFile } from './backup';
-import { writeSnapshot, writeLiveFile, readLiveFile, log, logDebug, getDebugMode, getTabId, listSnapshots, readSnapshot, getSnapshotDir, subscribePermission, requestDirPermission, pickSnapshotDir, runIntegrityCheck, isPreviewMode, summarizeRange, formatSummary, formatDetailed } from './snapshots';
+import { writeSnapshot, writeLiveFile, readLiveFile, log, logDebug, getDebugMode, getTabId, listSnapshots, readSnapshot, getSnapshotDir, subscribePermission, subscribeSnapshots, requestDirPermission, pickSnapshotDir, runIntegrityCheck, isPreviewMode, summarizeRange, formatSummary, formatDetailed } from './snapshots';
 import type { IntegrityResult, ChangeSummary } from './snapshots';
 import { Confetti } from './components/Confetti';
 import { nextOccurrence } from './scheduleEngine';
@@ -125,6 +126,7 @@ export default function App() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [snMenuOpen, setSnMenuOpen] = useState(false);
   const [mailOpen, setMailOpen] = useState(false);
+  const [sprintOpen, setSprintOpen] = useState(false);
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -214,12 +216,16 @@ export default function App() {
   // Subscribe to permission changes → show banner
   useEffect(() => subscribePermission(setPermError), []);
 
-  // Durability warning: data exists but no backup folder is configured →
-  // everything lives only in this browser's localStorage.
+  // Durability warning: no backup folder selected → everything lives only in
+  // this browser's localStorage. Re-checked on focus and on snapshot activity
+  // so picking a folder (anywhere, incl. Settings) clears it live.
   useEffect(() => {
-    if (isPreviewMode() || items.length === 0) return;
-    getSnapshotDir().then(h => setNoDirWarn(!h));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (isPreviewMode()) return;
+    const check = () => { getSnapshotDir().then(h => setNoDirWarn(!h)); };
+    check();
+    window.addEventListener('focus', check);
+    const unsub = subscribeSnapshots(check);
+    return () => { window.removeEventListener('focus', check); unsub(); };
   }, []);
 
   // Global handlers: errors always logged; clicks/keys only in debug mode
@@ -340,6 +346,7 @@ export default function App() {
       setReviewOpen(seg === 'review');
       setSnMenuOpen(seg === 'sncreate');
       setMailOpen(seg === 'mail');
+      setSprintOpen(seg === 'sprint');
       // Snapshot on every navigation. Async, non-blocking.
       writeSnapshot().then(written => {
         if (written) log('snapshot:navigate', { hash: window.location.hash });
@@ -361,7 +368,7 @@ export default function App() {
   useEffect(() => {
     if (!viewUrlSynced.current) { viewUrlSynced.current = true; return; }
     const currentSeg = window.location.hash.slice(1).split('/')[0];
-    if (currentSeg === 'review' || currentSeg === 'sncreate' || currentSeg === 'mail') return;
+    if (currentSeg === 'review' || currentSeg === 'sncreate' || currentSeg === 'mail' || currentSeg === 'sprint') return;
     if (currentSeg !== view) window.location.hash = view;
   }, [view]);
 
@@ -382,6 +389,10 @@ export default function App() {
   const closeMail = useCallback(() => {
     if (window.location.hash.slice(1).split('/')[0] === 'mail') history.back();
     else setMailOpen(false);
+  }, []);
+  const closeSprint = useCallback(() => {
+    if (window.location.hash.slice(1).split('/')[0] === 'sprint') history.back();
+    else setSprintOpen(false);
   }, []);
 
   // Apply theme CSS variables
@@ -494,6 +505,12 @@ export default function App() {
           if (window.location.hash.slice(1).split('/')[0] !== 'mail') window.location.hash = 'mail';
           return;
         }
+        // 's' opens Sprint (war mode).
+        if (e.key === 's' || e.code === 'KeyS') {
+          e.preventDefault();
+          if (window.location.hash.slice(1).split('/')[0] !== 'sprint') window.location.hash = 'sprint';
+          return;
+        }
         // 'r' opens Green Play review.
         if (e.key === 'r' || e.code === 'KeyR') {
           e.preventDefault();
@@ -517,6 +534,17 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', width: '100%', minHeight: '100vh', background: 'var(--t-bg)', flexDirection: 'column', overflowX: 'hidden' }}>
+      {/* Permanent durability warning — no backup folder selected */}
+      {noDirWarn && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '9px 20px', background: 'oklch(0.68 0.16 55)', color: 'white', fontSize: 13.5, fontWeight: 600, zIndex: 100, position: 'relative' }}>
+          <span>⚠️ No backup folder selected — your data lives only in this browser. Pick a folder to get versioned 7-day backups.</span>
+          <button onClick={() => { pickSnapshotDir().then(h => { if (h) { setNoDirWarn(false); writeSnapshot(); writeLiveFile(); } }); }}
+            style={{ marginLeft: 'auto', border: '1.5px solid white', background: 'transparent', color: 'white', fontSize: 12.5, fontWeight: 700, padding: '5px 14px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            Choose folder
+          </button>
+        </div>
+      )}
+
       {/* Preview mode banner (blue, always at top when in preview) */}
       {inPreview && previewInfo && (
         <div style={{ padding: '10px 20px', background: '#4b7bec', color: 'white', fontSize: 14, borderBottom: '1px solid rgba(0,0,0,0.15)', zIndex: 100 }}>
@@ -538,16 +566,6 @@ export default function App() {
         </div>
       )}
       {/* Persistent alert banners */}
-      {noDirWarn && !permError && (
-        <div style={{ position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)', zIndex: 400, display: 'flex', alignItems: 'center', gap: 12, background: 'var(--t-amber-bg)', border: '1px solid var(--t-amber-brd)', color: 'var(--t-amber)', borderRadius: 12, padding: '10px 16px', fontSize: 13, boxShadow: '0 6px 24px rgba(0,0,0,0.12)' }}>
-          <span>⚠️ No backup folder — your data lives only in this browser. Pick a folder to get versioned 7-day backups.</span>
-          <button onClick={() => { pickSnapshotDir().then(h => { if (h) { setNoDirWarn(false); writeSnapshot(); writeLiveFile(); } }); }}
-            style={{ border: 'none', background: 'var(--t-amber)', color: 'white', fontSize: 12.5, fontWeight: 700, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            Choose folder
-          </button>
-          <span onClick={() => setNoDirWarn(false)} style={{ cursor: 'pointer', fontSize: 15, lineHeight: 1 }}>×</span>
-        </div>
-      )}
       {permError && (
         <div style={{ padding: '10px 20px', background: '#ff8a3d', color: '#231a10', fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 12, borderBottom: '1px solid rgba(0,0,0,0.1)', zIndex: 100 }}>
           <span>⚠️ {permError}</span>
@@ -612,6 +630,7 @@ export default function App() {
       {reviewOpen && <GreenPlay onClose={closeReview} />}
       {snMenuOpen && <SnCreateMenu onClose={closeSnMenu} />}
       {mailOpen && <MailAssistant onClose={closeMail} />}
+      {sprintOpen && <SprintMode onClose={closeSprint} />}
       {spotlightOpen && <Spotlight onClose={() => setSpotlightOpen(false)} onToast={toastTimer} />}
       {pendingReminderIds.length > 0 && <ReminderPopup />}
     </div>{/* end sidebar+content wrapper */}

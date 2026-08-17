@@ -4,6 +4,7 @@ import { useLogMount } from '../../useLogMount';
 import { scoreItem, duplicateTask } from '../../engine';
 import { EstimatesSection } from '../Common/EstimatesSection';
 import { WaitingForSection } from '../Common/WaitingForSection';
+import { QuickToActSection } from '../Common/QuickToActSection';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
 import { ResizableTextarea } from '../Common/ResizableTextarea';
 import { TaskModal } from '../TaskModal/TaskModal';
@@ -591,6 +592,7 @@ export function CardFeed({ onToast }: Props) {
                         <div onClick={() => setSubtaskPanel({ parentId: current.id, subId: sub.id })}
                           title="Open subtask details"
                           style={{ flex: 1, minWidth: 48, cursor: 'pointer', alignSelf: 'stretch' }} />
+                        <div onClick={() => updateSubtask(current.id, sub.id, { isQuick: !sub.isQuick })} style={{ cursor: 'pointer', fontSize: 14, color: sub.isQuick ? 'oklch(0.55 0.16 250)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Quick to act">◷</div>
                         <div onClick={() => { markUnstarred(sub.id); toggleSubtaskNext(current.id, sub.id); }} style={{ cursor: 'pointer', fontSize: 15, color: 'var(--t-amber)', userSelect: 'none', flexShrink: 0 }} title="Unstar — return to the list">★</div>
                       </div>
                     ))}
@@ -646,6 +648,7 @@ export function CardFeed({ onToast }: Props) {
                         <div onClick={() => setSubtaskPanel({ parentId: current.id, subId: sub.id })}
                           title="Open subtask details"
                           style={{ flex: 1, minWidth: 48, cursor: 'pointer', alignSelf: 'stretch' }} />
+                        <div onClick={() => updateSubtask(current.id, sub.id, { isQuick: !sub.isQuick })} style={{ cursor: 'pointer', fontSize: 14, color: sub.isQuick ? 'oklch(0.55 0.16 250)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Quick to act">◷</div>
                         <div onClick={() => {
                           // Starring this one displaces the current starred
                           // subtask — mark both so only they animate.
@@ -690,13 +693,21 @@ export function CardFeed({ onToast }: Props) {
                   )}
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input value={newSubtask} onChange={e => setNewSubtask(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter' && newSubtask.trim()) { addSubtask(current.id, newSubtask.trim()); setNewSubtask(''); } if (e.key === 'Escape') setNewSubtask(''); }}
+                      onKeyDown={e => { if (e.key === 'Enter' && newSubtask.trim()) { addSubtask(current.id, newSubtask.trim(), { isQuick: e.shiftKey }); setNewSubtask(''); } if (e.key === 'Escape') setNewSubtask(''); }}
+                      title="Enter adds · Shift+Enter adds as quick-to-act"
                       placeholder="Add subtask…" style={{ ...inp, flex: 1 }} />
                     <button onClick={() => { if (newSubtask.trim()) { addSubtask(current.id, newSubtask.trim()); setNewSubtask(''); } }} disabled={!newSubtask.trim()}
-                      style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 18, lineHeight: 1, width: 34, height: 34, borderRadius: 8, cursor: 'pointer', opacity: newSubtask.trim() ? 1 : 0.4, flexShrink: 0 }}>+</button>
+                      title="Add subtask (Enter)"
+                      style={{ border: 'none', background: 'oklch(0.6 0.14 150)', color: 'white', fontSize: 18, lineHeight: 1, width: 34, height: 34, borderRadius: 8, cursor: 'pointer', opacity: newSubtask.trim() ? 1 : 0.4, flexShrink: 0 }}>+</button>
+                    <button onClick={() => { if (newSubtask.trim()) { addSubtask(current.id, newSubtask.trim(), { isQuick: true }); setNewSubtask(''); } }} disabled={!newSubtask.trim()}
+                      title="Add as quick to act (Shift+Enter)"
+                      style={{ border: 'none', background: 'oklch(0.55 0.16 250)', color: 'white', fontSize: 15, lineHeight: 1, width: 34, height: 34, borderRadius: 8, cursor: 'pointer', opacity: newSubtask.trim() ? 1 : 0.4, flexShrink: 0 }}>◷</button>
                   </div>
                 </div>
               </div>
+
+              {/* Quick to Act — view of isQuick subtasks */}
+              <QuickToActSection task={t} />
 
               {/* Notes */}
               <div>
@@ -709,6 +720,9 @@ export function CardFeed({ onToast }: Props) {
                 <div style={fl}>Blockers</div>
                 <ResizableTextarea taskId={current.id} fieldKey="blockers" value={t.blockers} onChange={e => updateItem(current.id, { blockers: e.target.value })} rows={3} placeholder="Who can help?" style={ta} />
               </div>
+
+              {/* Communication */}
+              <CommunicationSection taskId={current.id} task={t} fields={getCommunications(t.communications)} />
 
               {/* Waiting for (collapsible) */}
               <WaitingForSection task={t} />
@@ -745,8 +759,6 @@ export function CardFeed({ onToast }: Props) {
               {/* Jira / ITSM / Link sections — shared with the task popup */}
               <TicketSections task={t} onToast={onToast} />
             </div>
-            {/* Communication — separate panel below the metadata/ticket panel */}
-            <CommunicationSection taskId={current.id} fields={getCommunications(t.communications)} />
             </div>
 
           </div>

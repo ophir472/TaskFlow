@@ -149,6 +149,21 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
         )}
       </button>
 
+      {/* Sprint (war mode) */}
+      <button
+        onClick={e => { e.stopPropagation(); window.location.hash = 'sprint'; }}
+        title={collapsed ? 'Sprint — blitz everything quick' : 'Blitz everything quick, one item at a time'}
+        style={{
+          border: '1px solid var(--t-txt)', background: 'var(--t-txt)', color: 'var(--t-bg)',
+          fontSize: collapsed ? 15 : 13, fontWeight: 700,
+          padding: collapsed ? '7px 0' : '8px 14px', borderRadius: 9, cursor: 'pointer',
+          marginBottom: 8, whiteSpace: 'nowrap', overflow: 'hidden', width: '100%', lineHeight: 1,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        }}>
+        <span style={{ fontSize: collapsed ? 13 : 10 }}>▶</span>
+        {!collapsed && <span>Sprint</span>}
+      </button>
+
       {/* Green Play review button */}
       <button
         onClick={e => { e.stopPropagation(); onOpenReview(); }}

@@ -73,7 +73,7 @@ interface AppState {
   updateItem: (id: string, patch: Partial<Item>) => void;
   updateTask: (id: string, patch: Partial<Task>) => void;
   updateSubtask: (parentId: string, subId: string, patch: Partial<Subtask>) => void;
-  addSubtask: (parentId: string, title: string) => void;
+  addSubtask: (parentId: string, title: string, opts?: { isQuick?: boolean }) => void;
   deleteSubtask: (parentId: string, subId: string) => void;
   toggleTag: (id: string, key: 'urgent' | 'important' | 'quick' | 'noTag') => void;
   toggleSubtaskDone: (parentId: string, subId: string) => void;
@@ -299,13 +299,13 @@ export const useStore = create<AppState>()(
         }));
       },
 
-      addSubtask: (parentId, title) => {
+      addSubtask: (parentId, title, opts) => {
         const id = 's' + Date.now() + Math.random().toString(36).slice(2, 5);
-        import('./snapshots').then(m => m.log('subtask:create', { parentId, subId: id, title }));
+        import('./snapshots').then(m => m.log('subtask:create', { parentId, subId: id, title, isQuick: !!opts?.isQuick }));
         set(s => ({
           items: s.items.map(it =>
             it.id === parentId && it.kind === 'task'
-              ? { ...it, subtasks: [...it.subtasks, { id, title, done: false, isNext: false, jira: '', generalLink: '', notes: '', blockers: '', createdAt: Date.now() }], updatedAt: Date.now() }
+              ? { ...it, subtasks: [...it.subtasks, { id, title, done: false, isNext: false, jira: '', generalLink: '', notes: '', blockers: '', ...(opts?.isQuick ? { isQuick: true } : {}), createdAt: Date.now() }], updatedAt: Date.now() }
               : it
           ),
           history: pushHistory(s.history, { ts: Date.now(), type: 'addSubtask', id: parentId })
@@ -969,7 +969,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'taskflow-store',
-      version: 6,
+      version: 7,
       storage: createJSONStorage(() => IS_PREVIEW_MODE ? sessionStorage : localStorage),
       skipHydration: IS_PREVIEW_MODE,
       // UI-only fields: kept in-memory per-tab, NOT persisted. Otherwise every
@@ -1004,6 +1004,33 @@ export const useStore = create<AppState>()(
               : it.schedule ? nextOccurrence(it.schedule, it.createdAt ?? Date.now()) : Date.now();
             return { ...it, nextFireAt: seed };
           });
+        }
+        if (fromVersion < 7) {
+          // commTable rows become linked mail entries — the To-send table is
+          // now a view of communication-assistant entries.
+          const items = Array.isArray(persisted.items) ? persisted.items : [];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const extra: any[] = [];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          for (const it of items as any[]) {
+            if (it.kind === 'task' && it.commTable && Array.isArray(it.commTable.rows)) {
+              for (const row of it.commTable.rows) {
+                const title = (row.cells ?? []).filter((c: string) => c && c.trim()).join(' — ');
+                if (!title) continue;
+                const now = Date.now();
+                extra.push({
+                  id: 't' + now + Math.random().toString(36).slice(2, 7), kind: 'task', type: 'mail',
+                  linkedTaskId: it.id, title, description: '', notes: '', blockers: '', generalLink: '',
+                  jiraLink: '', requester: '', project: '', status: row.done ? 'done' : 'backlog',
+                  urgent: false, important: false, quick: false, noTag: true, noJira: true,
+                  forToday: false, toCheck: '', priorityBoost: false, subtasks: [],
+                  bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: !!row.done,
+                });
+              }
+              delete it.commTable;
+            }
+          }
+          if (extra.length) persisted.items = [...items, ...extra];
         }
         if (fromVersion < 6) {
           // Single jiraBoardUrl → jiraBoards list.

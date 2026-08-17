@@ -6,6 +6,8 @@ import type { Task, Subtask as SubtaskT } from '../../types';
 import { scoreItem } from '../../engine';
 import { EstimatesSection } from '../Common/EstimatesSection';
 import { WaitingForSection } from '../Common/WaitingForSection';
+import { QuickToActSection } from '../Common/QuickToActSection';
+import { SubtaskChecklist } from '../SubtaskPanel/SubtaskChecklist';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
 import { ResizableTextarea } from '../Common/ResizableTextarea';
 import { TicketSections } from '../Common/TicketSections';
@@ -172,11 +174,12 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
           </div>
           {/* Subtask body */}
           <div style={{ padding: '18px 26px 24px' }}>
-            <div style={fl}>Title</div>
             <input value={sub.title} onChange={e => updateSubtask(taskId, sub.id, { title: e.target.value })}
+              placeholder="Title"
               style={{ ...inp, fontSize: 18, fontWeight: 600, padding: '10px 12px' }} />
             <div style={{ display: 'flex', gap: 20, marginTop: 18, flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 400px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <SubtaskChecklist parentId={taskId} sub={sub} />
                 <div>
                   <div style={fl}>Notes</div>
                   <textarea value={sub.notes} onChange={e => updateSubtask(taskId, sub.id, { notes: e.target.value })} placeholder="Notes…" rows={5} style={ta} />
@@ -309,6 +312,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
                       <div onClick={() => openSubtask(s.id)}
                         title="Open subtask details"
                         style={{ flex: 1, minWidth: 48, cursor: 'pointer', alignSelf: 'stretch' }} />
+                      <div onClick={() => updateSubtask(taskId, s.id, { isQuick: !s.isQuick })} style={{ cursor: 'pointer', fontSize: 14, color: s.isQuick ? 'oklch(0.55 0.16 250)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Quick to act">◷</div>
                       <div onClick={() => { markUnstarred(s.id); toggleSubtaskNext(taskId, s.id); }} style={{ cursor: 'pointer', fontSize: 15, color: 'var(--t-amber)', userSelect: 'none', flexShrink: 0 }} title="Unstar — return to the list">★</div>
                     </div>
                   ))}
@@ -345,6 +349,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
                       <div onClick={() => openSubtask(s.id)}
                         title="Open subtask details"
                         style={{ flex: 1, minWidth: 48, cursor: 'pointer', alignSelf: 'stretch' }} />
+                      <div onClick={() => updateSubtask(taskId, s.id, { isQuick: !s.isQuick })} style={{ cursor: 'pointer', fontSize: 14, color: s.isQuick ? 'oklch(0.55 0.16 250)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Quick to act">◷</div>
                       <div onClick={() => {
                         if (!s.isNext) {
                           markStarred(s.id);
@@ -369,13 +374,21 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
                 })()}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input value={newSubtask} onChange={e => setNewSubtask(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && newSubtask.trim()) { addSubtask(taskId, newSubtask.trim()); setNewSubtask(''); } }}
+                    onKeyDown={e => { if (e.key === 'Enter' && newSubtask.trim()) { addSubtask(taskId, newSubtask.trim(), { isQuick: e.shiftKey }); setNewSubtask(''); } }}
+                    title="Enter adds · Shift+Enter adds as quick-to-act"
                     placeholder="Add subtask…" style={{ ...inp, flex: 1 }} />
                   <button onClick={() => { if (newSubtask.trim()) { addSubtask(taskId, newSubtask.trim()); setNewSubtask(''); } }} disabled={!newSubtask.trim()}
-                    style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 18, width: 34, height: 34, borderRadius: 8, cursor: 'pointer', opacity: newSubtask.trim() ? 1 : 0.4, flexShrink: 0 }}>+</button>
+                    title="Add subtask (Enter)"
+                    style={{ border: 'none', background: 'oklch(0.6 0.14 150)', color: 'white', fontSize: 18, width: 34, height: 34, borderRadius: 8, cursor: 'pointer', opacity: newSubtask.trim() ? 1 : 0.4, flexShrink: 0 }}>+</button>
+                  <button onClick={() => { if (newSubtask.trim()) { addSubtask(taskId, newSubtask.trim(), { isQuick: true }); setNewSubtask(''); } }} disabled={!newSubtask.trim()}
+                    title="Add as quick to act (Shift+Enter)"
+                    style={{ border: 'none', background: 'oklch(0.55 0.16 250)', color: 'white', fontSize: 15, width: 34, height: 34, borderRadius: 8, cursor: 'pointer', opacity: newSubtask.trim() ? 1 : 0.4, flexShrink: 0 }}>◷</button>
                 </div>
               </div>
             </div>
+
+            {/* Quick to Act — view of isQuick subtasks */}
+            <QuickToActSection task={task} />
 
             {/* Notes */}
             <div>
@@ -388,6 +401,9 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
               <div style={fl}>Blockers</div>
               <ResizableTextarea taskId={taskId} fieldKey="blockers" value={task.blockers} onChange={e => updateItem(taskId, { blockers: e.target.value })} rows={3} placeholder="Who can help?" style={ta} />
             </div>
+
+            {/* Communication */}
+            <CommunicationSection taskId={taskId} task={task} fields={getCommunications(task.communications)} />
 
             {/* Waiting for (collapsible) */}
             <WaitingForSection task={task} />
@@ -433,8 +449,6 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
               {/* Jira / ITSM / Link — same shared sections as the card feed */}
               <TicketSections task={task} />
             </div>
-            {/* Communication — separate panel below the metadata/ticket panel */}
-            <CommunicationSection taskId={taskId} fields={getCommunications(task.communications)} />
           </div>
         </div>
       </div>

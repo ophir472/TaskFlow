@@ -1,4 +1,5 @@
 import type { SnConfig, SnTemplate, SnTicketType } from './types';
+import { logOpenUrl } from './apiLog';
 
 export const EMPTY_SN_CONFIG: SnConfig = {
   incUrlTemplate: '',
@@ -52,5 +53,7 @@ export function buildSnUrl(cfg: SnConfig, type: SnTicketType, fields: { key: str
   const serialized = remaining.map(f => `${f.key}=${encodeURIComponent(f.value)}`).join(cfg.fieldSeparator || '^');
   if (u.includes('{fields}')) u = u.split('{fields}').join(serialized);
   else if (serialized) u += (u.includes('?') ? '&' : '?') + serialized;
-  return /^https?:\/\//i.test(u) ? u : `https://${u}`;
+  const final = /^https?:\/\//i.test(u) ? u : `https://${u}`;
+  logOpenUrl('sn:create-url', final, { type, fields: fields.map(f => ({ key: f.key, value: f.value })) });
+  return final;
 }

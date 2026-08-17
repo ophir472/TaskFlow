@@ -2,6 +2,9 @@ import { useRef, useEffect, useCallback } from 'react';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 
+import { ParentContextCard } from './ParentContextCard';
+import { SubtaskChecklist } from './SubtaskChecklist';
+
 interface Props { parentId: string; subId: string; onBack: () => void; }
 
 const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 };
@@ -57,17 +60,18 @@ export function SubtaskFullPage({ parentId, subId, onBack }: Props) {
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '28px 36px 40px' }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 24, padding: '28px 36px 40px' }}>
         <div style={{ width: 880, maxWidth: '100%', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
           <div style={{ padding: '22px 26px 0' }}>
-            <div style={lbl}>Title</div>
             <textarea ref={titleRef} value={sub.title}
+              placeholder="Title"
               onChange={e => { updateSubtask(parentId, subId, { title: e.target.value }); autoResize(); }}
               rows={1} style={{ width: '100%', border: 'none', outline: 'none', fontSize: 23, fontWeight: 700, letterSpacing: '-0.01em', padding: '4px 0 10px', color: sub.done ? 'var(--t-muted)' : 'var(--t-txt)', background: 'transparent', resize: 'none', overflow: 'hidden', lineHeight: 1.3, fontFamily: 'inherit', display: 'block', textDecoration: sub.done ? 'line-through' : 'none' }} />
           </div>
 
           <div style={{ display: 'flex', alignItems: 'flex-start' }}>
             <div style={{ flex: 1, padding: '14px 20px 28px 26px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <SubtaskChecklist parentId={parentId} sub={sub} />
               <div><div style={lbl}>Notes</div><textarea value={sub.notes} onChange={e => updateSubtask(parentId, subId, { notes: e.target.value })} placeholder="Notes…" style={ta(5)} rows={5} /></div>
               <div><div style={lbl}>Blockers</div><textarea value={sub.blockers} onChange={e => updateSubtask(parentId, subId, { blockers: e.target.value })} placeholder="Who can help?" style={ta(3)} rows={3} /></div>
               {sub.createdAt && (
@@ -89,6 +93,7 @@ export function SubtaskFullPage({ parentId, subId, onBack }: Props) {
             </div>
           </div>
         </div>
+        <ParentContextCard task={parent} style={{ position: 'sticky', top: 0, flexShrink: 0, maxHeight: 'calc(100vh - 140px)', overflowY: 'auto' }} />
       </div>
     </div>
   );

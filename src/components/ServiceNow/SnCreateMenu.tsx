@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { backdropCloseProps } from '../../backdrop';
 import { useStore } from '../../store';
 import type { SnTemplate } from '../../types';
 import { resolveSnFields, buildSnUrl, type SnResolvedField } from '../../servicenow';
 import { itsmTicketUrl } from '../../itsm';
+import { SnTemplateForm, EMPTY_SN_TEMPLATE } from './SnTemplateForm';
 
 interface Props {
   onClose: () => void;
@@ -28,15 +29,23 @@ function TypeBadge({ type }: { type: 'INC' | 'CHG' }) {
 // first show a fill-in step for those fields.
 export function SnCreateMenu({ onClose }: Props) {
   const snConfig = useStore(s => s.snConfig);
+  const addSnTemplate = useStore(s => s.addSnTemplate);
   const itsmConfig = useStore(s => s.itsmConfig);
   const [infoId, setInfoId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // FILL step: the picked template + its resolved fields awaiting user edits.
   const [fillTpl, setFillTpl] = useState<SnTemplate | null>(null);
   const [fillFields, setFillFields] = useState<SnResolvedField[]>([]);
+  const [creatingTpl, setCreatingTpl] = useState(false);
 
+  const creatingRef = useRef(false);
+  creatingRef.current = creatingTpl;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (creatingRef.current) setCreatingTpl(false);
+      else onClose();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
@@ -80,7 +89,15 @@ export function SnCreateMenu({ onClose }: Props) {
           </div>
         )}
 
-        {fillTpl ? (
+        {creatingTpl ? (
+          <SnTemplateForm
+            heading="New template"
+            saveLabel="Create template"
+            initial={EMPTY_SN_TEMPLATE}
+            onSave={tpl => { addSnTemplate(tpl); setCreatingTpl(false); }}
+            onCancel={() => setCreatingTpl(false)}
+          />
+        ) : fillTpl ? (
           <>
             <div style={{ fontSize: 13, color: 'var(--t-muted)', margin: '2px 0 14px' }}>
               <b style={{ color: 'var(--t-txt2)' }}>{fillTpl.name || 'Template'}</b>
@@ -129,11 +146,12 @@ export function SnCreateMenu({ onClose }: Props) {
             <div style={{ fontSize: 13, color: 'var(--t-muted)', margin: '2px 0 14px' }}>
               Pick a template — the pre-filled create form opens in a new tab. Paste the resulting ticket number into the card's ITSM field.
             </div>
-            {snConfig.templates.length === 0 ? (
-              <div style={{ fontSize: 13, color: 'var(--t-muted)', padding: '14px 0' }}>
-                No templates yet — add them in <b>Settings → ServiceNow Tickets</b>.
+            {snConfig.templates.length === 0 && (
+              <div style={{ fontSize: 13, color: 'var(--t-muted)', paddingBottom: 10 }}>
+                No templates yet — create your first right here (or in <b>Settings → ServiceNow Tickets</b>).
               </div>
-            ) : (
+            )}
+            {(
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                 {snConfig.templates.map(t => (
                   <div key={t.id} onClick={() => pick(t)}
@@ -153,6 +171,13 @@ export function SnCreateMenu({ onClose }: Props) {
                     </div>
                   </div>
                 ))}
+                <div onClick={() => { setError(null); setInfoId(null); setCreatingTpl(true); }}
+                  title="Create a new ServiceNow template"
+                  style={{ width: 180, minHeight: 64, boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, cursor: 'pointer', border: '1px dashed var(--t-brd)', color: 'var(--t-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600 }}
+                  onMouseEnter={ev => { ev.currentTarget.style.borderColor = 'var(--t-acc)'; ev.currentTarget.style.color = 'var(--t-acc-dk)'; }}
+                  onMouseLeave={ev => { ev.currentTarget.style.borderColor = 'var(--t-brd)'; ev.currentTarget.style.color = 'var(--t-muted)'; }}>
+                  ＋ New template
+                </div>
               </div>
             )}
             {infoTpl && (

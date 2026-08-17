@@ -39,6 +39,12 @@ export interface CustomField {
 
 // ── Item types ──────────────────────────────────────────────────
 
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
 export interface Subtask {
   id: string;
   title: string;
@@ -50,6 +56,10 @@ export interface Subtask {
   blockers: string;
   // Free-text per-subtask time estimate (e.g. "2h", "half a day").
   estimate?: string;
+  // Quick-to-act flag: the subtask ALSO shows in the card's "Quick to Act"
+  // table (same underlying object — one item, two views) and joins Sprint.
+  isQuick?: boolean;
+  checklist?: ChecklistItem[];
   createdAt: number;
 }
 
@@ -237,6 +247,9 @@ export interface Task {
   type?: 'mail';
   whatIWantToSay?: string;
   mailToSend?: string;
+  // Mail entries only: the task this communication belongs to. The card's
+  // "To send" table is a view of entries linked to it — one entity, two views.
+  linkedTaskId?: string;
   forToday: boolean;
   manuallyMoved?: boolean;
   extraJiraLinks?: string[];

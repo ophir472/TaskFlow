@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import type { CommunicationField } from '../../types';
+import type { CommunicationField, Task } from '../../types';
+import { LinkedCommTable } from '../Mail/LinkedCommTable';
 import { useStore } from '../../store';
 
 interface Props {
   taskId: string;
+  task: Task;
   fields: CommunicationField[];
   /** When true, the section is rendered enlarged (used by Green Play review). */
   emphasized?: boolean;
@@ -14,7 +16,7 @@ interface Props {
 // it's the ONLY one (it's the default seed); with others present it's deleted
 // and the next field becomes the first.
 // The "+ Add field" button only appears once the primary field has a value.
-export function CommunicationSection({ taskId, fields, emphasized }: Props) {
+export function CommunicationSection({ taskId, task, fields, emphasized }: Props) {
   const addField = useStore(s => s.addCommunicationField);
   const updateField = useStore(s => s.updateCommunicationField);
   const deleteField = useStore(s => s.deleteCommunicationField);
@@ -91,6 +93,11 @@ export function CommunicationSection({ taskId, fields, emphasized }: Props) {
             </div>
           );
         })}
+      </div>
+
+      {/* "To send" — view of communication-assistant entries linked here */}
+      <div style={{ marginTop: 10 }}>
+        <LinkedCommTable task={task} />
       </div>
 
       {primaryHasValue && (

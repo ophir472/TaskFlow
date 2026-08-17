@@ -13,6 +13,13 @@ function stageFromHash(): 'capture' | 'preview' {
   return parts[0] === 'mail' && parts[1] === 'preview' ? 'preview' : 'capture';
 }
 
+// #mail/preview/<entryId> deep-links straight to one entry (used by the
+// card's "To send" table).
+function startIdFromHash(): string | null {
+  const parts = window.location.hash.slice(1).split('/');
+  return parts[0] === 'mail' && parts[1] === 'preview' ? (parts[2] ?? null) : null;
+}
+
 const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 };
 const inp: React.CSSProperties = { width: '100%', fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)', boxSizing: 'border-box', outline: 'none' };
 
@@ -32,23 +39,50 @@ export function MailAssistant({ onClose }: Props) {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  const mails = items.filter((it): it is Task => it.kind === 'task' && it.type === 'mail' && !it.archived);
+
+  // Capture-list keyboard: arrows move the highlight (even while the input is
+  // focused), 'p' starts preview when not typing, Enter (outside the input)
+  // opens the highlighted entry. Refs keep the window handler closure-fresh.
+  const [sel, setSel] = useState(-1);
+  const selRef = useRef(sel); selRef.current = sel;
+  const mailsRef = useRef(mails); mailsRef.current = mails;
+  const stageRef = useRef(stage); stageRef.current = stage;
+  useEffect(() => setSel(-1), [stage]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return; }
+      if (stageRef.current !== 'capture') return;
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(s + 1, mailsRef.current.length - 1)); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => Math.max(s - 1, -1)); }
+      else if (e.key === 'Enter' && !typing) {
+        const m = selRef.current >= 0 ? mailsRef.current[selRef.current] : undefined;
+        if (m) { startAtRef.current = m.id; window.location.hash = 'mail/preview'; }
+      } else if ((e.key === 'p' || e.code === 'KeyP') && !typing) {
+        e.preventDefault();
+        if (mailsRef.current.length) window.location.hash = 'mail/preview';
+      }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const mails = items.filter((it): it is Task => it.kind === 'task' && it.type === 'mail' && !it.archived);
-
   // ── capture ──
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  function commit() {
+  function openEntry(id: string) {
+    startAtRef.current = id;
+    window.location.hash = 'mail/preview';
+  }
+  function commit(openAfter = false) {
     const v = text.trim();
     if (!v) return;
     const now = Date.now();
+    const id = nextId('t');
     createItem({
-      id: nextId('t'), kind: 'task', type: 'mail', title: v,
+      id, kind: 'task', type: 'mail', title: v,
       description: '', notes: '', blockers: '', generalLink: '', jiraLink: '',
       requester: '', project: '', status: 'backlog',
       urgent: false, important: false, quick: false, noTag: true, noJira: true,
@@ -56,18 +90,29 @@ export function MailAssistant({ onClose }: Props) {
       bumpedAt: now, staleness: 0, createdAt: now, updatedAt: now, archived: false,
     });
     setText('');
-    inputRef.current?.focus();
+    if (openAfter) openEntry(id);
+    else inputRef.current?.focus();
   }
 
   // ── preview stepper: freeze the entry list when entering ──
+  const startAtRef = useRef<string | null>(null);
   const [stepIds, setStepIds] = useState<string[]>([]);
   const [idx, setIdx] = useState(0);
   const [sent, setSent] = useState(0);
   const [skipped, setSkipped] = useState(0);
+  const [linkQuery, setLinkQuery] = useState('');
+  const [linkSel, setLinkSel] = useState(0);
   useEffect(() => {
     if (stage === 'preview') {
-      setStepIds(items.filter((it): it is Task => it.kind === 'task' && it.type === 'mail' && !it.archived).map(m => m.id));
-      setIdx(0); setSent(0); setSkipped(0);
+      const ids = items.filter((it): it is Task => it.kind === 'task' && it.type === 'mail' && !it.archived).map(m => m.id);
+      setStepIds(ids);
+      // Opened by clicking a specific entry (in-popup or via a card's
+      // #mail/preview/<id> deep link) → start the walk there.
+      const wanted = startAtRef.current ?? startIdFromHash();
+      const start = wanted ? ids.indexOf(wanted) : 0;
+      startAtRef.current = null;
+      setIdx(start >= 0 ? start : 0);
+      setSent(0); setSkipped(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage]);
@@ -80,6 +125,17 @@ export function MailAssistant({ onClose }: Props) {
   useEffect(() => {
     if (stage === 'preview' && !doneStepping && !current) setIdx(i => i + 1);
   }, [stage, doneStepping, current]);
+  useEffect(() => { setLinkQuery(''); setLinkSel(0); }, [idx, stage]);
+
+  const linkCandidates = (stage === 'preview' && current && !current.linkedTaskId && linkQuery.trim())
+    ? items.filter((it): it is Task => it.kind === 'task' && it.type !== 'mail' && !it.archived && it.title.toLowerCase().includes(linkQuery.trim().toLowerCase())).slice(0, 8)
+    : [];
+  function pickLink(t: Task) {
+    if (!current) return;
+    updateItem(current.id, { linkedTaskId: t.id });
+    setLinkQuery('');
+    setLinkSel(0);
+  }
 
   function markSent() {
     if (!current) return;
@@ -115,10 +171,14 @@ export function MailAssistant({ onClose }: Props) {
                 autoFocus
                 value={text}
                 onChange={e => setText(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') commit(); }}
+                onKeyDown={e => {
+                  if (e.key !== 'Enter') return;
+                  if (!text.trim() && sel >= 0 && mails[sel]) { openEntry(mails[sel].id); return; }
+                  commit(e.shiftKey);
+                }}
                 placeholder="Mail subject / Teams chat to respond to…"
                 style={{ ...inp, flex: 1 }} />
-              <button onClick={commit} disabled={!text.trim()}
+              <button onClick={() => commit()} disabled={!text.trim()}
                 style={{ ...accBtn, opacity: text.trim() ? 1 : 0.5, cursor: text.trim() ? 'pointer' : 'not-allowed', flexShrink: 0 }}>
                 Add
               </button>
@@ -126,14 +186,24 @@ export function MailAssistant({ onClose }: Props) {
 
             {mails.length > 0 ? (
               <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
-                {mails.map(m => (
-                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 7, background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', fontSize: 13, color: 'var(--t-txt)' }}>
+                {mails.map((m, i) => (
+                  <div key={m.id}
+                    onClick={() => openEntry(m.id)}
+                    onMouseEnter={() => setSel(i)}
+                    title="Open this entry"
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 7, background: i === sel ? 'var(--t-acc-bg)' : 'var(--t-surf2)', border: i === sel ? '1px solid var(--t-acc)' : '1px solid var(--t-brd2)', fontSize: 13, color: 'var(--t-txt)', cursor: 'pointer' }}>
                     <span style={{ fontSize: 11, color: 'var(--t-muted)', flexShrink: 0 }}>✉</span>
-                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</span>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {m.title}
+                      {m.linkedTaskId && (() => {
+                        const lt = items.find(i => i.id === m.linkedTaskId);
+                        return lt ? <span style={{ color: 'var(--t-muted)', fontSize: 11.5 }}> · ⛓ {lt.title}</span> : null;
+                      })()}
+                    </span>
                     {(m.whatIWantToSay?.trim() || m.mailToSend?.trim()) && (
                       <span title="Has draft notes" style={{ fontSize: 10, color: 'var(--t-acc)', flexShrink: 0 }}>✎</span>
                     )}
-                    <span onClick={() => deleteItem(m.id)} title="Delete entry"
+                    <span onClick={e => { e.stopPropagation(); deleteItem(m.id); }} title="Delete entry"
                       style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 14, lineHeight: 1, flexShrink: 0 }}>×</span>
                   </div>
                 ))}
@@ -150,7 +220,7 @@ export function MailAssistant({ onClose }: Props) {
                 Preview ({mails.length})
               </button>
               <span style={{ fontSize: 11.5, color: 'var(--t-muted)' }}>
-                Entries are tasks — find them in the table with the ✉ Mail filter.
+                p = preview · ↑↓ navigate · Enter opens · Shift+Enter adds & opens
               </span>
             </div>
           </>
@@ -165,6 +235,46 @@ export function MailAssistant({ onClose }: Props) {
               <div>
                 <div style={lbl}>Subject</div>
                 <input value={current.title} onChange={e => updateItem(current.id, { title: e.target.value })} style={inp} />
+              </div>
+              <div>
+                <div style={lbl}>Linked card</div>
+                {current.linkedTaskId ? (() => {
+                  const lt = items.find(i => i.id === current.linkedTaskId);
+                  return (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderRadius: 999, background: 'var(--t-acc-bg)', border: '1px solid var(--t-acc)', color: 'var(--t-acc-dk)', fontSize: 12.5, fontWeight: 600, maxWidth: '100%' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>⛓ {lt ? lt.title : '(task deleted)'}</span>
+                      <span onClick={() => updateItem(current.id, { linkedTaskId: undefined })} title="Unlink"
+                        style={{ cursor: 'pointer', fontSize: 13, lineHeight: 1, flexShrink: 0 }}>×</span>
+                    </div>
+                  );
+                })() : (
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      value={linkQuery}
+                      onChange={e => { setLinkQuery(e.target.value); setLinkSel(0); }}
+                      onKeyDown={e => {
+                        if (!linkCandidates.length) return;
+                        if (e.key === 'ArrowDown') { e.preventDefault(); setLinkSel(s => Math.min(s + 1, linkCandidates.length - 1)); }
+                        else if (e.key === 'ArrowUp') { e.preventDefault(); setLinkSel(s => Math.max(s - 1, 0)); }
+                        else if (e.key === 'Enter') { e.preventDefault(); pickLink(linkCandidates[Math.min(linkSel, linkCandidates.length - 1)]); }
+                        else if (e.key === 'Escape') { e.stopPropagation(); setLinkQuery(''); }
+                      }}
+                      placeholder="Type to search a task to link…"
+                      style={inp} />
+                    {linkCandidates.length > 0 && (
+                      <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 20, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 8, boxShadow: '0 10px 28px rgba(0,0,0,0.18)', maxHeight: 190, overflowY: 'auto', padding: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {linkCandidates.map((t, i) => (
+                          <div key={t.id}
+                            onClick={() => pickLink(t)}
+                            onMouseEnter={() => setLinkSel(i)}
+                            style={{ padding: '6px 10px', borderRadius: 6, fontSize: 12.5, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: i === Math.min(linkSel, linkCandidates.length - 1) ? 'var(--t-acc-bg)' : 'transparent', color: i === Math.min(linkSel, linkCandidates.length - 1) ? 'var(--t-acc-dk)' : 'var(--t-txt)' }}>
+                            {t.title}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <div style={lbl}>What I want to say</div>

@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { backdropCloseProps } from '../../backdrop';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
+import { ParentContextCard } from './ParentContextCard';
+import { SubtaskChecklist } from './SubtaskChecklist';
 
 interface Props {
   parentId: string;
@@ -33,6 +35,7 @@ export function SubtaskPanel({ parentId, subId, onClose, onExpand }: Props) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'flex-end', zIndex: 50 }}
       {...backdropCloseProps(onClose)}>
+      <ParentContextCard task={parent} style={{ alignSelf: 'center', marginRight: 16, maxHeight: '82vh', overflowY: 'auto', flexShrink: 0 }} />
       <div style={{ width: 420, maxWidth: '90vw', height: '100%', background: 'var(--t-surf)', boxShadow: '-8px 0 30px rgba(0,0,0,0.2)', padding: 26, display: 'flex', flexDirection: 'column', gap: 16, overflowY: 'auto' }}>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -47,6 +50,7 @@ export function SubtaskPanel({ parentId, subId, onClose, onExpand }: Props) {
         </div>
 
         <input value={sub.title} onChange={e => updateSubtask(parentId, subId, { title: e.target.value })}
+          placeholder="Title"
           style={{ border: 'none', outline: 'none', fontSize: 19, fontWeight: 700, padding: 0, background: 'transparent', color: sub.done ? 'var(--t-muted)' : 'var(--t-txt)', textDecoration: sub.done ? 'line-through' : 'none' }} />
 
         <div style={{ fontSize: 12, color: 'var(--t-muted)', padding: '8px 12px', background: 'var(--t-surf2)', borderRadius: 8, border: '1px solid var(--t-brd)' }}>
@@ -62,6 +66,8 @@ export function SubtaskPanel({ parentId, subId, onClose, onExpand }: Props) {
         <div><div style={lbl}>General link</div>
           <input value={sub.generalLink ?? ''} onChange={e => updateSubtask(parentId, subId, { generalLink: e.target.value })} placeholder="Any URL or reference" style={inp} />
         </div>
+
+        <SubtaskChecklist parentId={parentId} sub={sub} />
 
         <div><div style={lbl}>Notes</div>
           <textarea value={sub.notes} onChange={e => updateSubtask(parentId, subId, { notes: e.target.value })} rows={4} style={ta} />

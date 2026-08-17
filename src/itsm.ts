@@ -1,5 +1,5 @@
 import type { ItsmConfig } from './types';
-import { log } from './snapshots';
+import { loggedFetch } from './apiLog';
 
 /**
  * URL for opening an ITSM ticket. A configured custom URL wins: the ticket
@@ -38,22 +38,14 @@ export async function fetchSnTicket(cfg: ItsmConfig, ticket: string): Promise<Sn
   const host = cfg.host.replace(/^https?:\/\//, '').replace(/\/$/, '');
   const table = TABLE_BY_PREFIX.find(([re]) => re.test(ticket))?.[1] ?? 'incident';
   const url = `https://${host}/api/now/table/${table}?sysparm_query=number=${encodeURIComponent(ticket)}&sysparm_fields=state,sys_updated_on&sysparm_display_value=all&sysparm_limit=1`;
-  log('itsm:fetch-start', { url, ticket });
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      headers: {
-        Authorization: `Basic ${btoa(`${cfg.username ?? ''}:${cfg.apiToken ?? ''}`)}`,
-        Accept: 'application/json',
-      },
-    });
-  } catch (err) {
-    log('itsm:fetch-network-error', { url, error: err instanceof Error ? err.message : String(err) });
-    throw err;
-  }
-  log('itsm:fetch-complete', { url, status: res.status });
+  const { res, text } = await loggedFetch('itsm:fetch', url, {
+    headers: {
+      Authorization: `Basic ${btoa(`${cfg.username ?? ''}:${cfg.apiToken ?? ''}`)}`,
+      Accept: 'application/json',
+    },
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
+  const data = JSON.parse(text);
   const row = data.result?.[0];
   if (!row) throw new Error('Ticket not found');
   const status = (typeof row.state === 'object' ? row.state?.display_value : row.state) ?? '';

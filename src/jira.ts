@@ -1,5 +1,5 @@
 import type { JiraConfig } from './types';
-import { log } from './snapshots';
+import { loggedFetch } from './apiLog';
 
 function buildDescription(description: string, requestedBy: string) {
   const content: object[] = [];
@@ -52,36 +52,27 @@ export async function createJiraIssue(
   };
 
   const url = `https://${host}/rest/api/3/issue`;
-  log('jira:fetch-start', { url, projectKey: config.projectKey, summary: fields.summary });
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-  } catch (err) {
-    log('jira:fetch-network-error', { url, error: err instanceof Error ? err.message : String(err) });
-    throw err;
-  }
-  log('jira:fetch-complete', { url, status: res.status });
+  const { res, text } = await loggedFetch('jira:create', url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
 
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {
-      const err = await res.json();
+      const err = JSON.parse(text);
       if (err.errorMessages?.length) msg = err.errorMessages[0];
       else if (err.errors) msg = Object.values(err.errors).join(', ');
     } catch { /* ignore */ }
-    log('jira:fetch-http-error', { url, status: res.status, message: msg });
     throw new Error(msg);
   }
 
-  const data = await res.json();
+  const data = JSON.parse(text);
   return { key: data.key, url: `https://${host}/browse/${data.key}` };
 }
 
@@ -113,10 +104,9 @@ export async function closeJiraIssue(config: JiraConfig, issueKey: string): Prom
     Accept: 'application/json',
   };
 
-  log('jira:transitions-start', { url, issueKey });
-  const listRes = await fetch(url, { headers });
+  const { res: listRes, text: listText } = await loggedFetch('jira:transitions', url, { headers });
   if (!listRes.ok) throw new Error(`Couldn't list transitions: HTTP ${listRes.status}`);
-  const data = await listRes.json();
+  const data = JSON.parse(listText);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const transitions: any[] = data.transitions ?? [];
   const target =
@@ -124,8 +114,7 @@ export async function closeJiraIssue(config: JiraConfig, issueKey: string): Prom
     transitions.find(t => /done|closed?|resolved?/i.test(t.name ?? '') || /done|closed?|resolved?/i.test(t.to?.name ?? ''));
   if (!target) throw new Error('No close/resolve transition available from the ticket\'s current status');
 
-  log('jira:transition-post', { url, issueKey, transitionId: target.id, to: target.to?.name });
-  const postRes = await fetch(url, {
+  const { res: postRes, text: postText } = await loggedFetch('jira:transition-post', url, {
     method: 'POST',
     headers,
     body: JSON.stringify({ transition: { id: target.id } }),
@@ -133,7 +122,7 @@ export async function closeJiraIssue(config: JiraConfig, issueKey: string): Prom
   if (!postRes.ok) {
     let msg = `HTTP ${postRes.status}`;
     try {
-      const err = await postRes.json();
+      const err = JSON.parse(postText);
       if (err.errorMessages?.length) msg = err.errorMessages[0];
       else if (err.errors) msg = Object.values(err.errors).join(', ');
     } catch { /* ignore */ }
@@ -150,27 +139,19 @@ export async function addJiraComment(
   const host = config.host.replace(/^https?:\/\//, '').replace(/\/$/, '');
   const auth = btoa(`${config.username}:${config.apiToken}`);
   const url = `https://${host}/rest/api/3/issue/${issueKey}/comment`;
-  log('jira:comment-start', { url, issueKey });
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({ body: textToAdf(text) }),
-    });
-  } catch (err) {
-    log('jira:comment-network-error', { url, error: err instanceof Error ? err.message : String(err) });
-    throw err;
-  }
-  log('jira:comment-complete', { url, status: res.status });
+  const { res, text: respText } = await loggedFetch('jira:comment', url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ body: textToAdf(text) }),
+  });
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {
-      const err = await res.json();
+      const err = JSON.parse(respText);
       if (err.errorMessages?.length) msg = err.errorMessages[0];
       else if (err.errors) msg = Object.values(err.errors).join(', ');
     } catch { /* ignore */ }
