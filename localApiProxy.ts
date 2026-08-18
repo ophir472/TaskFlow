@@ -60,6 +60,9 @@ function forward(req: IncomingMessage, res: ServerResponse): void {
   delete headers.referer;
   delete headers.cookie;
   delete headers.connection;
+  // A browser User-Agent trips Jira DC's XSRF filter (403 "XSRF check
+  // failed") on POSTs; a neutral UA marks this as the API client it is.
+  headers['user-agent'] = 'TaskFlow-local-proxy';
 
   const options: https.RequestOptions = {
     host,

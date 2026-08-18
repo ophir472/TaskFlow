@@ -44,6 +44,8 @@ export async function createJiraIssue(
     method: 'POST',
     headers: {
       Authorization: authHeader(config),
+      // Jira DC's XSRF filter 403s browser-looking POSTs without this.
+      'X-Atlassian-Token': 'no-check',
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
@@ -75,6 +77,8 @@ export async function closeJiraIssue(config: JiraConfig, issueKey: string): Prom
   const url = `https://${host}/rest/api/2/issue/${issueKey}/transitions`;
   const headers = {
     Authorization: authHeader(config),
+    // Jira DC's XSRF filter 403s browser-looking POSTs without this.
+    'X-Atlassian-Token': 'no-check',
     'Content-Type': 'application/json',
     Accept: 'application/json',
   };
@@ -117,6 +121,8 @@ export async function addJiraComment(
     method: 'POST',
     headers: {
       Authorization: authHeader(config),
+      // Jira DC's XSRF filter 403s browser-looking POSTs without this.
+      'X-Atlassian-Token': 'no-check',
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
