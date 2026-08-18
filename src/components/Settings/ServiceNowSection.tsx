@@ -152,7 +152,7 @@ export function ServiceNowSection() {
               // blur: otherwise the browser focus ring on the previously
               // clicked button looks like a second "active" border
               onClick={e => { e.currentTarget.blur(); setDefaultsOpen(cur => cur === ty ? null : ty); }}
-              style={{ ...smallAdd, ...(defaultsOpen === ty ? { borderColor: 'var(--t-acc)', color: 'var(--t-acc-dk)', background: 'var(--t-acc-bg)' } : {}) }}>
+              style={{ ...smallAdd, ...(defaultsOpen === ty ? { border: '1px solid var(--t-acc)', color: 'var(--t-acc-dk)', background: 'var(--t-acc-bg)' } : {}) }}>
               {ty} default
             </button>
           ))}
