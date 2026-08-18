@@ -73,7 +73,7 @@ interface AppState {
   updateItem: (id: string, patch: Partial<Item>) => void;
   updateTask: (id: string, patch: Partial<Task>) => void;
   updateSubtask: (parentId: string, subId: string, patch: Partial<Subtask>) => void;
-  addSubtask: (parentId: string, title: string, opts?: { isQuick?: boolean }) => void;
+  addSubtask: (parentId: string, title: string, opts?: { isQuick?: boolean; isNext?: boolean }) => void;
   deleteSubtask: (parentId: string, subId: string) => void;
   toggleTag: (id: string, key: 'urgent' | 'important' | 'quick' | 'noTag') => void;
   toggleSubtaskDone: (parentId: string, subId: string) => void;
@@ -107,6 +107,7 @@ interface AppState {
   setItsmConfig: (config: ItsmConfig | null) => void;
   setItsmSyncInfo: (taskId: string, info: { status: string; updatedOn: number }) => void;
   markItsmViewed: (taskId: string) => void;
+  markTaskPlanned: (taskId: string, planned: boolean) => void;
   setAiConfig: (patch: Partial<AiConfig>) => void;
   addNotebook: (name: string) => void;
   renameNotebook: (id: string, name: string) => void;
@@ -305,7 +306,7 @@ export const useStore = create<AppState>()(
         set(s => ({
           items: s.items.map(it =>
             it.id === parentId && it.kind === 'task'
-              ? { ...it, subtasks: [...it.subtasks, { id, title, done: false, isNext: false, jira: '', generalLink: '', notes: '', blockers: '', ...(opts?.isQuick ? { isQuick: true } : {}), createdAt: Date.now() }], updatedAt: Date.now() }
+              ? { ...it, subtasks: [...it.subtasks, { id, title, done: false, isNext: !!opts?.isNext, jira: '', generalLink: '', notes: '', blockers: '', ...(opts?.isQuick ? { isQuick: true } : {}), createdAt: Date.now() }], updatedAt: Date.now() }
               : it
           ),
           history: pushHistory(s.history, { ts: Date.now(), type: 'addSubtask', id: parentId })
@@ -536,6 +537,10 @@ export const useStore = create<AppState>()(
       markItsmViewed: (taskId) => {
         slog('itsm:viewed', { id: taskId });
         set(s => ({ items: s.items.map(i => i.id === taskId ? { ...i, itsmViewedAt: Date.now() } : i) }));
+      },
+      markTaskPlanned: (taskId, planned) => {
+        slog('task:planned', { id: taskId, planned });
+        set(s => ({ items: s.items.map(i => i.id === taskId ? { ...i, plannedAt: planned ? Date.now() : undefined } : i) }));
       },
       addNotebook: (name) => {
         const id = 'nb' + Date.now() + Math.random().toString(36).slice(2, 5);

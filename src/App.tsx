@@ -18,6 +18,8 @@ import { GreenPlay } from './components/GreenPlay/GreenPlay';
 import { SnCreateMenu } from './components/ServiceNow/SnCreateMenu';
 import { MailAssistant } from './components/Mail/MailAssistant';
 import { SprintMode } from './components/Sprint/SprintMode';
+import { PlanPopup } from './components/Plan/PlanPopup';
+import { Play } from './components/Play/Play';
 import { ReminderPopup } from './components/ReminderPopup/ReminderPopup';
 import { Toast } from './components/Toast/Toast';
 import { restoreFromData, pickAndRegisterRestoreFile } from './backup';
@@ -25,6 +27,7 @@ import { writeSnapshot, writeLiveFile, readLiveFile, log, logDebug, getDebugMode
 import type { IntegrityResult, ChangeSummary } from './snapshots';
 import { Confetti } from './components/Confetti';
 import { nextOccurrence } from './scheduleEngine';
+import { buildQueue } from './engine';
 
 export type SyncState = 'idle' | 'syncing' | 'saved';
 
@@ -127,6 +130,8 @@ export default function App() {
   const [snMenuOpen, setSnMenuOpen] = useState(false);
   const [mailOpen, setMailOpen] = useState(false);
   const [sprintOpen, setSprintOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [playTaskId, setPlayTaskId] = useState<string | null>(null);
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -347,6 +352,8 @@ export default function App() {
       setSnMenuOpen(seg === 'sncreate');
       setMailOpen(seg === 'mail');
       setSprintOpen(seg === 'sprint');
+      setPlanOpen(seg === 'plan');
+      setPlayTaskId(seg === 'play' ? (window.location.hash.slice(1).split('/')[1] ?? null) : null);
       // Snapshot on every navigation. Async, non-blocking.
       writeSnapshot().then(written => {
         if (written) log('snapshot:navigate', { hash: window.location.hash });
@@ -368,7 +375,7 @@ export default function App() {
   useEffect(() => {
     if (!viewUrlSynced.current) { viewUrlSynced.current = true; return; }
     const currentSeg = window.location.hash.slice(1).split('/')[0];
-    if (currentSeg === 'review' || currentSeg === 'sncreate' || currentSeg === 'mail' || currentSeg === 'sprint') return;
+    if (currentSeg === 'review' || currentSeg === 'sncreate' || currentSeg === 'mail' || currentSeg === 'sprint' || currentSeg === 'plan' || currentSeg === 'play') return;
     if (currentSeg !== view) window.location.hash = view;
   }, [view]);
 
@@ -393,6 +400,14 @@ export default function App() {
   const closeSprint = useCallback(() => {
     if (window.location.hash.slice(1).split('/')[0] === 'sprint') history.back();
     else setSprintOpen(false);
+  }, []);
+  const closePlan = useCallback(() => {
+    if (window.location.hash.slice(1).split('/')[0] === 'plan') history.back();
+    else setPlanOpen(false);
+  }, []);
+  const closePlay = useCallback(() => {
+    if (window.location.hash.slice(1).split('/')[0] === 'play') history.back();
+    else setPlayTaskId(null);
   }, []);
 
   // Apply theme CSS variables
@@ -468,6 +483,24 @@ export default function App() {
     };
   }, [checkRemindersDue, checkHoldsDue]);
 
+  // Esc while typing in ANY field: first press just unfocuses it (so the
+  // plain-key shortcuts work again); overlays close on the NEXT press.
+  // Registered on document at App mount — runs before later-mounted overlay
+  // listeners; field-level Esc handlers (React, at #root) still run first.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
+        t.blur();
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     function handler(e: KeyboardEvent) {
@@ -488,6 +521,20 @@ export default function App() {
           setSpotlightOpen(true);
         }
       }
+      // Shift+S / Shift+P — enter Play for the current feed card.
+      if (!meta && !e.altKey && e.shiftKey && (e.code === 'KeyS' || e.code === 'KeyP')) {
+        const t = e.target as HTMLElement | null;
+        const typing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+        if (!typing) {
+          const st = useStore.getState();
+          const cur = (st.displayId ? st.items.find(it => it.id === st.displayId) : null) ?? buildQueue(st.items)[0];
+          if (cur && cur.kind === 'task') {
+            e.preventDefault();
+            if (window.location.hash.slice(1).split('/')[0] !== 'play') window.location.hash = `play/${cur.id}`;
+          }
+        }
+        return;
+      }
       // Plain-key shortcuts — skip while typing into a form control or when
       // a modifier is held (Cmd-R reload, Cmd-1 browser tabs, etc. untouched).
       if (!meta && !e.altKey && !e.shiftKey) {
@@ -501,8 +548,21 @@ export default function App() {
         if (onFormControl) return;
         // 'm' opens the mail assistant.
         if (e.key === 'm' || e.code === 'KeyM') {
+          // Play and Sprint own 'm' (communication linked to the open item).
+          {
+            const seg = window.location.hash.slice(1).split('/')[0];
+            if (seg === 'play' || seg === 'sprint') return;
+          }
           e.preventDefault();
           if (window.location.hash.slice(1).split('/')[0] !== 'mail') window.location.hash = 'mail';
+          return;
+        }
+        // 'p' opens Plan — unless the mail assistant is open (it owns
+        // 'p' for starting its preview walkthrough).
+        if (e.key === 'p' || e.code === 'KeyP') {
+          if (window.location.hash.slice(1).split('/')[0] === 'mail') return;
+          e.preventDefault();
+          if (window.location.hash.slice(1).split('/')[0] !== 'plan') window.location.hash = 'plan';
           return;
         }
         // 's' opens Sprint (war mode).
@@ -631,6 +691,8 @@ export default function App() {
       {snMenuOpen && <SnCreateMenu onClose={closeSnMenu} />}
       {mailOpen && <MailAssistant onClose={closeMail} />}
       {sprintOpen && <SprintMode onClose={closeSprint} />}
+      {planOpen && <PlanPopup onClose={closePlan} />}
+      {playTaskId && <Play taskId={playTaskId} onClose={closePlay} />}
       {spotlightOpen && <Spotlight onClose={() => setSpotlightOpen(false)} onToast={toastTimer} />}
       {pendingReminderIds.length > 0 && <ReminderPopup />}
     </div>{/* end sidebar+content wrapper */}

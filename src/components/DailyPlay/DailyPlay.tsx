@@ -1,11 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { backdropCloseProps } from '../../backdrop';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { parseEstimate, formatMinutes } from '../../estimateParser';
 import { jiraTicketUrl } from '../../jiraHosts';
-import { TaskModal } from '../TaskModal/TaskModal';
-import { SubtaskPanel } from '../SubtaskPanel/SubtaskPanel';
 
 interface Props {
   onClose: () => void;
@@ -20,6 +18,12 @@ export function DailyPlay({ onClose }: Props) {
   const updateItem = useStore(s => s.updateItem);
   const updateSubtask = useStore(s => s.updateSubtask);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const todayTasks: Task[] = useMemo(
     () => items.filter(it => it.kind === 'task' && !it.archived && (it as Task).forToday) as Task[],
     [items],
@@ -33,8 +37,7 @@ export function DailyPlay({ onClose }: Props) {
   const [showCompleted, setShowCompleted] = useState(false);
   const [hiddenSubIds, setHiddenSubIds] = useState<Set<string>>(new Set());
   // Click-to-open popups (state-driven — no URL routing inside this overlay).
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
-  const [openSub, setOpenSub] = useState<{ parentId: string; subId: string } | null>(null);
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   function hideSub(subId: string) {
     setHiddenSubIds(prev => new Set(prev).add(subId));
     // A hidden row shouldn't keep counting toward the day's total.
@@ -114,9 +117,13 @@ export function DailyPlay({ onClose }: Props) {
                     <>
                       {/* Parent task row (no triangle — triangles only on subtasks) */}
                       <tr key={t.id} style={{ borderTop: '1px solid var(--t-brd)' }}>
-                        <td style={{ ...td, textAlign: 'center', color: 'var(--t-muted)' }}>·</td>
+                        <td style={{ ...td, textAlign: 'center' }}>
+                          <span onClick={() => setCollapsedIds(prev => { const n = new Set(prev); if (n.has(t.id)) n.delete(t.id); else n.add(t.id); return n; })}
+                            title={collapsedIds.has(t.id) ? 'Expand' : 'Collapse'}
+                            style={{ cursor: 'pointer', display: 'inline-block', fontSize: 12, color: 'var(--t-muted)', userSelect: 'none', transform: collapsedIds.has(t.id) ? 'none' : 'rotate(90deg)', transition: 'transform 0.15s' }}>▸</span>
+                        </td>
                         <td style={{ ...td, fontWeight: 600 }}>
-                          <span onClick={() => setOpenTaskId(t.id)} title="Open task"
+                          <span onClick={() => { window.location.hash = `table/task/${t.id}`; }} title="Open task"
                             style={{ cursor: 'pointer' }}
                             onMouseEnter={e => (e.currentTarget.style.color = 'var(--t-acc-dk)')}
                             onMouseLeave={e => (e.currentTarget.style.color = '')}>
@@ -150,10 +157,10 @@ export function DailyPlay({ onClose }: Props) {
                       {/* Subtask rows (indented, with triangle). Completed ones
                           are hidden unless toggled; manually hidden stay out
                           for the rest of this session. */}
-                      {t.subtasks.filter(sub => !hiddenSubIds.has(sub.id) && (showCompleted || !sub.done)).map(sub => {
+                      {!collapsedIds.has(t.id) && t.subtasks.filter(sub => !hiddenSubIds.has(sub.id) && (showCompleted || !sub.done)).map(sub => {
                         const marked = markedSubIds.has(sub.id);
                         return (
-                          <tr key={sub.id} style={{ background: marked ? 'oklch(0.96 0.05 150)' : 'transparent' }}>
+                          <tr key={sub.id} style={{ background: marked ? 'color-mix(in oklab, var(--t-success) 6%, var(--t-surf))' : 'transparent' }}>
                             <td style={{ ...td, textAlign: 'center', paddingLeft: 8 }}>
                               <span
                                 onClick={() => toggleMark(sub.id)}
@@ -161,7 +168,7 @@ export function DailyPlay({ onClose }: Props) {
                                 style={{
                                   display: 'inline-block', cursor: 'pointer',
                                   fontSize: 15, lineHeight: 1, userSelect: 'none',
-                                  color: marked ? 'oklch(0.5 0.13 150)' : 'var(--t-brd)',
+                                  color: marked ? 'var(--t-success)' : 'var(--t-muted)',
                                   transition: 'color 0.12s',
                                 }}>
                                 {marked ? '▶' : '▷'}
@@ -169,7 +176,7 @@ export function DailyPlay({ onClose }: Props) {
                             </td>
                             <td style={{ ...td, paddingLeft: 32, color: sub.done ? 'var(--t-muted)' : 'var(--t-txt2)', textDecoration: sub.done ? 'line-through' : 'none' }}>
                               <span style={{ color: 'var(--t-muted)', marginRight: 8 }}>↳</span>
-                              <span onClick={() => setOpenSub({ parentId: t.id, subId: sub.id })} title="Open subtask"
+                              <span onClick={() => { window.location.hash = `table/task/${t.id}`; window.location.hash = `table/task/${t.id}/sub/${sub.id}`; }} title="Open subtask"
                                 style={{ cursor: 'pointer' }}
                                 onMouseEnter={e => (e.currentTarget.style.color = 'var(--t-acc-dk)')}
                                 onMouseLeave={e => (e.currentTarget.style.color = '')}>
@@ -205,9 +212,9 @@ export function DailyPlay({ onClose }: Props) {
                               <span
                                 onClick={() => hideSub(sub.id)}
                                 title="Hide for this session"
-                                style={{ cursor: 'pointer', fontSize: 15, color: 'var(--t-brd)', lineHeight: 1, userSelect: 'none' }}
-                                onMouseEnter={e => (e.currentTarget.style.color = 'var(--t-muted)')}
-                                onMouseLeave={e => (e.currentTarget.style.color = 'var(--t-brd)')}>
+                                style={{ cursor: 'pointer', fontSize: 15, color: 'var(--t-muted)', lineHeight: 1, userSelect: 'none' }}
+                                onMouseEnter={e => (e.currentTarget.style.color = 'var(--t-txt2)')}
+                                onMouseLeave={e => (e.currentTarget.style.color = 'var(--t-muted)')}>
                                 ⊖
                               </span>
                             </td>
@@ -246,16 +253,6 @@ export function DailyPlay({ onClose }: Props) {
 
       {/* Task / subtask popups — wrapped so their backdrop clicks don't
           bubble to the Daily backdrop and close everything. */}
-      {openTaskId && (
-        <div onClick={e => e.stopPropagation()}>
-          <TaskModal taskId={openTaskId} onClose={() => setOpenTaskId(null)} urlDriven={false} />
-        </div>
-      )}
-      {openSub && (
-        <div onClick={e => e.stopPropagation()}>
-          <SubtaskPanel parentId={openSub.parentId} subId={openSub.subId} onClose={() => setOpenSub(null)} />
-        </div>
-      )}
     </div>
   );
 }

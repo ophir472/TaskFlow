@@ -328,6 +328,8 @@ export function Table() {
       } else if (e.key === 'Enter' && focusedIdxRef.current >= 0) {
         const item = rowsRef.current[focusedIdxRef.current];
         if (item) openTask(item.id);
+      } else if (e.key === 'd' || e.code === 'KeyD') {
+        setDailyOpen(true);
       }
     }
     document.addEventListener('keydown', onKeyDown);

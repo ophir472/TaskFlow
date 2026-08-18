@@ -1,6 +1,7 @@
 import { useStore, type View } from '../../store';
 import type { SyncState } from '../../App';
 import { flaggedTasks } from '../../greenPlay';
+import type { Task } from '../../types';
 
 const NAV: { key: View; label: string; icon: string }[] = [
   { key: 'feed', label: 'Card Feed', icon: '🂡' },
@@ -33,6 +34,13 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
   // that aren't in the session yet (they'll be appended by
   // syncReviewSessionWithFlags when the popup mounts).
   const mailCount = items.filter(it => it.kind === 'task' && it.type === 'mail' && !it.archived).length;
+  // Plan badge counts today's tasks still AWAITING planning — a task marked
+  // planned (plannedAt today) leaves the count, so it hits 0 when done.
+  const sod = new Date(); sod.setHours(0, 0, 0, 0);
+  const todayCount = items.filter(it =>
+    it.kind === 'task' && (it as Task).forToday && !it.archived &&
+    ((it as Task).plannedAt ?? 0) < sod.getTime()
+  ).length;
   const flaggedCount = (() => {
     const flagged = flaggedTasks(items);
     if (!reviewSession) return flagged.length;
@@ -198,6 +206,24 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
             background: 'rgba(255,255,255,0.25)', color: 'white',
             lineHeight: 1,
           }}>{flaggedCount}</span>
+        )}
+      </button>
+
+      {/* Plan — write today's steps */}
+      <button
+        onClick={e => { e.stopPropagation(); window.location.hash = 'plan'; }}
+        title={collapsed ? `Plan (${todayCount} today)` : 'Write the steps for today\'s tasks'}
+        style={{
+          border: '1px solid var(--t-kind-reminder)', background: 'var(--t-kind-reminder-bg)', color: 'var(--t-kind-reminder)',
+          fontSize: collapsed ? 15 : 13, fontWeight: 600,
+          padding: collapsed ? '7px 0' : '8px 14px', borderRadius: 9, cursor: 'pointer',
+          marginBottom: 8, whiteSpace: 'nowrap', overflow: 'hidden', width: '100%', lineHeight: 1,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        }}>
+        <span style={{ fontSize: collapsed ? 14 : 12 }}>◷</span>
+        {!collapsed && <span>Plan</span>}
+        {!collapsed && todayCount > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'var(--t-kind-reminder)', color: 'var(--t-surf)' }}>{todayCount}</span>
         )}
       </button>
 

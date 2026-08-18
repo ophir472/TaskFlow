@@ -22,7 +22,9 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       { keys: ['r'], what: 'Start the Green Play review' },
       { keys: ['m'], what: 'Open the communication assistant' },
       { keys: ['s'], what: 'Start Sprint (war mode)' },
-      { keys: ['Esc'], what: 'Close any popup / overlay' },
+      { keys: ['p'], what: "Open Plan — write today's steps (inside the mail assistant, p starts its preview instead)" },
+      { keys: ['Shift', 'S'], what: 'Enter Play (focus mode) for the current card — Shift+P does the same' },
+      { keys: ['Esc'], what: 'While typing: unfocus the field (shortcuts work again). Otherwise: close any popup / overlay' },
     ],
   },
   {
@@ -30,6 +32,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     rows: [
       { keys: ['↑', '↓'], what: 'Move row focus' },
       { keys: ['Enter'], what: 'Open the focused task' },
+      { keys: ['d'], what: 'Open the Daily view (Table page only)' },
     ],
   },
   {
@@ -46,6 +49,21 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     ],
   },
   {
+    title: 'Card feed',
+    rows: [
+      { keys: ['Enter'], what: 'Continue — next card (right arrow button)' },
+      { keys: ['Shift', 'Enter'], what: 'Back to the previous card (left arrow button)' },
+    ],
+  },
+  {
+    title: 'Play focus mode',
+    rows: [
+      { keys: ['Space'], what: 'Step done → star the next step' },
+      { keys: ['m'], what: 'Create a communication linked to this task and open it in the assistant' },
+      { keys: ['Esc'], what: 'Exit Play' },
+    ],
+  },
+  {
     title: 'Review (Green Play)',
     rows: [
       { keys: ['Space', '/', '→', '↓'], what: 'Advance a step' },
@@ -57,6 +75,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     rows: [
       { keys: ['←', '→'], what: 'Previous / next item (without marking done or skipped)' },
       { keys: ['click title'], what: 'Expand / collapse the item context' },
+      { keys: ['m'], what: 'Create a communication linked to the current item, on top of Sprint' },
     ],
   },
   {

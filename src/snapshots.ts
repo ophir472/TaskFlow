@@ -870,7 +870,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'restore:start', 'restore:complete', 'restore:failed', 'item:import',
     'snapshot-dir:configured',
     'review:mark-task', 'review:begin', 'review:end', 'review:extend',
-    'itsm:sync', 'itsm:viewed',
+    'itsm:sync', 'itsm:viewed', 'task:planned',
     'ai:request', 'ai:response', 'ai:error',
   ]);
 

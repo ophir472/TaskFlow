@@ -292,6 +292,10 @@ export interface Task {
   itsmStatus?: string;
   itsmUpdatedOn?: number;
   itsmViewedAt?: number;
+  // When planning for this task was marked complete in the Plan popup.
+  // Today-scoped: only a stamp from today counts as "planned". Set QUIETLY
+  // (no updatedAt bump) so planning doesn't re-flag the task for review.
+  plannedAt?: number;
   // When the notes field last changed. Store-derived (set by updateItem), so
   // features like the review's update-summary prefill never need to consult
   // the forensic logs — logs are logs, not a functional dependency.

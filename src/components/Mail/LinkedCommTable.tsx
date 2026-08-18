@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
-import { nextId } from '../../engine';
+import { buildMailEntry } from '../../mailEntry';
 
 interface Props {
   task: Task;
@@ -33,15 +33,7 @@ export function LinkedCommTable({ task }: Props) {
   function addEntry() {
     const v = newRow.trim();
     if (!v) return;
-    const now = Date.now();
-    createItem({
-      id: nextId('t'), kind: 'task', type: 'mail', linkedTaskId: task.id, title: v,
-      description: '', notes: '', blockers: '', generalLink: '', jiraLink: '',
-      requester: '', project: '', status: 'backlog',
-      urgent: false, important: false, quick: false, noTag: true, noJira: true,
-      forToday: false, toCheck: '', priorityBoost: false, subtasks: [],
-      bumpedAt: now, staleness: 0, createdAt: now, updatedAt: now, archived: false,
-    });
+    createItem(buildMailEntry(v, task.id));
     setNewRow('');
     setOpen(true);
   }

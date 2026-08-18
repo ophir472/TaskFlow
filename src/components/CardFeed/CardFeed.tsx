@@ -256,6 +256,12 @@ export function CardFeed({ onToast }: Props) {
     setDisplayId(queue[(idx + 1) % queue.length].id);
   }, [current, queue, continueItem, setDisplayId]);
 
+  const handleBack = useCallback(() => {
+    if (!current || queue.length <= 1) return;
+    const idx = queue.findIndex(it => it.id === current.id);
+    setDisplayId(queue[(idx - 1 + queue.length) % queue.length].id);
+  }, [current, queue, setDisplayId]);
+
   // Enter → Continue, Shift+Enter → go back (when no input/textarea is focused)
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -263,17 +269,12 @@ export function CardFeed({ onToast }: Props) {
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       e.preventDefault();
-      if (e.shiftKey) {
-        if (!current || queue.length <= 1) return;
-        const idx = queue.findIndex(it => it.id === current.id);
-        setDisplayId(queue[(idx - 1 + queue.length) % queue.length].id);
-      } else {
-        handleContinue();
-      }
+      if (e.shiftKey) handleBack();
+      else handleContinue();
     }
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [handleContinue, current, queue, setDisplayId]);
+  }, [handleContinue, handleBack]);
 
   const handleHoldConfirm = () => {
     if (!current) return;
@@ -793,7 +794,7 @@ export function CardFeed({ onToast }: Props) {
       <div style={{
         position: 'fixed', bottom: 0, left: sidebarCollapsed ? 44 : 220, right: 0,
         transition: 'left 0.15s ease',
-        background: 'var(--t-surf)', borderTop: '1px solid var(--t-brd)', zIndex: 40,
+        background: 'color-mix(in oklab, var(--t-surf) 82%, transparent)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', borderTop: '1px solid var(--t-brd2)', zIndex: 40,
         padding: '0 36px',
       }}>
         {/* Hold panel — expands above the bar */}
@@ -814,25 +815,37 @@ export function CardFeed({ onToast }: Props) {
           </div>
         )}
 
-        {/* Action buttons row — search lives in the Explore tab (Cmd+F) */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '10px 0' }}>
-          <div style={{ flex: 1 }} />
-          {current && (
-            <>
-              <button onClick={handleContinue} disabled={queue.length <= 1}
-                style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9, opacity: queue.length <= 1 ? 0.4 : 1, cursor: queue.length <= 1 ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
-                Continue
-              </button>
-              <button onClick={() => { setHoldOpen(o => !o); setHoldSchedule(null); }}
-                style={{ border: '1px solid var(--t-brd)', background: holdOpen ? 'var(--t-surf2)' : 'var(--t-surf)', color: 'var(--t-txt)', fontSize: 14, fontWeight: 600, padding: '11px 18px', borderRadius: 9, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {holdButtonLabel}
-              </button>
-              <button onClick={handleComplete}
-                style={{ border: 'none', background: 'var(--t-success)', color: 'white', fontSize: 14, fontWeight: 600, padding: '11px 20px', borderRadius: 9, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                {completeLabel}
-              </button>
-            </>
-          )}
+        {/* Transport row — thin frosted light strip, minimal icon buttons,
+            green play circle center */}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '5px 0', minHeight: 44 }}>
+          {current && (() => {
+            const ghost: React.CSSProperties = { width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'transparent', color: 'var(--t-muted)', lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, transition: 'color 0.1s, background 0.1s' };
+            const hover = {
+              onMouseEnter: (e: React.MouseEvent) => { const el = e.currentTarget as HTMLElement; el.style.color = 'var(--t-txt)'; el.style.background = 'var(--t-surf2)'; },
+              onMouseLeave: (e: React.MouseEvent) => { const el = e.currentTarget as HTMLElement; el.style.color = 'var(--t-muted)'; el.style.background = 'transparent'; },
+            };
+            return (
+              <>
+                <button onClick={handleBack} disabled={queue.length <= 1} title="Previous card (Shift+Enter)" {...hover}
+                  style={{ ...ghost, fontSize: 16, opacity: queue.length <= 1 ? 0.35 : 1, cursor: queue.length <= 1 ? 'default' : 'pointer' }}>←</button>
+                <div style={{ flex: 1 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <button onClick={() => { setHoldOpen(o => !o); setHoldSchedule(null); }} title={holdButtonLabel} {...hover}
+                    style={{ ...ghost, fontSize: 14, ...(holdOpen ? { color: 'var(--t-txt)', background: 'var(--t-surf2)' } : {}) }}>⏸</button>
+                  {current.kind === 'task' && (
+                    <button onClick={() => { window.location.hash = `play/${current.id}`; }} title="Play — focus on the next step"
+                      style={{ width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'var(--t-success)', color: 'white', fontSize: 12.5, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0, boxShadow: '0 2px 8px color-mix(in oklab, var(--t-success) 40%, transparent)' }}>
+                      <span style={{ transform: 'translateX(1px)', display: 'block' }}>▶</span></button>
+                  )}
+                  <button onClick={handleComplete} title={completeLabel} {...hover}
+                    style={{ ...ghost, fontSize: 15 }}>🎉</button>
+                </div>
+                <div style={{ flex: 1 }} />
+                <button onClick={handleContinue} disabled={queue.length <= 1} title="Continue (Enter)" {...hover}
+                  style={{ ...ghost, fontSize: 16, opacity: queue.length <= 1 ? 0.35 : 1, cursor: queue.length <= 1 ? 'default' : 'pointer' }}>→</button>
+              </>
+            );
+          })()}
         </div>
       </div>
 
