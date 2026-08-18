@@ -95,7 +95,9 @@ export async function loggedFetch(
   }
 
   const text = await res.text();
-  const respInfo = { status: res.status, statusText: res.statusText, via, ms: Date.now() - started, body: safeParse(text) };
+  const resHeaders: Record<string, string> = {};
+  res.headers.forEach((v, k) => { resHeaders[k] = k.toLowerCase() === 'set-cookie' ? '«redacted»' : v; });
+  const respInfo = { status: res.status, statusText: res.statusText, via, ms: Date.now() - started, headers: resHeaders, body: safeParse(text) };
   if (res.ok) console.log('response', respInfo);
   else console.warn('response (error)', respInfo);
   console.groupEnd();

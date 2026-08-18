@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
 import type { JiraConfig } from '../../types';
+import { testJiraAuth } from '../../jira';
 
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
 const fi: React.CSSProperties = { fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)', width: '100%', boxSizing: 'border-box' };
@@ -64,6 +65,7 @@ export function JiraHostsSection() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState<boolean>(jiraConfigs.length === 0);
   const [draft, setDraft] = useState<DraftEntry>(EMPTY_DRAFT);
+  const [testResult, setTestResult] = useState<string | null>(null);
 
   function startAdd() {
     setAdding(true);
@@ -71,6 +73,7 @@ export function JiraHostsSection() {
     setDraft(EMPTY_DRAFT);
   }
   function startEdit(c: JiraConfig) {
+    setTestResult(null);
     setEditingId(c.id);
     setAdding(false);
     setDraft({
@@ -81,6 +84,7 @@ export function JiraHostsSection() {
     });
   }
   function cancelForm() {
+    setTestResult(null);
     setEditingId(null);
     setAdding(false);
     setDraft(EMPTY_DRAFT);
@@ -260,10 +264,30 @@ export function JiraHostsSection() {
             <input value={draft.createUrlTemplate} onChange={e => setDraft(d => ({ ...d, createUrlTemplate: e.target.value }))}
               placeholder="https://host/secure/CreateIssueDetails!init.jspa?pid=10000&issuetype=3&priority=3&assignee=me&components=…" style={fi} />
             <div style={{ fontSize: 11.5, color: 'var(--t-muted)', marginTop: 4 }}>
-              When set, <b>Create in Jira</b> opens this URL in a new tab instead of calling the API — put pid, issuetype, priority, assignee, component etc. directly in the URL; the fields above are ignored for creation (credentials still power comments / close / update). Use <b>{'{summary}'}</b> and <b>{'{description}'}</b> placeholders, or omit them and both are appended automatically.
+              Fallback: <b>Create in Jira</b> calls the API first; only when the API is unreachable does this URL open in a new tab, pre-filled — put pid, issuetype, priority, assignee, component etc. directly in the URL. Use <b>{'{summary}'}</b> and <b>{'{description}'}</b> placeholders, or omit them and both are appended automatically.
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              disabled={!draft.host.trim() || !draft.apiToken.trim()}
+              onClick={async () => {
+                setTestResult('Testing…');
+                try {
+                  const who = await testJiraAuth({ ...draft, id: 'test', isDefault: false });
+                  setTestResult(`✓ Authenticated as ${who}`);
+                } catch (err) {
+                  setTestResult(`✗ ${err instanceof Error ? err.message : String(err)}`);
+                }
+              }}
+              style={{ ...ghostBtn, opacity: draft.host.trim() && draft.apiToken.trim() ? 1 : 0.5 }}>
+              Test connection
+            </button>
+            {testResult && (
+              <span style={{ fontSize: 12, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: testResult.startsWith('✓') ? 'var(--t-success)' : testResult.startsWith('✗') ? 'oklch(0.5 0.19 25)' : 'var(--t-muted)' }} title={testResult}>
+                {testResult}
+              </span>
+            )}
+            {!testResult && <div style={{ flex: 1 }} />}
             <button onClick={cancelForm} style={ghostBtn}>Cancel</button>
             <button onClick={saveForm} disabled={!canSave}
               style={{ ...addBtn, opacity: canSave ? 1 : 0.5, cursor: canSave ? 'pointer' : 'not-allowed' }}>

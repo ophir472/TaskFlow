@@ -133,3 +133,22 @@ export async function addJiraComment(
     throw new Error(msg);
   }
 }
+
+/**
+ * Auth self-test: GET /myself answers with the authenticated user when the
+ * credentials work, and carries the useful 401 diagnostics (WWW-Authenticate,
+ * X-Seraph-LoginReason) when they don't. Returns the display name.
+ */
+export async function testJiraAuth(config: JiraConfig): Promise<string> {
+  const host = config.host.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const url = `https://${host}/rest/api/2/myself`;
+  const { res, text } = await loggedFetch('jira:myself', url, {
+    headers: { Authorization: authHeader(config), Accept: 'application/json' },
+  });
+  if (!res.ok) {
+    const seraph = res.headers.get('x-seraph-loginreason');
+    throw new Error(`HTTP ${res.status}${seraph ? ` (${seraph})` : ''} — see [jira:myself] in the console for headers/body`);
+  }
+  const data = JSON.parse(text);
+  return data.displayName ?? data.name ?? 'authenticated';
+}
