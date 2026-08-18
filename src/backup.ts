@@ -97,6 +97,8 @@ const STATE_DEFAULTS: Record<string, unknown> = {
   snConfig: { incUrlTemplate: '', chgUrlTemplate: '', fieldSeparator: '^', fields: [], templates: [], defaultFieldValues: { INC: {}, CHG: {} } },
   aiConfig: { endpointUrl: '', format: 'openai', model: '', apiKey: '', extraHeaders: '', promptTemplate: '' },
   notebooks: [],
+  responsibilities: [],
+  reviewSession: null,
   tableVisibleCols: null,
   archiveVisibleCols: null,
   tableColWidths: {},

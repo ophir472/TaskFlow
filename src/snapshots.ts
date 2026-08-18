@@ -747,6 +747,7 @@ const COALESCE_DATA_EVENTS = new Set([
   'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'jira-board-url:set', 'jira-board:add', 'jira-board:update', 'jira-board:remove', 'itsm-config:set',
     'sn:urls', 'sn:field:add', 'sn:field:update', 'sn:field:remove', 'sn:default:set',
     'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
+    'task:update', 'task-order:set', 'manual-order:reset',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
     'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content',
@@ -776,8 +777,10 @@ function coalesceRapidEdits(events: LogRecord[]): LogRecord[] {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = (last.data ?? {}) as any;
       const isSameItemFieldEdit =
-        e.event === 'item:update' && last.event === 'item:update' &&
+        (e.event === 'item:update' || e.event === 'task:update') && e.event === last.event &&
         d.id === p.id && sameFields(d.fields, p.fields);
+      // Drag-reordering fires task-order:set per drop — one entry per burst.
+      const isSameOrderSet = e.event === 'task-order:set' && last.event === 'task-order:set';
       const isSameSubtaskFieldEdit =
         e.event === 'subtask:update' && last.event === 'subtask:update' &&
         d.parentId === p.parentId && d.subId === p.subId && sameFields(d.fields, p.fields);
@@ -803,7 +806,7 @@ function coalesceRapidEdits(events: LogRecord[]): LogRecord[] {
       const isSameDocRename =
         e.event === 'doc:page:rename' && last.event === 'doc:page:rename' &&
         d.pageId === p.pageId;
-      if (isSameItemFieldEdit || isSameSubtaskFieldEdit || isSameCustomValueEdit || isSameCommFieldEdit || isSameResize || isSameThemeEdit || isSameDocEdit || isSameDocRename) {
+      if (isSameItemFieldEdit || isSameSubtaskFieldEdit || isSameCustomValueEdit || isSameCommFieldEdit || isSameResize || isSameThemeEdit || isSameDocEdit || isSameDocRename || isSameOrderSet) {
         result[result.length - 1] = e;
         last = e;
         continue;
@@ -855,6 +858,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'jira-board-url:set', 'jira-board:add', 'jira-board:update', 'jira-board:remove', 'itsm-config:set',
     'sn:urls', 'sn:field:add', 'sn:field:update', 'sn:field:remove', 'sn:default:set',
     'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
+    'task:update', 'task-order:set', 'manual-order:reset',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
     'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
@@ -871,6 +875,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'snapshot-dir:configured',
     'review:mark-task', 'review:begin', 'review:end', 'review:extend',
     'itsm:sync', 'itsm:viewed', 'task:planned',
+    'table-cols:set', 'archive-cols:set', 'table-widths:set', 'archive-widths:set',
     'ai:request', 'ai:response', 'ai:error',
   ]);
 
@@ -888,6 +893,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'jira-config:set', 'jira-config:add', 'jira-config:update', 'jira-config:remove', 'jira-config:set-default', 'jira-open-mode:set', 'jira-board-url:set', 'jira-board:add', 'jira-board:update', 'jira-board:remove', 'itsm-config:set',
     'sn:urls', 'sn:field:add', 'sn:field:update', 'sn:field:remove', 'sn:default:set',
     'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
+    'task:update', 'task-order:set', 'manual-order:reset',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
     'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
@@ -921,6 +927,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
         s.itemsUnarchived++;
         s.details.push({ action: 'restored', title: titleFor(d.id) });
         break;
+      case 'task:update':
       case 'item:update':
         s.itemsUpdated++;
         s.details.push({ action: 'edited', title: titleFor(d.id), extra: Array.isArray(d.fields) ? d.fields.join(', ') : undefined });
@@ -1076,6 +1083,14 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
       case 'ai-config:set':
         s.otherChanges++;
         s.details.push({ action: 'updated AI settings', title: '' });
+        break;
+      case 'task-order:set':
+        s.otherChanges++;
+        s.details.push({ action: 'reordered tasks manually', title: '' });
+        break;
+      case 'manual-order:reset':
+        s.otherChanges++;
+        s.details.push({ action: 'reset manual task order', title: '' });
         break;
       case 'doc:notebook:add':
         s.otherChanges++;

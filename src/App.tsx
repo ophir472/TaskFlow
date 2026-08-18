@@ -189,6 +189,7 @@ export default function App() {
         s.itsmConfig !== prev.itsmConfig ||
         s.snConfig !== prev.snConfig ||
         s.aiConfig !== prev.aiConfig ||
+        s.notebooks !== prev.notebooks ||
         s.themeId !== prev.themeId ||
         s.customAccent !== prev.customAccent ||
         s.customBg !== prev.customBg ||

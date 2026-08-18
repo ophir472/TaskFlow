@@ -19,7 +19,7 @@ npm run preview    # preview the production build
 
 **`src/types.ts`** — all data types: `Task`, `Reminder`, `Responsibility`, `Subtask`, `Item` (union), `ChangeRecord`. Every item kind now has `priorityBoost: boolean` to allow the +100 Hold-return boost on all three kinds.
 
-**`src/engine.ts`** — pure functions: `scoreItem(item)`, `buildQueue(items)` (for-today override → needsTag tier → scored pool; the PRD's needs-Jira tier is currently absent — see Known drift), `nextId(prefix)`, `midnight()` (returns the UPCOMING midnight — the daily-reset deadline, NOT start-of-today).
+**`src/engine.ts`** — pure functions: `scoreItem(item)`, `buildQueue(items)` (for-today override → needsTag tier → scored pool; needs-Jira tier retired), `nextId(prefix)`, `midnight()` (returns the UPCOMING midnight — the daily-reset deadline, NOT start-of-today).
 
 **`src/store.ts`** — single Zustand store, persisted to `taskflow-store` in localStorage. Keeps `history: ChangeRecord[]` capped at 100 entries (PRD §11 snapshot+history backup). Exposes all mutation actions (updateItem, toggleTag, holdItem, snoozeItem, completeItem, etc.). `checkDailyReset()` compares against `dailyResetAt` and resets `snoozesToday`/`promotionsToday` at midnight.
 
@@ -32,7 +32,7 @@ npm run preview    # preview the production build
 
 ## Key business rules (PRD source of truth)
 
-- **Queue tiers (§5.1):** tasks missing all tags (and not marked noTag) surface first; then tasks missing Jira; then scored pool including reminders.
+- **Queue tiers (§5.1, amended):** for-today override (any today-marked task → only those) → tasks missing all tags (and not marked noTag) → scored pool including reminders. The PRD's needs-Jira tier is retired by decision (2026-08-18); `noJira` only gates the review's Jira steps.
 - **Scoring (§5.2):** urgent=6, important=3, quick=1, staleness bonus=staleness field (0–1), hold-return boost=+100 temporary.
 - **Hold boost reset:** `priorityBoost` clears when the user genuinely acts on the card — currently on `continueItem`, `snoozeItem`, `completeItem`. The PRD says it should clear on first interaction (not just viewing), so the boost flag is passed to `updateItem` as `priorityBoost: false` inside those actions.
 - **Snooze (§8):** global daily limit (default 2), Reminders exempt (they use "Remind me again" which calls `rescheduleReminder`, not `snoozeItem`).
@@ -71,7 +71,7 @@ Background `#f6f5f2`, cards/sidebar `#ffffff`, borders `#e9e6de`/`#e6e3dc`, text
 
 ## Quiet vs versioned events
 
-User-authored changes register in all THREE snapshot sets (they trigger version history). Background/meta markers are QUIET — registered in `CATEGORIZED` only, set without bumping `updatedAt`, so they create no snapshot pressure and never re-flag review: `itsm:sync`, `itsm:viewed`, `task:planned`, `ai:request/response/error`. The live `current.json` mirror still captures them (zero data loss holds). Choose quiet ONLY for machine-written or workflow-meta state; anything the user typed is versioned.
+User-authored changes register in all THREE snapshot sets (they trigger version history). Background/meta markers are QUIET — registered in `CATEGORIZED` only, set without bumping `updatedAt`, so they create no snapshot pressure and never re-flag review: `itsm:sync`, `itsm:viewed`, `task:planned`, `ai:request/response/error`, and the table/archive column prefs (`table-cols/widths`, `archive-cols/widths`). The live `current.json` mirror still captures them (zero data loss holds). Choose quiet ONLY for machine-written or workflow-meta state; anything the user typed is versioned.
 
 ## Session finish routine ("as always")
 
@@ -83,5 +83,4 @@ Before pushing, verify and report:
 
 ## Known drift / gotchas
 
-- §5.1's "needs Jira" queue tier is documented above but no longer exists in `buildQueue`; `noJira` currently only gates the review's Jira steps. Pending decision: restore the tier or update the docs.
 - A "bug report" matching pre-fix behavior is often a stale browser bundle — suggest a hard reload (Cmd+Shift+R) before debugging.
