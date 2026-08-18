@@ -26,7 +26,7 @@ npm run preview    # preview the production build
 **Components (highlights):**
 - `Sidebar` — nav (7 views incl. Docs), overlay buttons (✉ Mail w/ badge, ▶ Sprint, Review, ◷ Plan w/ unplanned-today badge), promotions pie, "+ New item"
 - `CardFeed` — primary screen; frosted transport bar (back/hold/play/complete/continue); hold panel; subtask rows (checkbox, ★ next, ◷ quick, click-to-slide-over)
-- Overlays (all hash-routed): `GreenPlay` review, `SprintMode`, `PlanPopup`, `Play` (dark focus mode), `MailAssistant` (+ shared `MailEntryFields`), `SnCreateMenu`, `DailyPlay` (Table-local), `ShortcutsHelp` (?)
+- Overlays (all hash-routed): `GreenPlay` review, `SprintMode`, `PlanPopup`, `Play` (dark focus mode), `MailAssistant` (+ shared `MailEntryFields`), `SnCreateMenu`, `DailyPlay` (Table-local), `ShortcutsHelp` (?), `Tour` (guided onboarding on self-cleaning `[Tour] ` sample data; pauses app shortcuts while active)
 - Shared card sections (parity!): `TicketSections`, `WaitingForSection`, `CommunicationSection` + `LinkedCommTable`, `QuickToActSection`, `SubtaskChecklist`, `EstimatesSection`, `ParentContextCard`
 - `Table`/`Archive` — inline edit, filters, bulk actions, AI assign; `Docs` — notebooks/categories/pages; `Settings` — five URL-driven tabs
 

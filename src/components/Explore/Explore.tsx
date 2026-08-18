@@ -149,7 +149,7 @@ export function Explore({ focusTrigger }: Props) {
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 36px 36px', overflowY: 'auto', overflowX: 'hidden' }}>
       <div style={{ width: 'min(640px, 100%)', marginTop: '14vh', position: 'relative' }}>
         {/* Search bar — Google/ChatGPT style: centered, pill, prominent */}
-        <div style={{ position: 'relative' }}>
+        <div data-tour="search" style={{ position: 'relative' }}>
           <span style={{ position: 'absolute', left: 22, top: '50%', transform: 'translateY(-50%)', color: 'var(--t-muted)', fontSize: 20, pointerEvents: 'none' }}>⌕</span>
           <input
             ref={inputRef}

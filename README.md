@@ -10,6 +10,7 @@ A personal task-management app built with React, TypeScript, and Vite. All data 
 - **Sprint war mode** (`s`) — dark one-item-at-a-time blitz through everything quick: quick subtasks, Q-tagged tasks, pending mail; timer, arrow navigation, click-title context, and a ⊞ drawer that opens any relevant field for editing
 - **Plan → Play** (`p` / `Shift+S`) — Plan writes each today-task's steps (the steps textarea IS the subtask list, so edits appear everywhere) and tracks "done planning" per day; Play executes one starred step at a time on a dark focus surface — timer, collapsed editable field panels, Space to advance, `m` for an instant communication linked to the task
 - **Communication assistant** (`m`) — fast capture of mails/Teams chats to answer, preview stepper (subject / what I want to say / mail to send), entries linkable to tasks and mirrored on the card's "To send" table
+- **Guided tour** — interactive onboarding that spotlights the real UI step by step on `[Tour]`-prefixed sample data (deleted on finish); launched from the fresh-start dialog or the ? popup
 
 **Tasks**
 - Subtasks with next-up ★, quick-to-act ◷ (shared with the Quick to Act table), per-subtask checklists, estimates, and a floating parent-context card when a subtask is open
@@ -80,6 +81,7 @@ npm run preview  # preview the production build locally
 
 ## First run
 
+0. **Take the guided tour** — offered on the empty-app dialog ("Start fresh with the guided tour") and always available from the **?** popup in Settings. 17 steps over self-cleaning sample data; →/Enter/Space advance, Esc leaves.
 1. Pick a **backup folder** when the orange banner asks (ideally inside OneDrive/Dropbox for an offsite copy).
 2. **Settings → Integrations**: add Jira host(s) + token, ITSM host/credentials for status sync, ServiceNow create-URLs + fields + templates, AI endpoint if used.
 3. **Settings → General**: requesters, projects, custom fields, theme.

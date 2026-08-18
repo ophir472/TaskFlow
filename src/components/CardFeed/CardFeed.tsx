@@ -395,7 +395,7 @@ export function CardFeed({ onToast }: Props) {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px 36px 100px', gap: 0 }}>
-      <div style={{
+      <div data-tour="card" style={{
         width: 880, maxWidth: '100%', background: 'var(--t-surf)', border: '1px solid var(--t-brd)',
         borderRadius: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden',
         borderTop: `3px solid ${KIND_STYLE[current.kind].border}`,
@@ -791,7 +791,7 @@ export function CardFeed({ onToast }: Props) {
       )}
 
       {/* Fixed bottom bar: search + action buttons */}
-      <div style={{
+      <div data-tour="transport" style={{
         position: 'fixed', bottom: 0, left: sidebarCollapsed ? 44 : 220, right: 0,
         transition: 'left 0.15s ease',
         background: 'color-mix(in oklab, var(--t-surf) 82%, transparent)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', borderTop: '1px solid var(--t-brd2)', zIndex: 40,

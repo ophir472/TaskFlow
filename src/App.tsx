@@ -19,6 +19,7 @@ import { SnCreateMenu } from './components/ServiceNow/SnCreateMenu';
 import { MailAssistant } from './components/Mail/MailAssistant';
 import { SprintMode } from './components/Sprint/SprintMode';
 import { PlanPopup } from './components/Plan/PlanPopup';
+import { Tour } from './components/Tour/Tour';
 import { Play } from './components/Play/Play';
 import { ReminderPopup } from './components/ReminderPopup/ReminderPopup';
 import { Toast } from './components/Toast/Toast';
@@ -131,6 +132,12 @@ export default function App() {
   const [mailOpen, setMailOpen] = useState(false);
   const [sprintOpen, setSprintOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    const h = () => setTourOpen(true);
+    window.addEventListener('taskflow:start-tour', h);
+    return () => window.removeEventListener('taskflow:start-tour', h);
+  }, []);
   const [playTaskId, setPlayTaskId] = useState<string | null>(null);
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -693,6 +700,7 @@ export default function App() {
       {mailOpen && <MailAssistant onClose={closeMail} />}
       {sprintOpen && <SprintMode onClose={closeSprint} />}
       {planOpen && <PlanPopup onClose={closePlan} />}
+      {tourOpen && <Tour onClose={() => setTourOpen(false)} />}
       {playTaskId && <Play taskId={playTaskId} onClose={closePlay} />}
       {spotlightOpen && <Spotlight onClose={() => setSpotlightOpen(false)} onToast={toastTimer} />}
       {pendingReminderIds.length > 0 && <ReminderPopup />}
@@ -731,6 +739,14 @@ export default function App() {
               <button onClick={() => setRestoreState('dismissed')}
                 style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 14, fontWeight: 600, padding: '12px 22px', borderRadius: 10, cursor: 'pointer' }}>
                 Start fresh
+              </button>
+            </div>
+            {/* Fresh users get offered the guided tour (self-cleaning sample data) */}
+            <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--t-brd)' }}>
+              <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: 10 }}>New to TaskFlow?</div>
+              <button onClick={() => { setRestoreState('dismissed'); setTourOpen(true); }}
+                style={{ border: 'none', background: 'var(--t-amber)', color: 'white', fontSize: 14, fontWeight: 700, padding: '12px 22px', borderRadius: 10, cursor: 'pointer' }}>
+                ▶ Start fresh with the guided tour
               </button>
             </div>
           </div>

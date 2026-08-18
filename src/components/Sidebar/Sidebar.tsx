@@ -62,6 +62,7 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
 
   return (
     <div
+      data-tour="sidebar"
       onClick={() => setSidebarCollapsed(!collapsed)}
       style={{
         width, background: 'var(--t-surf, #ffffff)', borderRight: '1px solid var(--t-brd, #e6e3dc)',
@@ -133,6 +134,7 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
 
       {/* Communication assistant (mail capture) */}
       <button
+        data-tour="mail"
         onClick={e => { e.stopPropagation(); window.location.hash = 'mail'; }}
         title={collapsed ? `Mail assistant (${mailCount})` : undefined}
         style={{
@@ -159,6 +161,7 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
 
       {/* Sprint (war mode) */}
       <button
+        data-tour="sprint"
         onClick={e => { e.stopPropagation(); window.location.hash = 'sprint'; }}
         title={collapsed ? 'Sprint — blitz everything quick' : 'Blitz everything quick, one item at a time'}
         style={{
@@ -174,6 +177,7 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
 
       {/* Green Play review button */}
       <button
+        data-tour="review"
         onClick={e => { e.stopPropagation(); onOpenReview(); }}
         title={collapsed ? `Review (${flaggedCount})` : undefined}
         disabled={flaggedCount === 0}
@@ -211,6 +215,7 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
 
       {/* Plan — write today's steps */}
       <button
+        data-tour="plan"
         onClick={e => { e.stopPropagation(); window.location.hash = 'plan'; }}
         title={collapsed ? `Plan (${todayCount} today)` : 'Write the steps for today\'s tasks'}
         style={{
@@ -229,6 +234,7 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
 
       {/* New item button */}
       <button
+        data-tour="create"
         onClick={e => { e.stopPropagation(); onNewItem(); }}
         title={collapsed ? 'New item' : undefined}
         style={{

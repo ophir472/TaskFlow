@@ -96,6 +96,14 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       { keys: ['Esc'], what: 'Close the dropdown (second Esc closes the assistant)' },
     ],
   },
+  {
+    title: 'Guided tour',
+    rows: [
+      { keys: ['→', 'Enter', 'Space'], what: 'Next step (finishes on the last one)' },
+      { keys: ['←'], what: 'Previous step' },
+      { keys: ['Esc'], what: 'Leave the tour (sample data is removed)' },
+    ],
+  },
 ];
 
 const kbd: React.CSSProperties = {
@@ -119,6 +127,10 @@ export function ShortcutsHelp({ onClose }: Props) {
         style={{ width: 620, maxWidth: '92vw', maxHeight: '84vh', overflowY: 'auto', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 16, padding: 24, boxShadow: '0 12px 40px rgba(0,0,0,0.18)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--t-txt)', letterSpacing: '-0.01em' }}>Keyboard shortcuts</div>
+          <button onClick={() => { window.dispatchEvent(new CustomEvent('taskflow:start-tour')); onClose(); }}
+            style={{ marginLeft: 'auto', marginRight: 14, border: '1px solid var(--t-amber-brd)', background: 'var(--t-amber-bg)', color: 'var(--t-amber)', fontSize: 12.5, fontWeight: 700, padding: '6px 14px', borderRadius: 999, cursor: 'pointer' }}>
+            ▶ Take the guided tour
+          </button>
           <span onClick={onClose} style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 20, lineHeight: 1 }}>×</span>
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--t-muted)', marginBottom: 14 }}>
