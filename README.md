@@ -19,7 +19,7 @@ A personal task-management app built with React, TypeScript, and Vite. All data 
 **Views** — Explore search + spotlight (`⌘F`), Kanban (with one-click Jira board buttons), an inline-editable Table (filters, bulk actions, AI assign), Archive, and a **Docs** tab (notebook → category → page, markdown-lite with folding headings and checkboxes, "links board" pages).
 
 **Integrations** (all configured from Settings — URLs, fields, and templates are data, so it adapts to any organization)
-- **Jira**: multiple hosts, create via REST (pre-filled create-URL opens as fallback when the API is unreachable), summary templates, comments, close transitions
+- **Jira**: multiple hosts (Data Center, Personal Access Token auth), create via REST (pre-filled create-URL opens as fallback when the API is unreachable), summary templates, comments, close transitions
 - **Ticket buttons everywhere**: ↗ opens the Jira/ITSM ticket in a new tab; ⧉ opens it in a centered popup window (same logged-in session, reused per ticket)
 - **ServiceNow**: INC/CHG creation from reusable templates (`#sncreate`) with FILL prompts, plus live ticket-status sync on cards
 - **AI assignment**: send a task to any OpenAI/Anthropic-style endpoint from the table; reply goes to the logs

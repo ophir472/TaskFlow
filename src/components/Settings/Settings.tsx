@@ -38,7 +38,7 @@ function RequestersList() {
     <div style={{ ...card, flex: 1, minWidth: 280 }}>
       <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 4 }}>Requesters</div>
       <div style={{ fontSize: 12, color: 'var(--t-muted)', marginBottom: 14 }}>
-        Jira account ID (optional) is set as <b>Reporter</b> on tickets created from this requester's tasks.
+        Jira username (optional) is set as <b>Reporter</b> on tickets created from this requester's tasks.
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
         {requesters.length === 0 && <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>None yet</div>}
@@ -55,7 +55,7 @@ function RequestersList() {
                   setDrafts(d => { const n = { ...d }; delete n[name]; return n; });
                 }}
                 onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                placeholder="Jira account ID"
+                placeholder="Jira username"
                 style={{ flex: 1, fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', minWidth: 0, outline: 'none' }}
               />
               <span onClick={() => removeRequester(name)} style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 16, lineHeight: 1, flexShrink: 0 }}>×</span>

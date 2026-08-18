@@ -148,7 +148,10 @@ export function ServiceNowSection() {
             Any field a template leaves empty inherits its type's default.
           </span>
           {(['INC', 'CHG'] as SnTicketType[]).map(ty => (
-            <button key={ty} onClick={() => setDefaultsOpen(cur => cur === ty ? null : ty)}
+            <button key={ty}
+              // blur: otherwise the browser focus ring on the previously
+              // clicked button looks like a second "active" border
+              onClick={e => { e.currentTarget.blur(); setDefaultsOpen(cur => cur === ty ? null : ty); }}
               style={{ ...smallAdd, ...(defaultsOpen === ty ? { borderColor: 'var(--t-acc)', color: 'var(--t-acc-dk)', background: 'var(--t-acc-bg)' } : {}) }}>
               {ty} default
             </button>

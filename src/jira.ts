@@ -1,30 +1,18 @@
 import type { JiraConfig } from './types';
 import { loggedFetch } from './apiLog';
 
-function buildDescription(description: string, requestedBy: string) {
-  const content: object[] = [];
+// Jira Data Center (REST v2) takes plain-text descriptions — no ADF.
+function buildDescription(description: string, requestedBy: string): string {
+  const parts: string[] = [];
+  if (description) parts.push(description);
+  if (requestedBy) parts.push(`Requested by: ${requestedBy}`);
+  return parts.join('\n\n') || ' ';
+}
 
-  if (description) {
-    content.push({
-      type: 'paragraph',
-      content: [{ type: 'text', text: description }],
-    });
-  }
-
-  if (requestedBy) {
-    if (content.length > 0) content.push({ type: 'paragraph', content: [{ type: 'text', text: '' }] });
-    content.push({
-      type: 'paragraph',
-      content: [
-        { type: 'text', text: 'Requested by: ', marks: [{ type: 'strong' }] },
-        { type: 'text', text: requestedBy },
-      ],
-    });
-  }
-
-  if (content.length === 0) content.push({ type: 'paragraph', content: [{ type: 'text', text: ' ' }] });
-
-  return { type: 'doc', version: 1, content };
+// Data Center auth: Personal Access Token as Bearer (Basic user:token is the
+// Cloud scheme and gets a 401 with a PAT).
+function authHeader(config: JiraConfig): string {
+  return `Bearer ${config.apiToken}`;
 }
 
 export async function createJiraIssue(
@@ -32,7 +20,6 @@ export async function createJiraIssue(
   fields: { summary: string; description: string; requestedBy: string; reporterAccountId?: string }
 ): Promise<{ key: string; url: string }> {
   const host = config.host.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  const auth = btoa(`${config.username}:${config.apiToken}`);
 
   const body: Record<string, unknown> = {
     fields: {
@@ -43,19 +30,19 @@ export async function createJiraIssue(
       issuetype: config.issueTypeId?.trim() ? { id: config.issueTypeId.trim() } : { name: 'Task' },
       ...(config.priorityId?.trim() ? { priority: { id: config.priorityId.trim() } } : {}),
       ...(config.component ? { components: [{ name: config.component }] } : {}),
-      ...(config.defaultAssigneeId ? { assignee: { id: config.defaultAssigneeId } } : {}),
-      // Requester's mapped Jira account (Settings → Requesters). Setting
+      ...(config.defaultAssigneeId ? { assignee: { name: config.defaultAssigneeId } } : {}),
+      // Requester's mapped Jira username (Settings → Requesters). Setting
       // Reporter requires the "Modify Reporter" Jira permission; if the API
       // rejects it, the whole create fails, so we only send it when mapped.
-      ...(fields.reporterAccountId ? { reporter: { id: fields.reporterAccountId } } : {}),
+      ...(fields.reporterAccountId ? { reporter: { name: fields.reporterAccountId } } : {}),
     },
   };
 
-  const url = `https://${host}/rest/api/3/issue`;
+  const url = `https://${host}/rest/api/2/issue`;
   const { res, text } = await loggedFetch('jira:create', url, {
     method: 'POST',
     headers: {
-      Authorization: `Basic ${auth}`,
+      Authorization: authHeader(config),
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
@@ -76,18 +63,6 @@ export async function createJiraIssue(
   return { key: data.key, url: `https://${host}/browse/${data.key}` };
 }
 
-// Plain text → ADF doc, one paragraph per line (blank lines become empty
-// paragraphs so the comment keeps its spacing).
-function textToAdf(text: string) {
-  const lines = text.split('\n');
-  const content = lines.map(line => ({
-    type: 'paragraph',
-    content: line ? [{ type: 'text', text: line }] : [],
-  }));
-  if (content.length === 0) content.push({ type: 'paragraph', content: [] });
-  return { type: 'doc', version: 1, content };
-}
-
 /**
  * Move a ticket to its done/closed/resolved status. Jira workflows differ per
  * project, so we list the available transitions and pick the one whose target
@@ -96,10 +71,9 @@ function textToAdf(text: string) {
  */
 export async function closeJiraIssue(config: JiraConfig, issueKey: string): Promise<string> {
   const host = config.host.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  const auth = btoa(`${config.username}:${config.apiToken}`);
-  const url = `https://${host}/rest/api/3/issue/${issueKey}/transitions`;
+  const url = `https://${host}/rest/api/2/issue/${issueKey}/transitions`;
   const headers = {
-    Authorization: `Basic ${auth}`,
+    Authorization: authHeader(config),
     'Content-Type': 'application/json',
     Accept: 'application/json',
   };
@@ -137,16 +111,16 @@ export async function addJiraComment(
   text: string,
 ): Promise<void> {
   const host = config.host.replace(/^https?:\/\//, '').replace(/\/$/, '');
-  const auth = btoa(`${config.username}:${config.apiToken}`);
-  const url = `https://${host}/rest/api/3/issue/${issueKey}/comment`;
+  const url = `https://${host}/rest/api/2/issue/${issueKey}/comment`;
   const { res, text: respText } = await loggedFetch('jira:comment', url, {
     method: 'POST',
     headers: {
-      Authorization: `Basic ${auth}`,
+      Authorization: authHeader(config),
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-    body: JSON.stringify({ body: textToAdf(text) }),
+    // REST v2 comments are plain text.
+    body: JSON.stringify({ body: text }),
   });
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;

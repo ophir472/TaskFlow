@@ -86,7 +86,7 @@ export function JiraHostsSection() {
     setDraft(EMPTY_DRAFT);
   }
   function saveForm() {
-    if (!draft.host.trim() || !draft.projectKey.trim() || !draft.username.trim() || !draft.apiToken.trim()) return;
+    if (!draft.host.trim() || !draft.projectKey.trim() || !draft.apiToken.trim()) return;
     const normalized: DraftEntry = { ...draft, projectKey: draft.projectKey.trim().toUpperCase() };
     if (editingId) updateJiraConfig(editingId, normalized);
     else addJiraConfig(normalized);
@@ -98,7 +98,7 @@ export function JiraHostsSection() {
   }
 
   const formOpen = adding || editingId !== null;
-  const canSave = draft.host.trim() && draft.projectKey.trim() && draft.username.trim() && draft.apiToken.trim();
+  const canSave = draft.host.trim() && draft.projectKey.trim() && draft.apiToken.trim();
 
   return (
     <div style={card}>
@@ -166,7 +166,7 @@ export function JiraHostsSection() {
                     {c.host}
                   </div>
                   <div style={{ fontSize: 12.5, color: 'var(--t-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {c.username}{c.component ? ` · ${c.component}` : ''}
+                    {c.projectKey}{c.component ? ` · ${c.component}` : ''}
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
@@ -195,27 +195,25 @@ export function JiraHostsSection() {
             {editingId ? 'Edit host' : 'New Jira host'}
           </div>
           <div style={{ fontSize: 12, color: 'var(--t-muted)' }}>
-            Use an <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer" style={{ color: 'var(--t-acc)' }}>Atlassian API token</a> (not your password). Fields marked * are required.
+            Use a <b>Personal Access Token</b> (Jira → your avatar → Profile → Personal Access Tokens), not your password. Fields marked * are required.
           </div>
           <div style={grp}>Connection</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div><div style={fl}>Host *</div>
-              <input value={draft.host} onChange={e => setDraft(d => ({ ...d, host: e.target.value }))} placeholder="mycompany.atlassian.net" style={fi} />
+              <input value={draft.host} onChange={e => setDraft(d => ({ ...d, host: e.target.value }))} placeholder="jira.company.com" style={fi} />
             </div>
             <div><div style={fl}>Project Key *</div>
               <input value={draft.projectKey} onChange={e => setDraft(d => ({ ...d, projectKey: e.target.value.toUpperCase() }))} placeholder="PROJ" style={fi} />
             </div>
-            <div><div style={fl}>Username (email) *</div>
-              <input value={draft.username} onChange={e => setDraft(d => ({ ...d, username: e.target.value }))} placeholder="you@company.com" style={fi} />
-            </div>
-            <div><div style={fl}>API Token *</div>
+            <div><div style={fl}>Personal Access Token (PAT) *</div>
               <input value={draft.apiToken} onChange={e => setDraft(d => ({ ...d, apiToken: e.target.value }))} type="password" placeholder="••••••••••••" style={fi} />
             </div>
+            <div />
             <div><div style={fl}>Default Component</div>
               <input value={draft.component} onChange={e => setDraft(d => ({ ...d, component: e.target.value }))} placeholder="Frontend (optional)" style={fi} />
             </div>
-            <div><div style={fl}>Default Assignee Account ID</div>
-              <input value={draft.defaultAssigneeId} onChange={e => setDraft(d => ({ ...d, defaultAssigneeId: e.target.value }))} placeholder="5d3f… (from Jira profile URL)" style={fi} />
+            <div><div style={fl}>Default Assignee (Jira username)</div>
+              <input value={draft.defaultAssigneeId} onChange={e => setDraft(d => ({ ...d, defaultAssigneeId: e.target.value }))} placeholder="jsmith (optional)" style={fi} />
             </div>
           </div>
           <div style={grp}>Ticket create defaults (API)</div>
