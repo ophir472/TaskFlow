@@ -45,7 +45,7 @@ function BoardRow({ id, label, url, onSave, onRemove }: {
 
 type DraftEntry = Omit<JiraConfig, 'id' | 'isDefault'>;
 const EMPTY_DRAFT: DraftEntry = {
-  host: '', username: '', apiToken: '', projectKey: '',
+  host: '', username: '', apiToken: '', projectKey: '', authMode: 'pat',
   component: '', defaultAssigneeId: '',
   pid: '', issueTypeId: '', priorityId: '', summaryTemplate: '', createUrlTemplate: '',
 };
@@ -74,7 +74,7 @@ export function JiraHostsSection() {
     setEditingId(c.id);
     setAdding(false);
     setDraft({
-      host: c.host, username: c.username, apiToken: c.apiToken,
+      host: c.host, username: c.username, apiToken: c.apiToken, authMode: c.authMode ?? 'pat',
       projectKey: c.projectKey, component: c.component, defaultAssigneeId: c.defaultAssigneeId,
       pid: c.pid ?? '', issueTypeId: c.issueTypeId ?? '', priorityId: c.priorityId ?? '',
       summaryTemplate: c.summaryTemplate ?? '', createUrlTemplate: c.createUrlTemplate ?? '',
@@ -86,7 +86,7 @@ export function JiraHostsSection() {
     setDraft(EMPTY_DRAFT);
   }
   function saveForm() {
-    if (!draft.host.trim() || !draft.projectKey.trim() || !draft.apiToken.trim()) return;
+    if (!draft.host.trim() || !draft.projectKey.trim() || !draft.apiToken.trim() || (draft.authMode === 'basic' && !draft.username.trim())) return;
     const normalized: DraftEntry = { ...draft, projectKey: draft.projectKey.trim().toUpperCase() };
     if (editingId) updateJiraConfig(editingId, normalized);
     else addJiraConfig(normalized);
@@ -98,7 +98,7 @@ export function JiraHostsSection() {
   }
 
   const formOpen = adding || editingId !== null;
-  const canSave = draft.host.trim() && draft.projectKey.trim() && draft.apiToken.trim();
+  const canSave = draft.host.trim() && draft.projectKey.trim() && draft.apiToken.trim() && (draft.authMode !== 'basic' || draft.username.trim());
 
   return (
     <div style={card}>
@@ -195,7 +195,7 @@ export function JiraHostsSection() {
             {editingId ? 'Edit host' : 'New Jira host'}
           </div>
           <div style={{ fontSize: 12, color: 'var(--t-muted)' }}>
-            Use a <b>Personal Access Token</b> (Jira → your avatar → Profile → Personal Access Tokens), not your password. Fields marked * are required.
+            <b>PAT</b>: a Personal Access Token (Jira → your avatar → Profile → Personal Access Tokens) sent as Bearer. <b>Username + Password</b>: Basic auth, for instances that reject PATs. Fields marked * are required.
           </div>
           <div style={grp}>Connection</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -205,7 +205,25 @@ export function JiraHostsSection() {
             <div><div style={fl}>Project Key *</div>
               <input value={draft.projectKey} onChange={e => setDraft(d => ({ ...d, projectKey: e.target.value.toUpperCase() }))} placeholder="PROJ" style={fi} />
             </div>
-            <div><div style={fl}>Personal Access Token (PAT) *</div>
+            <div><div style={fl}>Authentication</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {([['pat', 'PAT (Bearer)'], ['basic', 'Username + Password']] as const).map(([mode, label]) => (
+                  <button key={mode} onClick={e => { e.currentTarget.blur(); setDraft(d => ({ ...d, authMode: mode })); }}
+                    style={{ fontSize: 12, fontWeight: 600, padding: '6px 10px', borderRadius: 7, cursor: 'pointer',
+                      border: (draft.authMode ?? 'pat') === mode ? '1px solid var(--t-acc)' : '1px solid var(--t-brd)',
+                      background: (draft.authMode ?? 'pat') === mode ? 'var(--t-acc-bg)' : 'var(--t-surf)',
+                      color: (draft.authMode ?? 'pat') === mode ? 'var(--t-acc-dk)' : 'var(--t-txt2)' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {draft.authMode === 'basic' ? (
+              <div><div style={fl}>Username *</div>
+                <input value={draft.username} onChange={e => setDraft(d => ({ ...d, username: e.target.value }))} placeholder="jsmith" style={fi} />
+              </div>
+            ) : <div />}
+            <div><div style={fl}>{draft.authMode === 'basic' ? 'Password *' : 'Personal Access Token (PAT) *'}</div>
               <input value={draft.apiToken} onChange={e => setDraft(d => ({ ...d, apiToken: e.target.value }))} type="password" placeholder="••••••••••••" style={fi} />
             </div>
             <div />

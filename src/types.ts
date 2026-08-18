@@ -70,6 +70,10 @@ export interface JiraConfig {
   host: string;
   username: string;
   apiToken: string;
+  // How to authenticate against Data Center: 'pat' sends the token as
+  // Bearer; 'basic' sends username:token(password) as Basic — some DC
+  // setups (older than 8.14, or SSO-fronted) reject PATs. Missing → 'pat'.
+  authMode?: 'pat' | 'basic';
   projectKey: string;
   component: string;
   defaultAssigneeId: string;

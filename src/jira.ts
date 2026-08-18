@@ -9,9 +9,10 @@ function buildDescription(description: string, requestedBy: string): string {
   return parts.join('\n\n') || ' ';
 }
 
-// Data Center auth: Personal Access Token as Bearer (Basic user:token is the
-// Cloud scheme and gets a 401 with a PAT).
+// Data Center auth: PAT as Bearer by default; 'basic' sends
+// username:password — for DC setups that reject PATs (pre-8.14 or SSO).
 function authHeader(config: JiraConfig): string {
+  if (config.authMode === 'basic') return `Basic ${btoa(`${config.username}:${config.apiToken}`)}`;
   return `Bearer ${config.apiToken}`;
 }
 
