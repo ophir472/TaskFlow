@@ -6,6 +6,7 @@ import { flaggedTasks, stepsFor, type Step } from '../../greenPlay';
 import { EstimatesSection } from '../Common/EstimatesSection';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
 import { createJiraIssue, addJiraComment, closeJiraIssue } from '../../jira';
+import { ApiUnreachableError } from '../../apiLog';
 import { getDefaultJiraConfig, getJiraConfigForKey, applySummaryTemplate, buildJiraCreateUrl } from '../../jiraHosts';
 import { itsmTicketUrl } from '../../itsm';
 
@@ -81,7 +82,6 @@ export function GreenPlay({ onClose }: Props) {
   const [urlCreateStatus, setUrlCreateStatus] = useState<string | null>(null);
   // Host has a create-URL override → creation opens that URL in a new tab
   // (pre-filled Jira create screen) instead of calling the REST API.
-  const urlCreate = !!defaultJira?.createUrlTemplate?.trim();
   // "Update Jira" step: suggested comment text + posting state.
   const [jiraUpdateText, setJiraUpdateText] = useState('');
   const [addingComment, setAddingComment] = useState(false);
@@ -99,19 +99,6 @@ export function GreenPlay({ onClose }: Props) {
     setJiraError(null);
     const summary = createJiraSummary.trim() || currentTask.title;
 
-    if (urlCreate) {
-      // URL mode: the configured URL carries pid/issuetype/priority/etc.
-      // Jira's create screen opens pre-filled in a new tab; the resulting key
-      // isn't knowable here, so the user pastes it into the Jira field.
-      const url = buildJiraCreateUrl(defaultJira, summary, createJiraDesc);
-      if (url) {
-        window.open(url, '_blank');
-        updateItem(currentTask.id, { description: createJiraDesc });
-        setUrlCreateStatus('Opened Jira create form — paste the ticket key into the Jira field once created');
-      }
-      return;
-    }
-
     setCreatingJira(true);
     try {
       const result = await createJiraIssue(defaultJira, {
@@ -122,17 +109,27 @@ export function GreenPlay({ onClose }: Props) {
       });
       updateItem(currentTask.id, { jiraLink: result.key, description: createJiraDesc });
     } catch (err) {
-      setJiraError(err instanceof Error ? err.message : String(err));
+      // API unreachable (no proxy + CORS): fall back to the host's pre-filled
+      // create URL when one is configured.
+      const fallbackUrl = err instanceof ApiUnreachableError ? buildJiraCreateUrl(defaultJira, summary, createJiraDesc) : null;
+      if (fallbackUrl) {
+        window.open(fallbackUrl, '_blank');
+        updateItem(currentTask.id, { description: createJiraDesc });
+        setUrlCreateStatus('Jira API unreachable — opened the pre-filled create form; paste the ticket key into the Jira field once created');
+      } else {
+        setJiraError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setCreatingJira(false);
     }
-  }, [currentTask, defaultJira, urlCreate, requesterJiraIds, createJiraSummary, createJiraDesc, updateItem]);
+  }, [currentTask, defaultJira, requesterJiraIds, createJiraSummary, createJiraDesc, updateItem]);
 
   // Clear the transient jira states whenever we move to another step/card.
   useEffect(() => {
     setJiraError(null);
     setCloseStatus(null);
     setClosePickerOpen(false);
+    setUrlCreateStatus(null);
   }, [stepIdx, cardIdx]);
 
   // Prefill the Create-Jira description with the task's stored description
@@ -419,7 +416,7 @@ export function GreenPlay({ onClose }: Props) {
                     />
                     <button onClick={handleCreateJira} disabled={creatingJira}
                       style={{ width: '100%', border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 14, fontWeight: 600, padding: '10px 14px', borderRadius: 8, cursor: creatingJira ? 'wait' : 'pointer', opacity: creatingJira ? 0.6 : 1 }}>
-                      {creatingJira ? 'Creating…' : urlCreate ? 'Open create form ↗' : `+ Create in ${defaultJira.projectKey || defaultJira.host}`}
+                      {creatingJira ? 'Creating…' : `+ Create in ${defaultJira.projectKey || defaultJira.host}`}
                     </button>
                     {urlCreateStatus && (
                       <div style={{ marginTop: 8, fontSize: 12, color: 'var(--t-acc-dk)', padding: '8px 10px', background: 'var(--t-acc-bg)', borderRadius: 6 }}>

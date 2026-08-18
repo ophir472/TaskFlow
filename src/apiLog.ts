@@ -12,6 +12,53 @@ function safeParse(t: string): unknown {
   try { return JSON.parse(t); } catch { return t.length > 4000 ? t.slice(0, 4000) + '…' : t; }
 }
 
+/** Thrown when a request failed at network level BOTH via the local proxy and
+ *  directly (CORS/offline) — i.e. the API is unreachable, not rejecting. */
+export class ApiUnreachableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ApiUnreachableError';
+  }
+}
+
+const PROXY_PREFIX = '/api-proxy';
+
+function proxyPath(url: string): string | null {
+  const m = /^(https?):\/\/([A-Za-z0-9.-]+(?::\d+)?)(\/.*)?$/i.exec(url);
+  return m ? `${PROXY_PREFIX}/${m[1].toLowerCase()}/${m[2]}${m[3] ?? '/'}` : null;
+}
+
+/**
+ * fetch routed through the local server's /api-proxy (localApiProxy.ts):
+ * same-origin, so browser CORS never applies — the Vite server forwards the
+ * request from Node. Falls back to a direct fetch when there is no proxy
+ * (missing x-taskflow-proxy marker, e.g. a statically hosted build) or the
+ * proxy couldn't reach the target. Throws ApiUnreachableError only when both
+ * paths fail at network level.
+ */
+export async function proxiedFetch(url: string, init: RequestInit): Promise<{ res: Response; via: 'proxy' | 'direct' }> {
+  const pp = proxyPath(url);
+  let proxyFailure: string | null = null;
+  if (pp) {
+    try {
+      const res = await fetch(pp, init);
+      const viaProxy = res.headers.get('x-taskflow-proxy') === '1';
+      const perr = res.headers.get('x-taskflow-proxy-error');
+      if (viaProxy && !perr) return { res, via: 'proxy' };
+      proxyFailure = perr ?? 'no local proxy (marker header missing)';
+    } catch (e) {
+      proxyFailure = e instanceof Error ? e.message : String(e);
+    }
+  }
+  try {
+    const res = await fetch(url, init);
+    return { res, via: 'direct' };
+  } catch (e) {
+    const direct = e instanceof Error ? e.message : String(e);
+    throw new ApiUnreachableError(`API unreachable — local proxy: ${proxyFailure ?? 'not applicable'}; direct: ${direct} (CORS or network)`);
+  }
+}
+
 /**
  * Debug-instrumented fetch for the Jira / ServiceNow integrations. The full
  * request and response (credentials redacted) are written to BOTH the browser
@@ -36,18 +83,19 @@ export async function loggedFetch(
   log(`${tag}:request`, reqInfo);
 
   let res: Response;
+  let via: 'proxy' | 'direct';
   try {
-    res = await fetch(url, init);
+    ({ res, via } = await proxiedFetch(url, init));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('network error (CORS? host unreachable?)', msg);
+    console.error('network error (no local proxy + CORS/host unreachable?)', msg);
     console.groupEnd();
     log(`${tag}:network-error`, { url, error: msg, ms: Date.now() - started });
     throw err;
   }
 
   const text = await res.text();
-  const respInfo = { status: res.status, statusText: res.statusText, ms: Date.now() - started, body: safeParse(text) };
+  const respInfo = { status: res.status, statusText: res.statusText, via, ms: Date.now() - started, body: safeParse(text) };
   if (res.ok) console.log('response', respInfo);
   else console.warn('response (error)', respInfo);
   console.groupEnd();

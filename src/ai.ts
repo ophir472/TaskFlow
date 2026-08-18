@@ -1,4 +1,5 @@
 import type { AiConfig, Task } from './types';
+import { proxiedFetch } from './apiLog';
 import { log } from './snapshots';
 
 export const DEFAULT_AI_PROMPT = `You are helping with a task from my task manager.
@@ -63,7 +64,7 @@ export async function callAi(cfg: AiConfig, prompt: string, taskId: string, task
   log('ai:request', { taskId, taskTitle, model: cfg.model, format: cfg.format, prompt });
   let res: Response;
   try {
-    res = await fetch(cfg.endpointUrl.trim(), { method: 'POST', headers, body: JSON.stringify(body) });
+    ({ res } = await proxiedFetch(cfg.endpointUrl.trim(), { method: 'POST', headers, body: JSON.stringify(body) }));
   } catch (err) {
     log('ai:error', { taskId, error: err instanceof Error ? err.message : String(err) });
     throw err;

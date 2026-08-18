@@ -17,6 +17,8 @@ npm run preview    # preview the production build
 
 **Stack:** Vite + React 19 + TypeScript, Zustand (with `persist` to localStorage), no CSS framework — layout uses inline styles matching the design tokens exactly.
 
+**`localApiProxy.ts`** (repo root, server-side only) — Vite plugin serving `/api-proxy/<scheme>/<host>/<path>`: forwards Jira/ServiceNow/AI REST calls from Node so browser CORS never applies (self-signed corporate certs accepted). Client side is `proxiedFetch` in `src/apiLog.ts` — proxy first, direct fetch fallback (marker header `x-taskflow-proxy` tells them apart), `ApiUnreachableError` only when both fail. Jira create is REST-first; the host's pre-filled create-URL opens only as unreachable-fallback.
+
 **`src/types.ts`** — all data types: `Task`, `Reminder`, `Responsibility`, `Subtask`, `Item` (union), `ChangeRecord`. Every item kind now has `priorityBoost: boolean` to allow the +100 Hold-return boost on all three kinds.
 
 **`src/engine.ts`** — pure functions: `scoreItem(item)`, `buildQueue(items)` (for-today override → needsTag tier → scored pool; needs-Jira tier retired), `nextId(prefix)`, `midnight()` (returns the UPCOMING midnight — the daily-reset deadline, NOT start-of-today).

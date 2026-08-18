@@ -869,7 +869,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'item:return-from-hold', 'item:auto-return-holds', 'item:set-for-today',
     // These are UI/system and don't count as data changes
     'app:mount', 'snapshot:navigate', 'snapshot:settings', 'snapshot:idle',
-    'store:rehydrate-from-other-tab',
+    'store:rehydrate-from-other-tab', 'store:rehydrate-on-return',
     'integrity-check', 'integrity-check-initial',
     'restore:start', 'restore:complete', 'restore:failed', 'item:import',
     'snapshot-dir:configured',

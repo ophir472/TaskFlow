@@ -6,6 +6,7 @@ import { DailyPlay } from '../DailyPlay/DailyPlay';
 import { ReminderModal } from '../ReminderPopup/ReminderModal';
 import { AiAssignModal } from './AiAssignModal';
 import { jiraTicketUrl } from '../../jiraHosts';
+import { openTicketWindow } from '../../ticketWindow';
 import { scoreItem, duplicateTask } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
 import type { Item, Task, Reminder } from '../../types';
@@ -823,12 +824,20 @@ export function Table() {
                       style={{ ...td, textAlign: col.align ?? 'left', fontWeight: col.key === 'title' ? 500 : 400, color: col.key === 'title' ? 'var(--t-txt)' : 'var(--t-txt2)', cursor: isEditable ? 'text' : 'default', background: hoveredCell === cellKey ? 'var(--t-acc-bg)' : undefined }}>
                       {String(col.getValue(it) || '—')}
                       {jiraCellUrl && (
-                        <span
-                          onClick={e => { e.stopPropagation(); openJira(jiraCellUrl, jiraKey); }}
-                          title={`Open ${jiraKey}`}
-                          style={{ marginLeft: 6, fontSize: 14, color: 'var(--t-acc)', cursor: 'pointer', userSelect: 'none' }}>
-                          ↗
-                        </span>
+                        <>
+                          <span
+                            onClick={e => { e.stopPropagation(); openJira(jiraCellUrl, jiraKey); }}
+                            title={`Open ${jiraKey}`}
+                            style={{ marginLeft: 6, fontSize: 14, color: 'var(--t-acc)', cursor: 'pointer', userSelect: 'none' }}>
+                            ↗
+                          </span>
+                          <span
+                            onClick={e => { e.stopPropagation(); openTicketWindow(jiraCellUrl, jiraKey); }}
+                            title={`Open ${jiraKey} in a popup window`}
+                            style={{ marginLeft: 4, fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', userSelect: 'none' }}>
+                            ⧉
+                          </span>
+                        </>
                       )}
                     </td>
                   );

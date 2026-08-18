@@ -4,6 +4,7 @@ import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { parseEstimate, formatMinutes } from '../../estimateParser';
 import { jiraTicketUrl } from '../../jiraHosts';
+import { openTicketWindow } from '../../ticketWindow';
 
 interface Props {
   onClose: () => void;
@@ -139,8 +140,12 @@ export function DailyPlay({ onClose }: Props) {
                               style={jiraInp}
                             />
                             {jiraLink && jiraUrl && (
-                              <span onClick={() => openJira(jiraUrl, jiraLink)} title={`Open ${jiraLink}`}
-                                style={{ fontSize: 14, color: 'var(--t-acc)', cursor: 'pointer', flexShrink: 0 }}>↗</span>
+                              <>
+                                <span onClick={() => openJira(jiraUrl, jiraLink)} title={`Open ${jiraLink}`}
+                                  style={{ fontSize: 14, color: 'var(--t-acc)', cursor: 'pointer', flexShrink: 0 }}>↗</span>
+                                <span onClick={() => openTicketWindow(jiraUrl, jiraLink)} title={`Open ${jiraLink} in a popup window`}
+                                  style={{ fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', flexShrink: 0 }}>⧉</span>
+                              </>
                             )}
                           </div>
                         </td>
@@ -194,8 +199,12 @@ export function DailyPlay({ onClose }: Props) {
                                 {sub.jira && (() => {
                                   const subUrl = jiraTicketUrl(jiraConfigs, sub.jira);
                                   return subUrl ? (
-                                    <span onClick={() => openJira(subUrl, sub.jira)} title={`Open ${sub.jira}`}
-                                      style={{ fontSize: 14, color: 'var(--t-acc)', cursor: 'pointer', flexShrink: 0 }}>↗</span>
+                                    <>
+                                      <span onClick={() => openJira(subUrl, sub.jira)} title={`Open ${sub.jira}`}
+                                        style={{ fontSize: 14, color: 'var(--t-acc)', cursor: 'pointer', flexShrink: 0 }}>↗</span>
+                                      <span onClick={() => openTicketWindow(subUrl, sub.jira)} title={`Open ${sub.jira} in a popup window`}
+                                        style={{ fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', flexShrink: 0 }}>⧉</span>
+                                    </>
                                   ) : null;
                                 })()}
                               </div>

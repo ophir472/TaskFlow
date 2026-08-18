@@ -1,6 +1,7 @@
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { jiraTicketUrl } from '../../jiraHosts';
+import { openTicketWindow } from '../../ticketWindow';
 import { itsmTicketUrl } from '../../itsm';
 
 interface Props {
@@ -87,6 +88,10 @@ export function ParentContextCard({ task, style }: Props) {
             {r.url && (
               <span onClick={() => window.open(r.url!, '_blank')} title={`Open ${r.value}`}
                 style={{ fontSize: 15, color: 'var(--t-acc)', cursor: 'pointer', flexShrink: 0, userSelect: 'none' }}>↗</span>
+            )}
+            {r.url && (r.key.startsWith('jira') || r.key.startsWith('itsm')) && (
+              <span onClick={() => openTicketWindow(r.url!, r.value)} title={`Open ${r.value} in a popup window`}
+                style={{ fontSize: 13, color: 'var(--t-acc)', cursor: 'pointer', flexShrink: 0, userSelect: 'none' }}>⧉</span>
             )}
           </div>
         </div>

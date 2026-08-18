@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { jiraTicketUrl } from '../../jiraHosts';
+import { openTicketWindow } from '../../ticketWindow';
 import { itsmTicketUrl } from '../../itsm';
 import { SubtaskChecklist } from '../SubtaskPanel/SubtaskChecklist';
 import { buildMailEntry } from '../../mailEntry';
@@ -152,9 +153,15 @@ export function Play({ taskId, onClose }: Props) {
 
   if (!task || noSteps) return null;
 
-  const openBtn = (url: string | null) => url ? (
-    <span onClick={() => window.open(url, '_blank')} title="Open"
-      style={{ fontSize: 14, color: '#8ab4ff', cursor: 'pointer', flexShrink: 0, userSelect: 'none', alignSelf: 'center' }}>↗</span>
+  const openBtn = (url: string | null, ticket?: string) => url ? (
+    <>
+      <span onClick={() => window.open(url, '_blank')} title="Open"
+        style={{ fontSize: 14, color: '#8ab4ff', cursor: 'pointer', flexShrink: 0, userSelect: 'none', alignSelf: 'center' }}>↗</span>
+      {ticket ? (
+        <span onClick={() => openTicketWindow(url, ticket)} title={`Open ${ticket} in a popup window`}
+          style={{ fontSize: 12, color: '#8ab4ff', cursor: 'pointer', flexShrink: 0, userSelect: 'none', alignSelf: 'center' }}>⧉</span>
+      ) : null}
+    </>
   ) : null;
 
   const box = (label: string, control: React.ReactNode, key: string, has: boolean, span2 = false) =>
@@ -172,19 +179,19 @@ export function Play({ taskId, onClose }: Props) {
     box('Jira (step)', (
       <div style={{ display: 'flex', gap: 6 }}>
         <input value={s.jira} onChange={e => updateSubtask(task.id, s.id, { jira: e.target.value })} placeholder="PROJ-1235" style={darkInp} />
-        {openBtn(s.jira.trim() ? jiraTicketUrl(jiraConfigs, s.jira) : null)}
+        {openBtn(s.jira.trim() ? jiraTicketUrl(jiraConfigs, s.jira) : null, s.jira.trim())}
       </div>
     ), 'jira-step', s.jira.trim().length > 0),
     box('Jira (task)', (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{ display: 'flex', gap: 6 }}>
           <input value={task.jiraLink} onChange={e => updateItem(task.id, { jiraLink: e.target.value })} placeholder="PROJ-1234" style={darkInp} />
-          {openBtn(task.jiraLink.trim() ? jiraTicketUrl(jiraConfigs, task.jiraLink) : null)}
+          {openBtn(task.jiraLink.trim() ? jiraTicketUrl(jiraConfigs, task.jiraLink) : null, task.jiraLink.trim())}
         </div>
         {(task.extraJiraLinks ?? []).map((l, i) => l.trim() ? (
           <div key={i} style={{ display: 'flex', gap: 6 }}>
             <input value={l} onChange={e => { const n = [...(task.extraJiraLinks ?? [])]; n[i] = e.target.value; updateItem(task.id, { extraJiraLinks: n }); }} style={darkInp} />
-            {openBtn(jiraTicketUrl(jiraConfigs, l))}
+            {openBtn(jiraTicketUrl(jiraConfigs, l), l)}
           </div>
         ) : null)}
       </div>
@@ -193,13 +200,13 @@ export function Play({ taskId, onClose }: Props) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{ display: 'flex', gap: 6 }}>
           <input value={task.itsmTicket ?? ''} onChange={e => updateItem(task.id, { itsmTicket: e.target.value })} placeholder="INC0001234" style={darkInp} />
-          {openBtn((task.itsmTicket ?? '').trim() ? itsmTicketUrl(itsmConfig, task.itsmTicket ?? '') : null)}
+          {openBtn((task.itsmTicket ?? '').trim() ? itsmTicketUrl(itsmConfig, task.itsmTicket ?? '') : null, (task.itsmTicket ?? '').trim())}
         </div>
         {task.itsmStatus && <div style={{ fontSize: 11.5, color: C.dim }}>Status: {task.itsmStatus}</div>}
         {(task.extraItsmTickets ?? []).map((tk, i) => tk.trim() ? (
           <div key={i} style={{ display: 'flex', gap: 6 }}>
             <input value={tk} onChange={e => { const n = [...(task.extraItsmTickets ?? [])]; n[i] = e.target.value; updateItem(task.id, { extraItsmTickets: n }); }} style={darkInp} />
-            {openBtn(itsmTicketUrl(itsmConfig, tk))}
+            {openBtn(itsmTicketUrl(itsmConfig, tk), tk)}
           </div>
         ) : null)}
       </div>

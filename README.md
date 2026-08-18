@@ -19,9 +19,11 @@ A personal task-management app built with React, TypeScript, and Vite. All data 
 **Views** — Explore search + spotlight (`⌘F`), Kanban (with one-click Jira board buttons), an inline-editable Table (filters, bulk actions, AI assign), Archive, and a **Docs** tab (notebook → category → page, markdown-lite with folding headings and checkboxes, "links board" pages).
 
 **Integrations** (all configured from Settings — URLs, fields, and templates are data, so it adapts to any organization)
-- **Jira**: multiple hosts, create via REST or a pre-filled create-URL, summary templates, comments, close transitions
+- **Jira**: multiple hosts, create via REST (pre-filled create-URL opens as fallback when the API is unreachable), summary templates, comments, close transitions
+- **Ticket buttons everywhere**: ↗ opens the Jira/ITSM ticket in a new tab; ⧉ opens it in a centered popup window (same logged-in session, reused per ticket)
 - **ServiceNow**: INC/CHG creation from reusable templates (`#sncreate`) with FILL prompts, plus live ticket-status sync on cards
 - **AI assignment**: send a task to any OpenAI/Anthropic-style endpoint from the table; reply goes to the logs
+- **Local API proxy (no CORS)**: because TaskFlow always runs from the local Vite server, all Jira/ServiceNow/AI REST calls route through its `/api-proxy/<scheme>/<host>/…` path (`localApiProxy.ts`) and are forwarded server-side — browser CORS never applies, corporate self-signed certs are accepted, auth headers pass through untouched. A build hosted without the proxy falls back to direct fetches automatically.
 
 **Data safety — the four guarantees**
 - **Zero data loss**: every change hits localStorage synchronously, the `current.json` live mirror within ~0.5s, and versioned snapshots (7-day retention) on real data changes; restore prefers whichever copy is newest. An orange banner stays up until a backup folder is selected.
@@ -90,7 +92,7 @@ npm run preview  # preview the production build locally
 ## Troubleshooting
 
 - **A "fixed" bug still happens** → the browser is running an old bundle; hard-reload (Cmd+Shift+R) before debugging.
-- **Jira / ServiceNow / AI calls fail at work** → open DevTools Console: every request+response is logged in a collapsed `[jira:*]` / `[itsm:*]` group (credentials redacted). Network errors usually mean the host doesn't allow browser CORS from this origin.
+- **Jira / ServiceNow / AI calls fail at work** → open DevTools Console: every request+response is logged in a collapsed `[jira:*]` / `[itsm:*]` group (credentials redacted), including whether the call went `via: proxy` or `via: direct`. Calls route through the local server's `/api-proxy` (no CORS); if both proxy and direct fail, the host itself is unreachable from your network — check VPN/hostname. Make sure the app is served by `./start.sh` (dev or `--build`), not a plain static file server, or the proxy isn't there.
 - **Backups stopped writing** → the folder permission was revoked (browser restart does this); a banner offers to re-grant. Version history lives in Settings → Backup.
 - **Something looks lost** → Settings → Backup → version history lets you preview any snapshot from the last 7 days in a read-only tab and restore it; the `current.json` live mirror in the backup folder is at most ~1s behind.
 

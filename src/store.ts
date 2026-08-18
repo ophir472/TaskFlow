@@ -1091,4 +1091,22 @@ if (typeof window !== 'undefined' && !IS_PREVIEW_MODE) {
       useStore.persist.rehydrate();
     }
   });
+
+  // Belt and braces: the browser freezes/discards background tabs (Page
+  // Lifecycle), and a frozen tab can MISS storage events entirely. Returning
+  // to such a tab and editing would clobber localStorage with its stale
+  // in-memory state. So whenever this tab becomes active again, re-read from
+  // localStorage BEFORE the user can edit. Rehydrating with no other-tab
+  // change is a no-op (same data), so this is safe to run eagerly.
+  const rehydrateOnReturn = (why: string) => {
+    import('./snapshots').then(m => m.log('store:rehydrate-on-return', { why }));
+    useStore.persist.rehydrate();
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') rehydrateOnReturn('visible');
+  });
+  window.addEventListener('focus', () => rehydrateOnReturn('focus'));
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) rehydrateOnReturn('bfcache'); // restored from back/forward cache
+  });
 }
