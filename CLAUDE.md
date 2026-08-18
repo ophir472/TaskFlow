@@ -19,19 +19,16 @@ npm run preview    # preview the production build
 
 **`src/types.ts`** — all data types: `Task`, `Reminder`, `Responsibility`, `Subtask`, `Item` (union), `ChangeRecord`. Every item kind now has `priorityBoost: boolean` to allow the +100 Hold-return boost on all three kinds.
 
-**`src/engine.ts`** — pure functions: `scoreItem(item)`, `buildQueue(items)` (implements the 3-tier PRD §5.1 algorithm: needsTag → needsJira → scored pool), `nextId(prefix)`, `midnight()`.
+**`src/engine.ts`** — pure functions: `scoreItem(item)`, `buildQueue(items)` (for-today override → needsTag tier → scored pool; the PRD's needs-Jira tier is currently absent — see Known drift), `nextId(prefix)`, `midnight()` (returns the UPCOMING midnight — the daily-reset deadline, NOT start-of-today).
 
 **`src/store.ts`** — single Zustand store, persisted to `taskflow-store` in localStorage. Keeps `history: ChangeRecord[]` capped at 100 entries (PRD §11 snapshot+history backup). Exposes all mutation actions (updateItem, toggleTag, holdItem, snoozeItem, completeItem, etc.). `checkDailyReset()` compares against `dailyResetAt` and resets `snoozesToday`/`promotionsToday` at midnight.
 
-**Components:**
-- `Sidebar` — nav, promotions pie ring (CSS `conic-gradient`), snooze counter, "+ New item" button, collapse toggle
-- `CardFeed` — the primary screen; calls `buildQueue` to get the top item; handles all card actions (Continue/Hold/Snooze/Complete); inline Hold panel; subtask rows with checkbox + star + click-to-slide-over
-- `SubtaskPanel` — 400px right slide-over for subtask editing; no action buttons per PRD §6
-- `CreateModal` — Task/Reminder/Responsibility tabs; Create disabled until title + Jira present for tasks
-- `Kanban` — skeleton, 4 columns (in_progress/backlog/waiting/done)
-- `Table` — filterable by requester/project; all non-archived items
-- `Settings` — Requesters and Projects managed lists; Custom fields placeholder
-- `Toast` — fixed bottom-center pill, auto-dismiss
+**Components (highlights):**
+- `Sidebar` — nav (7 views incl. Docs), overlay buttons (✉ Mail w/ badge, ▶ Sprint, Review, ◷ Plan w/ unplanned-today badge), promotions pie, "+ New item"
+- `CardFeed` — primary screen; frosted transport bar (back/hold/play/complete/continue); hold panel; subtask rows (checkbox, ★ next, ◷ quick, click-to-slide-over)
+- Overlays (all hash-routed): `GreenPlay` review, `SprintMode`, `PlanPopup`, `Play` (dark focus mode), `MailAssistant` (+ shared `MailEntryFields`), `SnCreateMenu`, `DailyPlay` (Table-local), `ShortcutsHelp` (?)
+- Shared card sections (parity!): `TicketSections`, `WaitingForSection`, `CommunicationSection` + `LinkedCommTable`, `QuickToActSection`, `SubtaskChecklist`, `EstimatesSection`, `ParentContextCard`
+- `Table`/`Archive` — inline edit, filters, bulk actions, AI assign; `Docs` — notebooks/categories/pages; `Settings` — five URL-driven tabs
 
 ## Key business rules (PRD source of truth)
 
@@ -71,6 +68,10 @@ Background `#f6f5f2`, cards/sidebar `#ffffff`, borders `#e9e6de`/`#e6e3dc`, text
 7. Keyboard support + `ShortcutsHelp` entry.
 8. Popups: `backdropCloseProps` (mousedown-origin close) + 4px backdrop blur + Esc; shortcuts match `e.code` (Hebrew layout) and skip form controls.
 9. `npx tsc --noEmit -p tsconfig.app.json` + `npm run build` must pass.
+
+## Quiet vs versioned events
+
+User-authored changes register in all THREE snapshot sets (they trigger version history). Background/meta markers are QUIET — registered in `CATEGORIZED` only, set without bumping `updatedAt`, so they create no snapshot pressure and never re-flag review: `itsm:sync`, `itsm:viewed`, `task:planned`, `ai:request/response/error`. The live `current.json` mirror still captures them (zero data loss holds). Choose quiet ONLY for machine-written or workflow-meta state; anything the user typed is versioned.
 
 ## Session finish routine ("as always")
 

@@ -5,9 +5,10 @@ A personal task-management app built with React, TypeScript, and Vite. All data 
 ## Key features
 
 **Working the queue**
-- **Card feed** — one card at a time from a scored queue (urgent / important / quick tags, staleness, hold-return boost); Continue / Hold / Snooze / Complete; "for today" focus mode
+- **Card feed** — one card at a time from a scored queue (urgent / important / quick tags, staleness, hold-return boost); a thin frosted transport bar (← back · ⏸ hold · ▶ play · 🎉 complete · continue →); "for today" focus mode
 - **Green Play review** (`r`) — guided walkthrough per task: create/update/close Jira, break into subtasks, estimate, log comms; resumable sessions with a queue preview in Settings
-- **Sprint war mode** (`s`) — blacked-out one-item-at-a-time blitz through everything quick: quick subtasks, Q-tagged tasks, pending mail; timer, arrow navigation, expandable context
+- **Sprint war mode** (`s`) — dark one-item-at-a-time blitz through everything quick: quick subtasks, Q-tagged tasks, pending mail; timer, arrow navigation, click-title context, and a ⊞ drawer that opens any relevant field for editing
+- **Plan → Play** (`p` / `Shift+S`) — Plan writes each today-task's steps (the steps textarea IS the subtask list, so edits appear everywhere) and tracks "done planning" per day; Play executes one starred step at a time on a dark focus surface — timer, collapsed editable field panels, Space to advance, `m` for an instant communication linked to the task
 - **Communication assistant** (`m`) — fast capture of mails/Teams chats to answer, preview stepper (subject / what I want to say / mail to send), entries linkable to tasks and mirrored on the card's "To send" table
 
 **Tasks**
@@ -21,7 +22,11 @@ A personal task-management app built with React, TypeScript, and Vite. All data 
 - **ServiceNow**: INC/CHG creation from reusable templates (`#sncreate`) with FILL prompts, plus live ticket-status sync on cards
 - **AI assignment**: send a task to any OpenAI/Anthropic-style endpoint from the table; reply goes to the logs
 
-**Data safety** — every change hits localStorage instantly, a live mirror file within ~0.5s, and versioned snapshots with 7-day retention; automatic restore prompt, version history with change summaries, JSON/Excel export-import. A banner warns until a backup folder is selected.
+**Data safety — the four guarantees**
+- **Zero data loss**: every change hits localStorage synchronously, the `current.json` live mirror within ~0.5s, and versioned snapshots (7-day retention) on real data changes; restore prefers whichever copy is newest. An orange banner stays up until a backup folder is selected.
+- **Logs**: every mutation writes a structured forensic event (typing bursts coalesced); Jira/ServiceNow API calls log full request+response with credentials redacted. Logs are never read back as app data — functional state lives only in the store.
+- **Backup**: version history previews any snapshot read-only and restores it; JSON/Excel export-import moves everything (settings and integrations included) between machines. Background markers (ITSM sync, "viewed", "planned") update quietly — no version-history noise, still covered by the live mirror.
+- **Backward compatibility**: persisted schema changes ship with versioned migrations, new fields are optional, and restoring an old snapshot re-runs migrations — old data always loads.
 
 Everything is URL-driven (`#settings/backup`, `#docs/<page>`, `#mail`, `#sprint`, …) — refresh keeps your place, back closes overlays. Press **?** in Settings for the full keyboard-shortcut reference.
 
@@ -38,6 +43,8 @@ Everything is URL-driven (`#settings/backup`, `#docs/<page>`, `#mail`, `#sprint`
 - **Reminders** — a precise timer fires the popup at `nextFireAt`; snoozing or completing an occurrence advances it (recurring rules are drift-free, day-31 clamped).
 - **Responsibilities** — a recurring rule generates its task when due, but never while a previously generated task is still open.
 - **Promotions pie** — task completions and subtask ticks fill the daily ring; it resets at midnight along with snooze counts.
+- **Plan's steps ARE subtasks** — each textarea line maps to a subtask matched by title (ids/done/estimates survive edits; renames recreate); exactly one undone step stays starred. "✓ Complete" stamps a today-scoped `plannedAt` quietly — planning never re-flags a task for review, and the marker resets naturally tomorrow.
+- **Play executes the starred step** — `isNext && !done`, falling back to the first undone; "Step done → next" completes it, stars the next one, and feeds the promotions pie; a task with no steps is redirected to Plan first.
 
 ## Setup on a new computer
 
