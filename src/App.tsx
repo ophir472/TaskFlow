@@ -200,7 +200,10 @@ export default function App() {
         s.themeId !== prev.themeId ||
         s.customAccent !== prev.customAccent ||
         s.customBg !== prev.customBg ||
-        s.responsibilities !== prev.responsibilities;
+        s.responsibilities !== prev.responsibilities ||
+        s.sprintTypeToggles !== prev.sprintTypeToggles ||
+        s.sprintOrder !== prev.sprintOrder ||
+        s.reviewOrder !== prev.reviewOrder;
       if (settingsChanged) {
         if (settingsSnapshotTimer.current) clearTimeout(settingsSnapshotTimer.current);
         settingsSnapshotTimer.current = setTimeout(() => {

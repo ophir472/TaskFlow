@@ -78,8 +78,13 @@ function RequestersList() {
 function ReviewQueueSection() {
   const items = useStore(s => s.items);
   const reviewSession = useStore(s => s.reviewSession);
+  const reviewOrder = useStore(s => s.reviewOrder);
+  const setReviewOrder = useStore(s => s.setReviewOrder);
+  const dismissFromReview = useStore(s => s.dismissFromReview);
   const [open, setOpen] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
   const flagged = flaggedTasks(items);
   let rows: { task: Task; inSession: boolean }[];
@@ -96,6 +101,13 @@ function ReviewQueueSection() {
   } else {
     rows = flagged.map(t => ({ task: t, inSession: false }));
   }
+  // Manual drag order: ordered ids first (in that order), the rest keep
+  // their natural order (stable sort).
+  if (reviewOrder.length) {
+    const pos = new Map(reviewOrder.map((id, i) => [id, i]));
+    rows = [...rows].sort((a, b) =>
+      (pos.get(a.task.id) ?? Number.MAX_SAFE_INTEGER) - (pos.get(b.task.id) ?? Number.MAX_SAFE_INTEGER));
+  }
 
   function reason(t: Task): string {
     if (t.reviewedAt === undefined) return 'never reviewed';
@@ -105,7 +117,7 @@ function ReviewQueueSection() {
 
   return (
     <div style={card}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
+      <div onClick={() => setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6, cursor: 'pointer' }}>
         <div style={{ fontSize: 15, fontWeight: 700 }}>Review queue</div>
         <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 9px', borderRadius: 20, background: rows.length > 0 ? 'oklch(0.94 0.05 150)' : 'var(--t-surf3)', color: rows.length > 0 ? 'oklch(0.4 0.14 150)' : 'var(--t-muted)' }}>
           {rows.length}
@@ -117,19 +129,19 @@ function ReviewQueueSection() {
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {rows.length > 0 && (
-            <button onClick={() => { window.location.hash = 'review'; }}
+            <button onClick={e => { e.stopPropagation(); window.location.hash = 'review'; }}
               style={{ border: 'none', background: 'oklch(0.6 0.14 150)', color: 'white', fontSize: 12.5, fontWeight: 700, padding: '6px 14px', borderRadius: 999, cursor: 'pointer' }}>
               ▶ Start review
             </button>
           )}
-          <button onClick={() => setOpen(o => !o)}
+          <button onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
             style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 7, cursor: 'pointer' }}>
             {open ? 'Hide queue' : 'Show queue'}
           </button>
         </div>
       </div>
       <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: open && rows.length > 0 ? 12 : 0 }}>
-        Tasks the ▶ Review walkthrough will show on next open.
+        Tasks the ▶ Review walkthrough will show on next open. Click a task to open it (sub-tasks open from inside), drag to reorder, × removes it from the queue until its next change.
       </div>
       {open && (
         rows.length === 0 ? (
@@ -138,11 +150,26 @@ function ReviewQueueSection() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {rows.map(({ task, inSession }, i) => (
               <div key={task.id}
+                draggable
+                onDragStart={() => setDragIdx(i)}
+                onDragOver={e => { if (dragIdx !== null) { e.preventDefault(); setDragOverIdx(i); } }}
+                onDragLeave={() => setDragOverIdx(cur => cur === i ? null : cur)}
+                onDrop={() => {
+                  if (dragIdx !== null && dragIdx !== i) {
+                    const n = rows.map(r => r.task.id);
+                    const [moved] = n.splice(dragIdx, 1);
+                    n.splice(i, 0, moved);
+                    setReviewOrder(n);
+                  }
+                  setDragIdx(null); setDragOverIdx(null);
+                }}
+                onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
                 onClick={() => setOpenTaskId(task.id)}
-                title="Open task"
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 8, cursor: 'pointer', transition: 'border-color 0.1s' }}
+                title="Click to open · drag to reorder"
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--t-surf2)', border: dragOverIdx === i && dragIdx !== i ? '1px solid var(--t-acc)' : '1px solid var(--t-brd2)', borderRadius: 8, cursor: 'pointer', transition: 'border-color 0.1s', opacity: dragIdx === i ? 0.45 : 1 }}
                 onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--t-acc)')}
                 onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--t-brd2)')}>
+                <span style={{ color: 'var(--t-muted)', fontSize: 12, cursor: 'grab', flexShrink: 0 }}>⠿</span>
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t-muted)', width: 22, textAlign: 'right', flexShrink: 0 }}>{i + 1}.</span>
                 <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--t-txt)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</span>
                 <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: task.status === 'in_progress' ? 'var(--t-acc-bg)' : task.status === 'waiting' ? 'var(--t-amber-bg)' : 'var(--t-surf3)', color: task.status === 'in_progress' ? 'var(--t-acc-dk)' : task.status === 'waiting' ? 'var(--t-amber)' : 'var(--t-txt2)', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
@@ -154,6 +181,10 @@ function ReviewQueueSection() {
                     In session
                   </span>
                 )}
+                <span
+                  onClick={e => { e.stopPropagation(); dismissFromReview(task.id); }}
+                  title="Remove from the review queue (any later change puts it back)"
+                  style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 15, lineHeight: 1, flexShrink: 0, padding: '0 2px' }}>×</span>
               </div>
             ))}
           </div>

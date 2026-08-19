@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType } from './types';
+import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles } from './types';
 import { EMPTY_SN_CONFIG } from './servicenow';
 import { EMPTY_AI_CONFIG } from './ai';
 import { triggerIfDue, computeNextDueAt } from './responsibilities';
@@ -60,6 +60,13 @@ interface AppState {
   tableColWidths: Record<string, number>;
   archiveColWidths: Record<string, number>;
   reviewSession: ReviewSession | null;
+  // Sprint pool controls (Settings → Sprint queue): which types enter the
+  // pool, and the manual drag order (target keys; missing items follow the
+  // rule order — mail first, then tasks/subtasks oldest-first).
+  sprintTypeToggles: SprintTypeToggles;
+  sprintOrder: string[];
+  // Manual drag order of the review queue (task ids).
+  reviewOrder: string[];
   responsibilities: Responsibility[];
   // Reminders whose nextFireAt has passed and the popup is queued for them.
   // Transient — not persisted, rebuilt from items on every app open by the
@@ -138,6 +145,10 @@ interface AppState {
   deleteCommunicationField: (taskId: string, fieldId: string) => void;
   setFieldSize: (taskId: string, fieldKey: string, height: number) => void;
   markTaskReviewed: (id: string) => void;
+  dismissFromReview: (id: string) => void;
+  setSprintTypeToggle: (key: keyof SprintTypeToggles, on: boolean) => void;
+  setSprintOrder: (keys: string[]) => void;
+  setReviewOrder: (ids: string[]) => void;
   beginReview: (taskIds: string[], initialReviewedAt: Record<string, number>) => void;
   syncReviewSessionWithFlags: (flaggedIds: string[], initialReviewedAt: Record<string, number>) => void;
   updateReviewProgress: (cardIdx: number, stepIdx: number) => void;
@@ -196,6 +207,9 @@ export const useStore = create<AppState>()(
       tableColWidths: {},
       archiveColWidths: {},
       reviewSession: null,
+      sprintTypeToggles: { quickTask: true, quickSubtask: true, mail: true },
+      sprintOrder: [],
+      reviewOrder: [],
       responsibilities: [],
       pendingReminderIds: [],
 
@@ -244,10 +258,14 @@ export const useStore = create<AppState>()(
 
       updateSubtask: (parentId, subId, patch) => {
         slog('subtask:update', { parentId, subId, fields: Object.keys(patch), patch });
+        // Content edits stamp changedAt so review's update-Jira prefill can
+        // list subtasks changed since the review baseline.
+        const contentEdit = ['notes', 'blockers', 'checklist', 'title'].some(k => k in patch);
+        const stamped = contentEdit ? { ...patch, changedAt: Date.now() } : patch;
         set(s => ({
           items: s.items.map(it =>
             it.id === parentId && it.kind === 'task'
-              ? { ...it, subtasks: it.subtasks.map(su => su.id === subId ? { ...su, ...patch } : su), updatedAt: Date.now() }
+              ? { ...it, subtasks: it.subtasks.map(su => su.id === subId ? { ...su, ...stamped } : su), updatedAt: Date.now() }
               : it
           ),
           history: pushHistory(s.history, { ts: Date.now(), type: 'updateSubtask', id: subId })
@@ -731,11 +749,60 @@ export const useStore = create<AppState>()(
         slog('review:mark-task', { id, ts: now });
         // Set reviewedAt without touching updatedAt — otherwise the very act
         // of reviewing would re-flag the task instantly (updatedAt > reviewedAt).
+        // Leaving the queue also forfeits the card's manual drag position —
+        // if it's ever re-flagged, it joins at the END like any new arrival.
         set(s => ({
           items: s.items.map(it =>
             it.id === id && it.kind === 'task' ? { ...it, reviewedAt: now } : it
           ),
+          reviewOrder: s.reviewOrder.includes(id) ? s.reviewOrder.filter(x => x !== id) : s.reviewOrder,
         }));
+      },
+
+      // Remove a card from the review queue WITHOUT touching its data: quiet
+      // reviewedAt stamp (so any later edit re-flags it back in) + drop it
+      // from the un-walked part of an open session. Nothing else happens.
+      dismissFromReview: (id) => {
+        const now = Date.now();
+        slog('review:dismiss', { id, ts: now });
+        set(s => {
+          let reviewSession = s.reviewSession;
+          if (reviewSession && reviewSession.taskIds.indexOf(id) >= reviewSession.cardIdx) {
+            reviewSession = { ...reviewSession, taskIds: reviewSession.taskIds.filter(x => x !== id) };
+          }
+          return {
+            items: s.items.map(it => it.id === id && it.kind === 'task' ? { ...it, reviewedAt: now } : it),
+            reviewSession,
+            // Forfeit the manual position — a re-queued card joins last.
+            reviewOrder: s.reviewOrder.includes(id) ? s.reviewOrder.filter(x => x !== id) : s.reviewOrder,
+          };
+        });
+      },
+
+      setSprintTypeToggle: (key, on) => {
+        slog('sprint:toggle', { key, on });
+        set(s => ({ sprintTypeToggles: { ...s.sprintTypeToggles, [key]: on } }));
+      },
+
+      setSprintOrder: (keys) => {
+        slog('sprint-order:set', { count: keys.length });
+        set({ sprintOrder: keys });
+      },
+
+      setReviewOrder: (ids) => {
+        slog('review-order:set', { count: ids.length });
+        set(s => {
+          let reviewSession = s.reviewSession;
+          if (reviewSession) {
+            // Keep the un-walked part of an open session in the dragged order.
+            const pos = new Map(ids.map((k, i) => [k, i]));
+            const walked = reviewSession.taskIds.slice(0, reviewSession.cardIdx);
+            const rest = [...reviewSession.taskIds.slice(reviewSession.cardIdx)]
+              .sort((a, b) => (pos.get(a) ?? Number.MAX_SAFE_INTEGER) - (pos.get(b) ?? Number.MAX_SAFE_INTEGER));
+            reviewSession = { ...reviewSession, taskIds: [...walked, ...rest] };
+          }
+          return { reviewOrder: ids, reviewSession };
+        });
       },
 
       beginReview: (taskIds, initialReviewedAt) => {

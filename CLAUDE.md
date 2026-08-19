@@ -30,7 +30,7 @@ npm run preview    # preview the production build
 - `CardFeed` — primary screen; frosted transport bar (back/hold/play/complete/continue); hold panel; subtask rows (checkbox, ★ next, ◷ quick, click-to-slide-over)
 - Overlays (all hash-routed): `GreenPlay` review, `SprintMode`, `PlanPopup`, `Play` (dark focus mode), `MailAssistant` (+ shared `MailEntryFields`), `SnCreateMenu`, `DailyPlay` (Table-local), `ShortcutsHelp` (?), `Tour` (guided onboarding on self-cleaning `[Tour] ` sample data; pauses app shortcuts while active)
 - Shared card sections (parity!): `TicketSections`, `WaitingForSection`, `CommunicationSection` + `LinkedCommTable`, `QuickToActSection`, `SubtaskChecklist`, `EstimatesSection`, `ParentContextCard`
-- `Table`/`Archive` — inline edit, filters, bulk actions, AI assign; `Docs` — notebooks/categories/pages; `Settings` — five URL-driven tabs
+- `Table`/`Archive` — inline edit, filters, bulk actions, AI assign; `Docs` — notebooks/categories/pages; `Settings` — five URL-driven tabs; queue sections there: sprint (type toggles + drag order within mail/tasks sections + click-through) and review (drag order honored by the walkthrough, × = quiet dismiss)
 
 ## Key business rules (PRD source of truth)
 

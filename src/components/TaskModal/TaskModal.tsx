@@ -21,6 +21,8 @@ interface Props {
    * routing. Callers that open the modal via React state only (like CardFeed's
    * tag-sweep banner) should pass false so close doesn't trigger navigation. */
   urlDriven?: boolean;
+  // Open directly on a subtask (non-URL-driven hosts like Settings queues).
+  initialSubId?: string;
 }
 
 const fl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 };
@@ -28,7 +30,7 @@ const inp: React.CSSProperties = { width: '100%', fontSize: 14, padding: '8px 10
 const ta: React.CSSProperties = { ...inp, resize: 'vertical' as const, fontFamily: 'inherit' };
 const sel: React.CSSProperties = { width: '100%', fontSize: 13, padding: '7px 8px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)' };
 
-export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = true }: Props) {
+export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = true, initialSubId }: Props) {
   useLogMount('TaskModal');
   const items = useStore(s => s.items);
   const requesters = useStore(s => s.requesters);
@@ -61,7 +63,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
   }
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
   const [editingSubTitle, setEditingSubTitle] = useState('');
-  const [subId, setSubId] = useState<string | null>(null);
+  const [subId, setSubId] = useState<string | null>(initialSubId ?? null);
   const subIdRef = useRef<string | null>(null);
   subIdRef.current = subId; // keep ref in sync for popstate handler
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -103,6 +105,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
   // URL-driven subId: parse from #{view}/task/{id}/sub/{subId}
   // Uses hashchange (battle-tested in this app) rather than pushState/popstate.
   useEffect(() => {
+    if (!urlDriven) return; // local subId state only — the hash isn't ours
     function syncSubIdFromHash() {
       const parts = window.location.hash.slice(1).split('/');
       // parts: [view, 'task', taskId, 'sub', subId]
@@ -115,11 +118,15 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
   }, []);
 
   function openSubtask(id: string) {
+    // Not URL-driven (e.g. Settings review queue): plain local state — the
+    // hash there belongs to Settings and must stay untouched.
+    if (!urlDriven) { setSubId(id); return; }
     const parts = window.location.hash.slice(1).split('/');
     const view = parts[0] || 'table';
     window.location.hash = `${view}/task/${taskId}/sub/${id}`;
   }
   function closeSubtask() {
+    if (!urlDriven) { setSubId(null); return; }
     // Back-arrow in header: pops the /sub/{id} entry, restoring task view
     history.back();
   }

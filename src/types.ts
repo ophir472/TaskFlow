@@ -45,10 +45,20 @@ export interface ChecklistItem {
   done: boolean;
 }
 
+// Which item types feed the Sprint pool (Settings → Sprint queue toggles).
+export interface SprintTypeToggles {
+  quickTask: boolean;
+  quickSubtask: boolean;
+  mail: boolean;
+}
+
 export interface Subtask {
   id: string;
   title: string;
   done: boolean;
+  // Stamped on content edits (notes/blockers/checklist/title) so review's
+  // update-Jira prefill can find subtasks changed since the review baseline.
+  changedAt?: number;
   isNext: boolean;
   jira: string;
   generalLink: string;

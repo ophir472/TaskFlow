@@ -49,7 +49,11 @@ export function GreenPlay({ onClose }: Props) {
         initial[it.id] = (it as Task).reviewedAt ?? (it as Task).createdAt;
       }
     }
-    syncReviewSessionWithFlags(flagged.map(t => t.id), initial);
+    // Manual drag order from Settings: ordered ids first, rest natural.
+    const orderPos = new Map(useStore.getState().reviewOrder.map((id, i) => [id, i]));
+    const orderedFlagged = [...flagged].sort((a, b) =>
+      (orderPos.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (orderPos.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+    syncReviewSessionWithFlags(orderedFlagged.map(t => t.id), initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -152,12 +156,25 @@ export function GreenPlay({ onClose }: Props) {
     setCommentPickerOpen(false);
     if (currentStep?.kind !== 'updateJira' || !currentTask) { setJiraUpdateText(''); return; }
     const baseline = initialReviewedAt[currentTask.id] ?? currentTask.createdAt;
+    // Per-subtask detail lines: notes / blockers / checklist (with state).
+    const subDetail = (s: Task['subtasks'][number]): string[] => {
+      const d: string[] = [];
+      if (s.notes.trim()) d.push(`  Notes: ${s.notes.trim()}`);
+      if (s.blockers.trim()) d.push(`  Blockers: ${s.blockers.trim()}`);
+      if (s.checklist?.length) d.push(`  Checklist: ${s.checklist.map(c => `[${c.done ? 'x' : ' '}] ${c.text}`).join('; ')}`);
+      return d;
+    };
     const newSubs = currentTask.subtasks.filter(s => s.createdAt > baseline);
+    const changedSubs = currentTask.subtasks.filter(s => s.createdAt <= baseline && (s.changedAt ?? 0) > baseline);
     const parts: string[] = [];
-    if (newSubs.length) parts.push(`New subtasks:\n${newSubs.map(s => `- ${s.title}`).join('\n')}`);
+    if (newSubs.length) parts.push(`New subtasks:\n${newSubs.flatMap(s => [`- ${s.title}`, ...subDetail(s)]).join('\n')}`);
+    if (changedSubs.length) parts.push(`Updated subtasks:\n${changedSubs.flatMap(s => [`- ${s.title}`, ...subDetail(s)]).join('\n')}`);
     if (currentTask.notes?.trim() && (currentTask.notesChangedAt ?? 0) > baseline) {
       parts.push(`Notes:\n${currentTask.notes}`);
     }
+    if (currentTask.blockers?.trim()) parts.push(`Blockers:\n${currentTask.blockers.trim()}`);
+    const waiting = (currentTask.waitingFor?.rows ?? []).filter(r => !r.done && r.cells.some(c => c?.trim()));
+    if (waiting.length) parts.push(`Waiting on:\n${waiting.map(r => `- ${r.cells.filter(c => c?.trim()).join(' — ')}`).join('\n')}`);
     setJiraUpdateText(parts.join('\n\n'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTask?.id, currentStep?.kind]);

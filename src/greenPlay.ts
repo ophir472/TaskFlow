@@ -10,8 +10,16 @@ export function isFlagged(t: Task): boolean {
   return t.createdAt > reviewedAt || t.updatedAt > reviewedAt;
 }
 
+// When the task joined the queue: its creation (never reviewed) or the edit
+// that re-flagged it. Queue order = join order, so new arrivals join LAST.
+export function flaggedAt(t: Task): number {
+  const reviewedAt = t.reviewedAt ?? 0;
+  return t.createdAt > reviewedAt ? t.createdAt : t.updatedAt;
+}
+
 export function flaggedTasks(items: Item[]): Task[] {
-  return items.filter(it => it.kind === 'task' && (it as Task).type !== 'mail' && isFlagged(it as Task)) as Task[];
+  return (items.filter(it => it.kind === 'task' && (it as Task).type !== 'mail' && isFlagged(it as Task)) as Task[])
+    .sort((a, b) => flaggedAt(a) - flaggedAt(b));
 }
 
 export type StepKind =

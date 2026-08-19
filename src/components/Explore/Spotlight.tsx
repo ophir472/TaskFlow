@@ -4,6 +4,7 @@ import { useStore } from '../../store';
 import { nextId, scoreItem } from '../../engine';
 import { searchItems } from './Explore';
 import { ReminderModal } from '../ReminderPopup/ReminderModal';
+import { TaskModal } from '../TaskModal/TaskModal';
 import type { Item, Task } from '../../types';
 
 interface Props {
@@ -29,6 +30,9 @@ export function Spotlight({ onClose, onToast }: Props) {
   const [reminderModalId, setReminderModalId] = useState<string | null>(null);
   const reminderModalRef = useRef<string | null>(null);
   reminderModalRef.current = reminderModalId;
+  const [taskModalId, setTaskModalId] = useState<string | null>(null);
+  const taskModalRef = useRef<string | null>(null);
+  taskModalRef.current = taskModalId;
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -41,9 +45,9 @@ export function Spotlight({ onClose, onToast }: Props) {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      // When the reminder form is open on top, Escape belongs to it (it has
+      // When a form/modal is open on top, Escape belongs to it (each has
       // its own listener) — don't tear down the whole spotlight underneath.
-      if (reminderModalRef.current) return;
+      if (reminderModalRef.current || taskModalRef.current) return;
       if (e.key === 'Escape') { e.preventDefault(); onClose(); }
     }
     window.addEventListener('keydown', onKey);
@@ -53,8 +57,8 @@ export function Spotlight({ onClose, onToast }: Props) {
   // Blur the input while the reminder form is open so its keyboard handling
   // isn't swallowed by the search field.
   useEffect(() => {
-    if (reminderModalId) inputRef.current?.blur();
-  }, [reminderModalId]);
+    if (reminderModalId || taskModalId) inputRef.current?.blur();
+  }, [reminderModalId, taskModalId]);
 
   // Keep the highlighted row visible while arrowing through a long list.
   useEffect(() => {
@@ -71,12 +75,9 @@ export function Spotlight({ onClose, onToast }: Props) {
 
   function handleOpen(item: Item) {
     if (item.kind === 'task') {
-      // Land in Explore with the query intact and the task's modal open —
-      // closing the modal leaves the user on the full result list.
-      setExploreQuery(query);
-      setView('explore');
-      window.location.hash = `explore/task/${item.id}`;
-      onClose();
+      // The card overlay opens right here, on top of the spotlight — no
+      // page change. "Open in Explore →" is the way to the full list.
+      setTaskModalId(item.id);
     } else {
       // Reminders open their simple form right here, on top of the spotlight
       // — same modal as Explore/Table, same behavior on every page.
@@ -218,6 +219,12 @@ export function Spotlight({ onClose, onToast }: Props) {
       {reminderModalId && (
         <div onClick={e => e.stopPropagation()}>
           <ReminderModal reminderId={reminderModalId} onClose={() => { setReminderModalId(null); inputRef.current?.focus(); }} />
+        </div>
+      )}
+      {/* Card overlay on top of the spotlight — same modal as everywhere. */}
+      {taskModalId && (
+        <div onClick={e => e.stopPropagation()}>
+          <TaskModal taskId={taskModalId} onClose={() => { setTaskModalId(null); inputRef.current?.focus(); }} urlDriven={false} />
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useStore } from '../../store';
-import type { Item, Task } from '../../types';
+import type { Item, Task, SprintTypeToggles } from '../../types';
 import { QUICK_BLUE } from '../Common/QuickToActSection';
 import { buildMailEntry } from '../../mailEntry';
 import { MailEntryFields } from '../Mail/MailEntryFields';
@@ -18,15 +18,36 @@ export type SprintTarget =
 const isActiveTask = (it: Item): it is Task =>
   it.kind === 'task' && !it.archived && it.status !== 'done' && it.status !== 'archived';
 
-// The pool, in walk order: quick subtasks → quick-tagged tasks → mail
-// entries (which include every task's linked "To send" items).
-export function buildSprintPool(items: Item[]): SprintTarget[] {
-  const pool: SprintTarget[] = [];
+export const sprintTargetKey = (t: SprintTarget): string =>
+  t.kind === 'subtask' ? `sub:${t.taskId}:${t.subId}` : `${t.kind}:${t.taskId}`;
+
+const DEFAULT_TOGGLES: SprintTypeToggles = { quickTask: true, quickSubtask: true, mail: true };
+
+// The pool, in walk order: mail entries first, then quick tasks and quick
+// subtasks TOGETHER, oldest first (each by its own createdAt). The Settings
+// toggles gate each type; the manual drag order overrides within each
+// section — items not in it (i.e. new ones) follow the aging rule, which
+// places them at the end of their section.
+export function buildSprintPool(
+  items: Item[],
+  toggles: SprintTypeToggles = DEFAULT_TOGGLES,
+  order: string[] = [],
+): SprintTarget[] {
   const work = items.filter((it): it is Task => isActiveTask(it) && it.type !== 'mail');
-  for (const t of work) for (const s of t.subtasks) if (s.isQuick && !s.done) pool.push({ kind: 'subtask', taskId: t.id, subId: s.id });
-  for (const t of work) if (t.quick) pool.push({ kind: 'task', taskId: t.id });
-  for (const it of items) if (it.kind === 'task' && it.type === 'mail' && !it.archived) pool.push({ kind: 'mail', taskId: it.id });
-  return pool;
+  const mail: { t: SprintTarget; at: number }[] = [];
+  const aged: { t: SprintTarget; at: number }[] = [];
+  if (toggles.mail) for (const it of items) if (it.kind === 'task' && it.type === 'mail' && !it.archived) mail.push({ t: { kind: 'mail', taskId: it.id }, at: it.createdAt });
+  if (toggles.quickSubtask) for (const t of work) for (const s of t.subtasks) if (s.isQuick && !s.done) aged.push({ t: { kind: 'subtask', taskId: t.id, subId: s.id }, at: s.createdAt ?? 0 });
+  if (toggles.quickTask) for (const t of work) if (t.quick) aged.push({ t: { kind: 'task', taskId: t.id }, at: t.createdAt });
+  const pos = new Map(order.map((k, i) => [k, i]));
+  const section = (list: { t: SprintTarget; at: number }[]) => {
+    list.sort((a, b) => a.at - b.at);
+    const ordered = list.filter(x => pos.has(sprintTargetKey(x.t)))
+      .sort((a, b) => pos.get(sprintTargetKey(a.t))! - pos.get(sprintTargetKey(b.t))!);
+    const rest = list.filter(x => !pos.has(sprintTargetKey(x.t)));
+    return [...ordered, ...rest].map(x => x.t);
+  };
+  return [...section(mail), ...section(aged)];
 }
 
 export interface ResolvedTarget {
@@ -119,7 +140,10 @@ export function SprintMode({ onClose }: Props) {
   const deleteItem = useStore(s => s.deleteItem);
 
   // Frozen at start — live edits still show (resolution is against live items).
-  const pool = useMemo(() => buildSprintPool(useStore.getState().items), []);
+  const pool = useMemo(() => {
+    const st = useStore.getState();
+    return buildSprintPool(st.items, st.sprintTypeToggles, st.sprintOrder);
+  }, []);
   const [idx, setIdx] = useState(0);
   const [doneCount, setDoneCount] = useState(0);
   const [skipCount, setSkipCount] = useState(0);

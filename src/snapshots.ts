@@ -748,6 +748,7 @@ const COALESCE_DATA_EVENTS = new Set([
     'sn:urls', 'sn:field:add', 'sn:field:update', 'sn:field:remove', 'sn:default:set',
     'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
     'task:update', 'task-order:set', 'manual-order:reset',
+    'sprint:toggle', 'sprint-order:set', 'review-order:set',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
     'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content',
@@ -780,7 +781,7 @@ function coalesceRapidEdits(events: LogRecord[]): LogRecord[] {
         (e.event === 'item:update' || e.event === 'task:update') && e.event === last.event &&
         d.id === p.id && sameFields(d.fields, p.fields);
       // Drag-reordering fires task-order:set per drop — one entry per burst.
-      const isSameOrderSet = e.event === 'task-order:set' && last.event === 'task-order:set';
+      const isSameOrderSet = ['task-order:set', 'sprint-order:set', 'review-order:set'].includes(e.event) && e.event === last.event;
       const isSameSubtaskFieldEdit =
         e.event === 'subtask:update' && last.event === 'subtask:update' &&
         d.parentId === p.parentId && d.subId === p.subId && sameFields(d.fields, p.fields);
@@ -859,6 +860,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'sn:urls', 'sn:field:add', 'sn:field:update', 'sn:field:remove', 'sn:default:set',
     'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
     'task:update', 'task-order:set', 'manual-order:reset',
+    'sprint:toggle', 'sprint-order:set', 'review-order:set',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
     'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
@@ -873,7 +875,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'integrity-check', 'integrity-check-initial',
     'restore:start', 'restore:complete', 'restore:failed', 'item:import',
     'snapshot-dir:configured',
-    'review:mark-task', 'review:begin', 'review:end', 'review:extend',
+    'review:mark-task', 'review:dismiss', 'review:begin', 'review:end', 'review:extend',
     'itsm:sync', 'itsm:viewed', 'task:planned',
     'table-cols:set', 'archive-cols:set', 'table-widths:set', 'archive-widths:set',
     'ai:request', 'ai:response', 'ai:error',
@@ -894,6 +896,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'sn:urls', 'sn:field:add', 'sn:field:update', 'sn:field:remove', 'sn:default:set',
     'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
     'task:update', 'task-order:set', 'manual-order:reset',
+    'sprint:toggle', 'sprint-order:set', 'review-order:set',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
     'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
@@ -1087,6 +1090,18 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
       case 'task-order:set':
         s.otherChanges++;
         s.details.push({ action: 'reordered tasks manually', title: '' });
+        break;
+      case 'sprint-order:set':
+        s.otherChanges++;
+        s.details.push({ action: 'reordered the sprint queue', title: '' });
+        break;
+      case 'review-order:set':
+        s.otherChanges++;
+        s.details.push({ action: 'reordered the review queue', title: '' });
+        break;
+      case 'sprint:toggle':
+        s.otherChanges++;
+        s.details.push({ action: 'changed sprint queue toggles', title: '' });
         break;
       case 'manual-order:reset':
         s.otherChanges++;
