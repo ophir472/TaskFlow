@@ -5,6 +5,7 @@ import { nextId, scoreItem } from '../../engine';
 import { searchItems } from './Explore';
 import { ReminderModal } from '../ReminderPopup/ReminderModal';
 import { TaskModal } from '../TaskModal/TaskModal';
+import { MailEntryPopup } from '../Mail/MailEntryPopup';
 import type { Item, Task } from '../../types';
 
 interface Props {
@@ -33,6 +34,9 @@ export function Spotlight({ onClose, onToast }: Props) {
   const [taskModalId, setTaskModalId] = useState<string | null>(null);
   const taskModalRef = useRef<string | null>(null);
   taskModalRef.current = taskModalId;
+  const [mailPopupId, setMailPopupId] = useState<string | null>(null);
+  const mailPopupRef = useRef<string | null>(null);
+  mailPopupRef.current = mailPopupId;
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -47,7 +51,7 @@ export function Spotlight({ onClose, onToast }: Props) {
     function onKey(e: KeyboardEvent) {
       // When a form/modal is open on top, Escape belongs to it (each has
       // its own listener) — don't tear down the whole spotlight underneath.
-      if (reminderModalRef.current || taskModalRef.current) return;
+      if (reminderModalRef.current || taskModalRef.current || mailPopupRef.current) return;
       if (e.key === 'Escape') { e.preventDefault(); onClose(); }
     }
     window.addEventListener('keydown', onKey);
@@ -74,6 +78,8 @@ export function Spotlight({ onClose, onToast }: Props) {
   }
 
   function handleOpen(item: Item) {
+    // A mail entry IS a mail — show the mail form, not a task card.
+    if (item.kind === 'task' && (item as Task).type === 'mail') { setMailPopupId(item.id); return; }
     if (item.kind === 'task') {
       // The card overlay opens right here, on top of the spotlight — no
       // page change. "Open in Explore →" is the way to the full list.
@@ -225,6 +231,11 @@ export function Spotlight({ onClose, onToast }: Props) {
       {taskModalId && (
         <div onClick={e => e.stopPropagation()}>
           <TaskModal taskId={taskModalId} onClose={() => { setTaskModalId(null); inputRef.current?.focus(); }} urlDriven={false} />
+        </div>
+      )}
+      {mailPopupId && (
+        <div onClick={e => e.stopPropagation()}>
+          <MailEntryPopup entryId={mailPopupId} onClose={() => { setMailPopupId(null); inputRef.current?.focus(); }} />
         </div>
       )}
     </div>

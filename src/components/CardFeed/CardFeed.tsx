@@ -14,6 +14,8 @@ import { SubtaskPanel } from '../SubtaskPanel/SubtaskPanel';
 import { SubtaskFullPage } from '../SubtaskPanel/SubtaskFullPage';
 import { SchedulePicker } from '../SchedulePicker/SchedulePicker';
 import { TicketSections } from '../Common/TicketSections';
+import { TypePicker } from '../Common/TypePicker';
+import { RequesterSelect } from '../Common/RequesterSelect';
 
 interface Props {
   onToast: (msg: string) => void;
@@ -22,7 +24,6 @@ interface Props {
 export function CardFeed({ onToast }: Props) {
   useLogMount('CardFeed');
   const items = useStore(s => s.items);
-  const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);
 
   // displayId and triggerTagForId live in the store so they survive page refresh
@@ -744,11 +745,12 @@ export function CardFeed({ onToast }: Props) {
             <div style={{ width: 200, flexShrink: 0, borderLeft: '1px solid var(--t-brd2)', padding: '14px 14px 22px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ background: 'var(--t-surf2)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: '14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
+                <div style={fl}>Kind</div>
+                <TypePicker task={t} compact />
+              </div>
+              <div>
                 <div style={fl}>Requester</div>
-                <select value={t.requester} onChange={e => updateItem(current.id, { requester: e.target.value })} style={sel}>
-                  <option value="">—</option>
-                  {requesters.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
+                <RequesterSelect value={t.requester} onChange={v => updateItem(current.id, { requester: v })} style={sel} />
               </div>
               <div>
                 <div style={fl}>Project</div>
@@ -830,6 +832,24 @@ export function CardFeed({ onToast }: Props) {
                   style={{ ...ghost, fontSize: 16, opacity: queue.length <= 1 ? 0.35 : 1, cursor: queue.length <= 1 ? 'default' : 'pointer' }}>←</button>
                 <div style={{ flex: 1 }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  {current.kind === 'task' && (
+                    <button onClick={() => {
+                        holdItem(current.id, '', { type: 'once', at: Date.now() + 3600_000 });
+                        onToast?.('Hidden for an hour ⏭');
+                      }}
+                      title="Hide this card for an hour (returns boosted)" {...hover}
+                      style={{ ...ghost, fontSize: 13 }}>⏭ 1h</button>
+                  )}
+                  {current.kind === 'task' && (
+                    <button onClick={() => {
+                        const at = new Date(); at.setHours(17, 0, 0, 0);
+                        if (at.getTime() <= Date.now()) at.setDate(at.getDate() + 1);
+                        holdItem(current.id, '', { type: 'once', at: at.getTime() });
+                        onToast?.('Hidden until 17:00 ⏭');
+                      }}
+                      title="Hide this card until 17:00 (returns boosted)" {...hover}
+                      style={{ ...ghost, fontSize: 13 }}>⏭ 17:00</button>
+                  )}
                   <button onClick={() => { setHoldOpen(o => !o); setHoldSchedule(null); }} title={holdButtonLabel} {...hover}
                     style={{ ...ghost, fontSize: 14, ...(holdOpen ? { color: 'var(--t-txt)', background: 'var(--t-surf2)' } : {}) }}>⏸</button>
                   {current.kind === 'task' && (

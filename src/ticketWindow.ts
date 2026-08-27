@@ -1,3 +1,7 @@
+import type { Task, JiraConfig, ItsmConfig, CustomSystem } from './types';
+import { jiraTicketUrl } from './jiraHosts';
+import { itsmTicketUrl } from './itsm';
+import { customOpenUrl } from './customSystems';
 import { logOpenUrl } from './apiLog';
 
 /**
@@ -15,4 +19,15 @@ export function openTicketWindow(url: string, ticket: string): void {
   const top = Math.round((screen.availHeight - h) / 2);
   logOpenUrl('ticket:window', url, { ticket });
   window.open(url, `taskflow-ticket-${ticket}`, `popup=yes,width=${w},height=${h},left=${left},top=${top}`);
+}
+
+/** First openable ticket URL on a task: Jira → ITSM → custom systems. */
+export function firstTicketUrl(t: Task, jiraConfigs: JiraConfig[], itsmConfig: ItsmConfig | null | undefined, customSystems: CustomSystem[]): string | null {
+  if (t.jiraLink?.trim()) { const u = jiraTicketUrl(jiraConfigs, t.jiraLink.trim()); if (u) return u; }
+  if (t.itsmTicket?.trim()) { const u = itsmTicketUrl(itsmConfig, t.itsmTicket.trim()); if (u) return u; }
+  for (const sys of customSystems) {
+    const tid = t.customTickets?.[sys.id];
+    if (tid?.trim()) { const u = customOpenUrl(sys, tid); if (u) return u; }
+  }
+  return null;
 }

@@ -748,7 +748,7 @@ const COALESCE_DATA_EVENTS = new Set([
     'sn:urls', 'sn:field:add', 'sn:field:update', 'sn:field:remove', 'sn:default:set',
     'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
     'task:update', 'task-order:set', 'manual-order:reset',
-    'sprint:toggle', 'sprint-order:set', 'review-order:set',
+    'sprint:toggle', 'sprint-order:set', 'review-order:set', 'dashboard:config', 'customsys:add', 'customsys:update', 'customsys:remove', 'review:summary-save', 'minutes:fields',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
     'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content',
@@ -860,7 +860,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'sn:urls', 'sn:field:add', 'sn:field:update', 'sn:field:remove', 'sn:default:set',
     'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
     'task:update', 'task-order:set', 'manual-order:reset',
-    'sprint:toggle', 'sprint-order:set', 'review-order:set',
+    'sprint:toggle', 'sprint-order:set', 'review-order:set', 'dashboard:config', 'customsys:add', 'customsys:update', 'customsys:remove', 'review:summary-save', 'minutes:fields',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
     'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
@@ -876,7 +876,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'restore:start', 'restore:complete', 'restore:failed', 'item:import',
     'snapshot-dir:configured',
     'review:mark-task', 'review:dismiss', 'review:begin', 'review:end', 'review:extend',
-    'itsm:sync', 'itsm:viewed', 'task:planned',
+    'itsm:sync', 'itsm:viewed', 'task:planned', 'agenda:check', 'walkthrough:set',
     'table-cols:set', 'archive-cols:set', 'table-widths:set', 'archive-widths:set',
     'ai:request', 'ai:response', 'ai:error',
   ]);
@@ -896,7 +896,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'sn:urls', 'sn:field:add', 'sn:field:update', 'sn:field:remove', 'sn:default:set',
     'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
     'task:update', 'task-order:set', 'manual-order:reset',
-    'sprint:toggle', 'sprint-order:set', 'review-order:set',
+    'sprint:toggle', 'sprint-order:set', 'review-order:set', 'dashboard:config', 'customsys:add', 'customsys:update', 'customsys:remove', 'review:summary-save', 'minutes:fields',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
     'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
@@ -1102,6 +1102,24 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
       case 'sprint:toggle':
         s.otherChanges++;
         s.details.push({ action: 'changed sprint queue toggles', title: '' });
+        break;
+      case 'dashboard:config':
+        s.otherChanges++;
+        s.details.push({ action: 'changed dashboard settings', title: '' });
+        break;
+      case 'review:summary-save':
+        s.otherChanges++;
+        s.details.push({ action: 'saved a day summary to the Reviews archive', title: '' });
+        break;
+      case 'minutes:fields':
+        s.otherChanges++;
+        s.details.push({ action: 'changed meeting-minutes fields', title: '' });
+        break;
+      case 'customsys:add':
+      case 'customsys:update':
+      case 'customsys:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'changed custom-system integrations', title: '' });
         break;
       case 'manual-order:reset':
         s.otherChanges++;

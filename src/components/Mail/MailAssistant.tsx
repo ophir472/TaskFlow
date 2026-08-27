@@ -3,6 +3,7 @@ import { backdropCloseProps } from '../../backdrop';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { buildMailEntry } from '../../mailEntry';
+import { MeetingMinutes } from './MeetingMinutes';
 import { MailEntryFields } from './MailEntryFields';
 
 interface Props {
@@ -28,6 +29,7 @@ const inp: React.CSSProperties = { width: '100%', fontSize: 13.5, padding: '8px 
 // table (✉ Mail filter) and the archive once sent, but stay out of the card
 // feed, Kanban and review. #mail/preview walks them one at a time.
 export function MailAssistant({ onClose }: Props) {
+  const [minutesOpen, setMinutesOpen] = useState(false);
   const items = useStore(s => s.items);
   const createItem = useStore(s => s.createItem);
   const updateItem = useStore(s => s.updateItem);
@@ -139,7 +141,14 @@ export function MailAssistant({ onClose }: Props) {
           <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--t-txt)', letterSpacing: '-0.01em' }}>
             ✉ Communication assistant
           </div>
-          <span onClick={onClose} style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 20, lineHeight: 1 }}>×</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button onClick={() => setMinutesOpen(true)}
+              title="Build ready-to-send meeting minutes (fields configurable in Settings)"
+              style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 12.5, fontWeight: 700, padding: '5px 12px', borderRadius: 7, cursor: 'pointer' }}>
+              ✎ Meeting minutes
+            </button>
+            <span onClick={onClose} style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 20, lineHeight: 1 }}>×</span>
+          </div>
         </div>
 
         {stage === 'capture' && (
@@ -238,6 +247,10 @@ export function MailAssistant({ onClose }: Props) {
           </>
         )}
       </div>
+      {minutesOpen && (
+        <MeetingMinutes onClose={() => setMinutesOpen(false)}
+          onCreated={id => { setMinutesOpen(false); window.location.hash = `mail/preview/${id}`; }} />
+      )}
     </div>
   );
 }

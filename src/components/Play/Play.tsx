@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { jiraTicketUrl } from '../../jiraHosts';
+import { buildQueue } from '../../engine';
 import { openTicketWindow } from '../../ticketWindow';
 import { itsmTicketUrl } from '../../itsm';
 import { SubtaskChecklist } from '../SubtaskPanel/SubtaskChecklist';
@@ -122,6 +123,27 @@ export function Play({ taskId, onClose }: Props) {
     if (next) updateSubtask(task.id, next.id, { isNext: true });
   }
 
+  // Skip forward WITHOUT completing: star the next undone step; when this
+  // was the last one, move to the next playable task in queue order.
+  function skipNext() {
+    if (!task || !starred) return;
+    const undone = task.subtasks.filter(s => !s.done);
+    const i = undone.findIndex(s => s.id === starred.id);
+    const next = undone[i + 1];
+    if (next) {
+      updateSubtask(task.id, starred.id, { isNext: false });
+      updateSubtask(task.id, next.id, { isNext: true });
+      return;
+    }
+    const st = useStore.getState();
+    const queue = buildQueue(st.items).filter((it): it is Task =>
+      it.kind === 'task' && it.id !== task.id && (it as Task).subtasks.some(s => !s.done));
+    if (queue.length) {
+      history.replaceState(null, '', `#play/${queue[0].id}`);
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } else onClose();
+  }
+
   function closeMailSub() {
     if (mailSubFromHash()) history.back();
     else setMailSubId(null);
@@ -138,6 +160,7 @@ export function Play({ taskId, onClose }: Props) {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
       if (e.key === ' ') { e.preventDefault(); stepDone(); }
+      if (e.key === 'n' || e.code === 'KeyN') { e.preventDefault(); skipNext(); }
       else if ((e.key === 'm' || e.code === 'KeyM') && task) {
         // New communication pre-linked to this task — opens ON TOP of Play.
         e.preventDefault();
@@ -315,6 +338,10 @@ export function Play({ taskId, onClose }: Props) {
                 <button onClick={stepDone} title="Space"
                   style={{ border: 'none', background: 'var(--t-success)', color: 'white', fontSize: 15, fontWeight: 700, padding: '13px 26px', borderRadius: 10, cursor: 'pointer' }}>
                   Step done → next
+                </button>
+                <button onClick={skipNext} title="Skip to the next step without completing (n) — last step jumps to the next task"
+                  style={{ marginLeft: 10, border: '1px solid #3a3a40', background: 'transparent', color: C.dim, fontSize: 14, fontWeight: 600, padding: '13px 20px', borderRadius: 10, cursor: 'pointer' }}>
+                  Next →
                 </button>
               </div>
             </>

@@ -11,6 +11,8 @@ import { SubtaskChecklist } from '../SubtaskPanel/SubtaskChecklist';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
 import { ResizableTextarea } from '../Common/ResizableTextarea';
 import { TicketSections } from '../Common/TicketSections';
+import { TypePicker } from '../Common/TypePicker';
+import { RequesterSelect } from '../Common/RequesterSelect';
 
 interface Props {
   taskId: string;
@@ -33,7 +35,6 @@ const sel: React.CSSProperties = { width: '100%', fontSize: 13, padding: '7px 8p
 export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = true, initialSubId }: Props) {
   useLogMount('TaskModal');
   const items = useStore(s => s.items);
-  const requesters = useStore(s => s.requesters);
   const projects = useStore(s => s.projects);
   const customFields = useStore(s => s.customFields);
   const updateItem = useStore(s => s.updateItem);
@@ -262,6 +263,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
             <div>
               <div style={fl}>Tags</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <TypePicker task={task} />
                 {TAG_DEFS.map(({ key, label, ac, ab, abr }) => {
                   const active = key === 'noTag' ? task.noTag : task[key];
                   return (
@@ -433,18 +435,16 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
               <div>
                 <div style={fl}>Status</div>
                 <select value={task.status} onChange={e => updateItem(taskId, { status: e.target.value as Task['status'] })} style={sel}>
-                  <option value="in_progress">In progress</option>
                   <option value="backlog">Backlog</option>
+                  <option value="todo">To do</option>
+                  <option value="in_progress">In progress</option>
                   <option value="waiting">Waiting</option>
                   <option value="done">Done</option>
                 </select>
               </div>
               <div>
                 <div style={fl}>Requester</div>
-                <select value={task.requester} onChange={e => updateItem(taskId, { requester: e.target.value })} style={sel}>
-                  <option value="">—</option>
-                  {requesters.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
+                <RequesterSelect value={task.requester} onChange={v => updateItem(taskId, { requester: v })} style={sel} />
               </div>
               <div>
                 <div style={fl}>Project</div>

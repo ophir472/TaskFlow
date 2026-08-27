@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles } from './types';
+import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField } from './types';
 import { EMPTY_SN_CONFIG } from './servicenow';
 import { EMPTY_AI_CONFIG } from './ai';
 import { triggerIfDue, computeNextDueAt } from './responsibilities';
@@ -20,7 +20,7 @@ const PROMOTION_GOAL = 3;
 // changes the URL, which would flip this flag mid-session).
 const IS_PREVIEW_MODE = typeof window !== 'undefined' && window.location.hash.startsWith('#preview/');
 
-export type View = 'feed' | 'explore' | 'kanban' | 'table' | 'archive' | 'docs' | 'settings';
+export type View = 'home' | 'feed' | 'explore' | 'kanban' | 'table' | 'quickhelp' | 'archive' | 'docs' | 'settings';
 
 interface AppState {
   items: Item[];
@@ -67,6 +67,18 @@ interface AppState {
   sprintOrder: string[];
   // Manual drag order of the review queue (task ids).
   reviewOrder: string[];
+  dashboardConfig: DashboardConfig;
+  customSystems: CustomSystem[];
+  reviewSummaries: ReviewSummary[];
+  minutesFields: MinutesField[];
+  // Manual per-day checks for custom agenda steps — {date: 'YYYY-MM-DD', ids}.
+  agendaChecks: { date: string; ids: string[] };
+  // Per-tab, transient: a filter the Table applies on its next mount (set
+  // by dashboard tiles, e.g. 'nojira'). Excluded from persist.
+  tableFilterPreset: string | null;
+  // Walkthrough mode: currently active agenda step, null when off. Persisted
+  // so a refresh mid-walkthrough resumes where it was.
+  walkthrough: { stepId: string } | null;
   responsibilities: Responsibility[];
   // Reminders whose nextFireAt has passed and the popup is queued for them.
   // Transient — not persisted, rebuilt from items on every app open by the
@@ -147,6 +159,15 @@ interface AppState {
   markTaskReviewed: (id: string) => void;
   dismissFromReview: (id: string) => void;
   setSprintTypeToggle: (key: keyof SprintTypeToggles, on: boolean) => void;
+  setDashboardConfig: (patch: Partial<DashboardConfig>) => void;
+  addCustomSystem: (sys: CustomSystem) => void;
+  updateCustomSystem: (id: string, patch: Partial<CustomSystem>) => void;
+  removeCustomSystem: (id: string) => void;
+  saveReviewSummary: (date: string, text: string) => void;
+  setMinutesFields: (fields: MinutesField[]) => void;
+  setWalkthrough: (stepId: string | null) => void;
+  setTableFilterPreset: (preset: string | null) => void;
+  toggleAgendaCheck: (stepId: string) => void;
   setSprintOrder: (keys: string[]) => void;
   setReviewOrder: (ids: string[]) => void;
   beginReview: (taskIds: string[], initialReviewedAt: Record<string, number>) => void;
@@ -185,7 +206,7 @@ export const useStore = create<AppState>()(
       customFields: [],
       promotionsToday: 0,
       dailyResetAt: midnight(),
-      view: 'feed',
+      view: 'home',
       sidebarCollapsed: false,
       history: [],
       promotionGoal: PROMOTION_GOAL,
@@ -208,6 +229,31 @@ export const useStore = create<AppState>()(
       archiveColWidths: {},
       reviewSession: null,
       sprintTypeToggles: { quickTask: true, quickSubtask: true, mail: true },
+      dashboardConfig: {
+        version: 'v1',
+        gamification: false,
+        tiles: ['review', 'mail', 'sprint', 'quickhelp', 'open', 'nojira', 'unplannedToday'],
+        agendaSteps: [
+          { id: 'review', builtin: 'review', label: 'Review' },
+          { id: 'plan', builtin: 'plan', label: 'Plan' },
+          { id: 'mail', builtin: 'mail', label: 'Communication' },
+          { id: 'sprint', builtin: 'sprint', label: 'Sprint' },
+          { id: 'today', builtin: 'today', label: "Today's tasks" },
+        ],
+      },
+      agendaChecks: { date: '', ids: [] },
+      walkthrough: null,
+      tableFilterPreset: null,
+      customSystems: [],
+      reviewSummaries: [],
+      minutesFields: [
+        { id: 'topic', label: 'Topic', kind: 'text', enabled: true },
+        { id: 'when', label: 'When', kind: 'text', enabled: true },
+        { id: 'attendees', label: 'Attendees', kind: 'text', enabled: true },
+        { id: 'summary', label: 'Summary', kind: 'multiline', enabled: true },
+        { id: 'points', label: 'Discussion points', kind: 'bullets', enabled: true },
+        { id: 'actions', label: 'Action items', kind: 'bullets', enabled: true },
+      ],
       sprintOrder: [],
       reviewOrder: [],
       responsibilities: [],
@@ -235,6 +281,9 @@ export const useStore = create<AppState>()(
             if (it.kind === 'task' && nextStatus !== undefined) {
               if (nextStatus === 'done') merged = { ...merged, archived: true } as Item;
               else if (nextStatus !== 'archived' && it.archived) merged = { ...merged, archived: false } as Item;
+              // Today ⇄ in-progress pairing (the other direction lives in
+              // setForToday): moving a task INTO in-progress marks it Today.
+              if (nextStatus === 'in_progress' && !(it as Task).forToday) merged = { ...merged, forToday: true } as Item;
             }
             // Stamp notesChangedAt on real notes edits so consumers (review's
             // update-summary prefill) can detect changes from store data alone.
@@ -295,7 +344,8 @@ export const useStore = create<AppState>()(
             const subtasks = it.subtasks.map(su => {
               if (su.id !== subId) return su;
               promoted = !su.done;
-              return { ...su, done: !su.done };
+              // doneAt feeds the day summary's "Progressed" section.
+              return { ...su, done: !su.done, doneAt: !su.done ? Date.now() : undefined };
             });
             return { ...it, subtasks, updatedAt: Date.now() };
           });
@@ -390,7 +440,9 @@ export const useStore = create<AppState>()(
         if (!item) return null;
         slog('item:complete', { id, kind: item.kind, title: item.title });
         set(s => ({
-          items: s.items.map(it => it.id === id ? { ...it, status: 'archived', archived: true, updatedAt: Date.now() } as Item : it),
+          // Tasks end as DONE (Kanban's Done column and the archive both key
+          // off it); reminders keep their own 'archived' status.
+          items: s.items.map(it => it.id === id ? { ...it, status: it.kind === 'task' ? 'done' : 'archived', archived: true, updatedAt: Date.now() } as Item : it),
           promotionsToday: item.kind === 'task' ? s.promotionsToday + 1 : s.promotionsToday,
           history: pushHistory(s.history, { ts: Date.now(), type: 'complete', id })
         }));
@@ -398,6 +450,9 @@ export const useStore = create<AppState>()(
       },
 
       createItem: (item) => {
+        // Every new task carries a type — 'planned' unless the creator chose
+        // otherwise. Only pre-type legacy tasks may be untyped.
+        if (item.kind === 'task' && !(item as Task).type) item = { ...item, type: 'planned' } as Item;
         // Seed a default Teams communication field on new tasks (unless already provided,
         // e.g. by duplicateTask which preserves the original's communications).
         // Seed nextFireAt on new reminders from their schedule.
@@ -421,7 +476,8 @@ export const useStore = create<AppState>()(
         const item = get().items.find(it => it.id === id);
         import('./snapshots').then(m => m.log('item:archive', { id, title: item?.title }));
         set(s => ({
-          items: s.items.map(it => it.id === id ? { ...it, archived: true, updatedAt: Date.now() } as Item : it),
+          // Archived ⇒ Done (mirror of Done ⇒ archived in updateItem).
+          items: s.items.map(it => it.id === id ? { ...it, archived: true, ...(it.kind === 'task' && it.status !== 'archived' ? { status: 'done' as const } : {}), updatedAt: Date.now() } as Item : it),
           history: pushHistory(s.history, { ts: Date.now(), type: 'archive', id })
         }));
       },
@@ -779,6 +835,61 @@ export const useStore = create<AppState>()(
         });
       },
 
+      setDashboardConfig: (patch) => {
+        slog('dashboard:config', { keys: Object.keys(patch) });
+        set(s => ({ dashboardConfig: { ...s.dashboardConfig, ...patch } }));
+      },
+
+      setMinutesFields: (fields) => {
+        slog('minutes:fields', { count: fields.length });
+        set({ minutesFields: fields });
+      },
+
+      // Save a day summary into the read-only Docs archive; one entry per
+      // day (re-saving replaces), pruned to a year so it can't grow forever.
+      saveReviewSummary: (date, text) => {
+        slog('review:summary-save', { date, chars: text.length });
+        const yearAgo = Date.now() - 366 * 86_400_000;
+        set(s => ({
+          reviewSummaries: [
+            ...s.reviewSummaries.filter(r => r.date !== date && r.savedAt >= yearAgo),
+            { id: 'rs' + Date.now().toString(36), date, text, savedAt: Date.now() },
+          ].sort((a, b) => b.date.localeCompare(a.date)),
+        }));
+      },
+
+      addCustomSystem: (sys) => {
+        slog('customsys:add', { id: sys.id, name: sys.name });
+        set(s => ({ customSystems: [...s.customSystems, sys] }));
+      },
+      updateCustomSystem: (id, patch) => {
+        slog('customsys:update', { id, keys: Object.keys(patch) });
+        set(s => ({ customSystems: s.customSystems.map(c => c.id === id ? { ...c, ...patch } : c) }));
+      },
+      removeCustomSystem: (id) => {
+        slog('customsys:remove', { id });
+        set(s => ({ customSystems: s.customSystems.filter(c => c.id !== id) }));
+      },
+
+      setTableFilterPreset: (preset) => set({ tableFilterPreset: preset }),
+
+      // Quiet: walkthrough position is workflow meta, not data.
+      setWalkthrough: (stepId) => {
+        slog('walkthrough:set', { stepId });
+        set({ walkthrough: stepId ? { stepId } : null });
+      },
+
+      // Quiet: a manual agenda check is daily-workflow meta, not data.
+      toggleAgendaCheck: (stepId) => {
+        slog('agenda:check', { stepId });
+        const today = new Date().toISOString().slice(0, 10);
+        set(s => {
+          const cur = s.agendaChecks.date === today ? s.agendaChecks.ids : [];
+          const ids = cur.includes(stepId) ? cur.filter(x => x !== stepId) : [...cur, stepId];
+          return { agendaChecks: { date: today, ids } };
+        });
+      },
+
       setSprintTypeToggle: (key, on) => {
         slog('sprint:toggle', { key, on });
         set(s => ({ sprintTypeToggles: { ...s.sprintTypeToggles, [key]: on } }));
@@ -1017,7 +1128,12 @@ export const useStore = create<AppState>()(
                 priorityBoost: false, updatedAt: Date.now(),
               };
             }
-            return { ...it, forToday: value, updatedAt: Date.now() };
+            // Today ⇄ in-progress pairing: marking Today puts the task in
+            // progress; unmarking demotes an in-progress task to To do so the
+            // pair stays consistent.
+            const status = value ? 'in_progress' as const
+              : it.status === 'in_progress' ? 'todo' as const : it.status;
+            return { ...it, forToday: value, status, updatedAt: Date.now() };
           }),
         }));
       },
@@ -1057,7 +1173,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'taskflow-store',
-      version: 7,
+      version: 8,
       storage: createJSONStorage(() => IS_PREVIEW_MODE ? sessionStorage : localStorage),
       skipHydration: IS_PREVIEW_MODE,
       // UI-only fields: kept in-memory per-tab, NOT persisted. Otherwise every
@@ -1066,7 +1182,7 @@ export const useStore = create<AppState>()(
       // Each tab restores its own view/displayId from the URL hash on mount.
       partialize: (state) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { view, displayId, triggerTagForId, exploreQuery, pendingReminderIds, ...rest } = state;
+        const { view, displayId, triggerTagForId, exploreQuery, pendingReminderIds, tableFilterPreset, ...rest } = state;
         return rest;
       },
       // v3: drop legacy kind='responsibility' items (replaced by the standalone
@@ -1137,6 +1253,22 @@ export const useStore = create<AppState>()(
               : [];
           }
           delete persisted.jiraConfig;
+        }
+        if (fromVersion < 8) {
+          if (Array.isArray(persisted.items)) {
+            // Archived ⇒ Done: normalize legacy archived tasks that kept an
+            // active status OR the old 'archived' status (Kanban's Done
+            // column and the status filters key off 'done').
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            persisted.items = persisted.items.map((it: any) =>
+              it?.kind === 'task' && it.archived && it.status !== 'done'
+                ? { ...it, status: 'done' } : it);
+          }
+          // Saved column prefs predate the Kind column — surface it once.
+          if (Array.isArray(persisted.tableVisibleCols) && !persisted.tableVisibleCols.includes('kind')) {
+            const at = persisted.tableVisibleCols.indexOf('title');
+            persisted.tableVisibleCols.splice(at >= 0 ? at + 1 : 0, 0, 'kind');
+          }
         }
         return persisted;
       },

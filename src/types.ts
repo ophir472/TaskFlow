@@ -1,5 +1,7 @@
 export type ItemKind = 'task' | 'reminder';
-export type TaskStatus = 'in_progress' | 'backlog' | 'waiting' | 'done' | 'archived';
+// App-only statuses (unlinked from Jira or any external system).
+// Board order: backlog → todo → in_progress → waiting → done.
+export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'waiting' | 'done' | 'archived';
 
 // ── Schedule types ──────────────────────────────────────────────
 
@@ -45,6 +47,62 @@ export interface ChecklistItem {
   done: boolean;
 }
 
+// One field of the meeting-minutes builder (Settings → General): label +
+// kind ('text' one-liner, 'multiline' paragraph, 'bullets' line-per-bullet),
+// individually disableable and fully reorderable — the email is built from
+// the enabled fields in this order.
+export interface MinutesField {
+  id: string;
+  label: string;
+  kind: 'text' | 'multiline' | 'bullets';
+  enabled: boolean;
+}
+
+// A saved day-summary ("what I did") — rendered read-only in Docs' Reviews
+// archive; kept for a year, pruned on save.
+export interface ReviewSummary {
+  id: string;
+  date: string;    // YYYY-MM-DD the summary covers
+  text: string;
+  savedAt: number;
+}
+
+// A custom ticketing/tooling system (Settings → Integrations → Custom
+// systems). Pure URL templates, no API:
+//   open ticket:   baseUrl + openUri + <ticket id from the card>
+//   create ticket: baseUrl + createUri   (page id etc. baked into the URI)
+export interface CustomSystem {
+  id: string;
+  name: string;
+  baseUrl: string;
+  openUri?: string;
+  createUri?: string;
+  // SN-style templates: when enabled, the card's Create button offers the
+  // named templates below; a template URI may contain FILL placeholders,
+  // prompted for before opening (full URL = baseUrl + template uri).
+  templatesEnabled?: boolean;
+  templates?: { id: string; name: string; uri: string }[];
+}
+
+// One step of the Dashboard's daily agenda pipeline. Built-in steps derive
+// completion from live store data; custom steps (e.g. "lunch") are manual
+// per-day checks. The list itself is configuration (Settings → Dashboard).
+export interface AgendaStep {
+  id: string;
+  builtin?: 'review' | 'plan' | 'mail' | 'sprint' | 'today';
+  label: string;
+}
+
+// Dashboard homepage configuration (Settings → Dashboard). Versions come
+// from a registry so multiple designs can coexist ('v1', later
+// 'v1-gamified'); gamification is a master toggle whose visuals land later.
+export interface DashboardConfig {
+  version: string;
+  gamification: boolean;
+  tiles: string[];          // enabled stat-tile ids, in display order
+  agendaSteps: AgendaStep[];
+}
+
 // Which item types feed the Sprint pool (Settings → Sprint queue toggles).
 export interface SprintTypeToggles {
   quickTask: boolean;
@@ -59,6 +117,9 @@ export interface Subtask {
   // Stamped on content edits (notes/blockers/checklist/title) so review's
   // update-Jira prefill can find subtasks changed since the review baseline.
   changedAt?: number;
+  // Stamped when the subtask is marked done (cleared when un-done) — feeds
+  // the day summary's "Progressed" section.
+  doneAt?: number;
   isNext: boolean;
   jira: string;
   generalLink: string;
@@ -84,6 +145,9 @@ export interface JiraConfig {
   // Bearer; 'basic' sends username:token(password) as Basic — some DC
   // setups (older than 8.14, or SSO-fronted) reject PATs. Missing → 'pat'.
   authMode?: 'pat' | 'basic';
+  // Jira label added to tickets created from type-'urgent' (unplanned
+  // same-day) tasks — empty/missing → no label is sent.
+  urgentLabel?: string;
   projectKey: string;
   component: string;
   defaultAssigneeId: string;
@@ -152,6 +216,8 @@ export interface SnTemplate {
   templateNumber: string;
   instructions: string;
   confluenceLink: string;
+  // Extra links (card-style: a + reveals another field as each is used).
+  extraLinks?: string[];
   exampleTicket: string;
   emailDL: string;
   // SnField.id → value. Values containing "FILL" are prompted for in the
@@ -258,7 +324,17 @@ export interface Task {
   // Communication-assistant entry (fast mail/Teams triage). Mail tasks live
   // in the table/archive but are excluded from the card-feed queue, Kanban
   // and the review flow.
-  type?: 'mail';
+  // The task's TYPE label (user-facing name: "Type"). One entity — all are
+  // tasks — distinguished by this label:
+  //   'mail'    — communication entry (assistant / "To send" table)
+  //   'quick'   — quick help: small ask, no planning; lives in the Quick Help
+  //               view + Sprint, hidden from the card feed
+  //   'planned' — real planned work (the default for every new task)
+  //   'urgent'  — unplanned same-day work; stays in the feed; its Jira gets
+  //               the host's configured "urgent label"
+  //   undefined — legacy, created before types existed; surfaces highlighted
+  //               so it gets labeled (new tasks can't be created untyped)
+  type?: 'mail' | 'quick' | 'planned' | 'urgent';
   whatIWantToSay?: string;
   mailToSend?: string;
   // Mail entries only: the task this communication belongs to. The card's
@@ -299,6 +375,9 @@ export interface Task {
   // undefined means "never reviewed". Compared against createdAt/updatedAt to decide
   // whether the task is still in the review queue.
   reviewedAt?: number;
+  // Per-custom-system ticket ids (CustomSystem.id → ticket). The card shows
+  // one row per configured system, ITSM-style.
+  customTickets?: Record<string, string>;
   // ServiceNow sync for the primary ITSM ticket: last fetched status +
   // server-side update time, and when the user last opened the ticket (↗).
   // Set QUIETLY (no updatedAt bump / history) so background sync never flags

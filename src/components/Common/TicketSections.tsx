@@ -4,6 +4,8 @@ import type { Task } from '../../types';
 import { createJiraIssue } from '../../jira';
 import { ApiUnreachableError } from '../../apiLog';
 import { openTicketWindow } from '../../ticketWindow';
+import { customOpenUrl, customCreateUrl, customTemplateUrl, openCustomUrl } from '../../customSystems';
+import { nextId } from '../../engine';
 import { getDefaultJiraConfig, jiraTicketUrl, applySummaryTemplate, buildJiraCreateUrl } from '../../jiraHosts';
 import { itsmTicketUrl, fetchSnTicket } from '../../itsm';
 
@@ -36,6 +38,12 @@ export function TicketSections({ task, onToast }: Props) {
   // index. The prompt asks for the ticket description before creating.
   const setItsmSyncInfo = useStore(s => s.setItsmSyncInfo);
   const markItsmViewed = useStore(s => s.markItsmViewed);
+  const customSystems = useStore(s => s.customSystems);
+  const [tplMenuFor, setTplMenuFor] = useState<string | null>(null);
+  const [tplSearch, setTplSearch] = useState('');
+  const [newTpl, setNewTpl] = useState<{ name: string; uri: string } | null>(null);
+  const updateCustomSystem = useStore(s => s.updateCustomSystem);
+  useEffect(() => { setTplSearch(''); setNewTpl(null); }, [tplMenuFor]);
   // ServiceNow status sync for the primary ITSM ticket. Runs on card
   // navigation (task/ticket change). Icons are tiny and transient.
   const [snSync, setSnSync] = useState<'idle' | 'syncing' | 'ok' | 'err'>('idle');
@@ -181,6 +189,7 @@ export function TicketSections({ task, onToast }: Props) {
         summary,
         description: createDesc,
         requestedBy: t.requester,
+        labels: t.type === 'urgent' && defaultJira.urgentLabel?.trim() ? [defaultJira.urgentLabel.trim()] : undefined,
         reporterAccountId: t.requester ? requesterJiraIds[t.requester] : undefined,
       });
       if (createTarget === 'primary') {
@@ -410,6 +419,104 @@ export function TicketSections({ task, onToast }: Props) {
           </button>
         )}
       </div>
+
+      {/* ── Custom systems (Settings → Integrations) — ITSM-style rows ── */}
+      {customSystems.length > 0 && (
+        <div data-sec="customsys">
+          {customSystems.map(sys => {
+            const val = t.customTickets?.[sys.id] ?? '';
+            const url = customOpenUrl(sys, val);
+            const createUrl = customCreateUrl(sys);
+            return (
+              <div key={sys.id} style={{ marginBottom: 6 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{sys.name}</div>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <input value={val}
+                    onChange={e => updateItem(id, { customTickets: { ...(t.customTickets ?? {}), [sys.id]: e.target.value } })}
+                    placeholder={`${sys.name} ticket`} style={sInp} />
+                  {url && <>
+                    <span onClick={() => openCustomUrl(`customsys:${sys.name}`, url)} style={{ ...extLink, cursor: 'pointer' }} title={`Open ${val}`}>↗</span>
+                    <span onClick={() => openTicketWindow(url, val)} style={{ ...extLink, cursor: 'pointer', fontSize: 13 }} title={`Open ${val} in a popup window`}>⧉</span>
+                  </>}
+                </div>
+                {!val.trim() && (createUrl || sys.templatesEnabled) && (
+                  <div style={{ position: 'relative' }}>
+                    <button onMouseDown={e => e.preventDefault()}
+                      onClick={() => {
+                        if (sys.templatesEnabled) setTplMenuFor(cur => cur === sys.id ? null : sys.id);
+                        else if (createUrl) openCustomUrl(`customsys:${sys.name}:create`, createUrl);
+                      }}
+                      title={sys.templatesEnabled ? `Create a ${sys.name} ticket from a template` : `Open ${sys.name}'s create page`}
+                      style={{ marginTop: 4, width: '100%', border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '6px 0', borderRadius: 6, cursor: 'pointer' }}>
+                      + Create {sys.name} ticket{sys.templatesEnabled ? ' ▾' : ''}
+                    </button>
+                    {tplMenuFor === sys.id && (
+                      <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 4px)', zIndex: 25, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 8, boxShadow: '0 10px 28px rgba(0,0,0,0.18)', padding: 4, display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 260, overflowY: 'auto' }}>
+                        {(sys.templates ?? []).length > 0 && (
+                          <input value={tplSearch} onChange={e => setTplSearch(e.target.value)} autoFocus
+                            placeholder="Search templates…"
+                            style={{ fontSize: 12, padding: '6px 9px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', marginBottom: 2 }} />
+                        )}
+                        {(sys.templates ?? []).filter(tpl => !tplSearch.trim() || tpl.name.toLowerCase().includes(tplSearch.trim().toLowerCase())).map(tpl => (
+                          <div key={tpl.id}
+                            onClick={() => {
+                              const u = customTemplateUrl(sys, tpl);
+                              if (u) openCustomUrl(`customsys:${sys.name}:template:${tpl.name}`, u);
+                              setTplMenuFor(null);
+                            }}
+                            style={{ padding: '6px 10px', borderRadius: 6, fontSize: 12.5, cursor: 'pointer', color: 'var(--t-txt2)' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                            {tpl.name}
+                          </div>
+                        ))}
+                        {createUrl && (
+                          <div onClick={() => { openCustomUrl(`customsys:${sys.name}:create`, createUrl); setTplMenuFor(null); }}
+                            style={{ padding: '6px 10px', borderRadius: 6, fontSize: 12.5, cursor: 'pointer', color: 'var(--t-muted)', borderTop: '1px solid var(--t-brd2)' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                            Blank create page
+                          </div>
+                        )}
+                        {/* Create a template right here — saved into the system's Settings list */}
+                        {!newTpl ? (
+                          <div onClick={() => setNewTpl({ name: '', uri: '' })}
+                            style={{ padding: '6px 10px', borderRadius: 6, fontSize: 12.5, cursor: 'pointer', fontWeight: 600, color: 'var(--t-acc-dk)', borderTop: '1px solid var(--t-brd2)' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-acc-bg)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                            + New template…
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 8px', borderTop: '1px solid var(--t-brd2)' }}>
+                            <input value={newTpl.name} onChange={e => setNewTpl(n => n && { ...n, name: e.target.value })} autoFocus
+                              placeholder="Template name"
+                              style={{ fontSize: 12, padding: '5px 8px', borderRadius: 5, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
+                            <input value={newTpl.uri} onChange={e => setNewTpl(n => n && { ...n, uri: e.target.value })}
+                              placeholder="URI (appended to the common start; FILL prompts)"
+                              style={{ fontSize: 12, padding: '5px 8px', borderRadius: 5, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                              <button onClick={() => setNewTpl(null)}
+                                style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-muted)', fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 5, cursor: 'pointer' }}>Cancel</button>
+                              <button
+                                disabled={!newTpl.name.trim() || !newTpl.uri.trim()}
+                                onClick={() => {
+                                  if (!newTpl.name.trim() || !newTpl.uri.trim()) return;
+                                  updateCustomSystem(sys.id, { templatesEnabled: true, templates: [...(sys.templates ?? []), { id: nextId('cst'), name: newTpl.name.trim(), uri: newTpl.uri.trim() }] });
+                                  setNewTpl(null);
+                                }}
+                                style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 11, fontWeight: 700, padding: '3px 11px', borderRadius: 5, cursor: 'pointer', opacity: newTpl.name.trim() && newTpl.uri.trim() ? 1 : 0.5 }}>Save</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── General link section ── */}
       <div data-sec="link">

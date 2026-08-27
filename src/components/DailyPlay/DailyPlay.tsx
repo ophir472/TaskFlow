@@ -26,7 +26,7 @@ export function DailyPlay({ onClose }: Props) {
   }, [onClose]);
 
   const todayTasks: Task[] = useMemo(
-    () => items.filter(it => it.kind === 'task' && !it.archived && (it as Task).forToday) as Task[],
+    () => items.filter(it => it.kind === 'task' && !it.archived && (it as Task).type !== 'mail' && (it as Task).forToday) as Task[],
     [items],
   );
 

@@ -4,6 +4,8 @@ import { nextId } from '../../engine';
 import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
 import { ResponsibilitiesSection } from './ResponsibilitiesSection';
+import { DashboardSection } from './DashboardSection';
+import { CustomSystemsSection } from './CustomSystemsSection';
 import { JiraHostsSection } from './JiraHostsSection';
 import { ServiceNowSection } from './ServiceNowSection';
 import { AiSection } from './AiSection';
@@ -13,7 +15,7 @@ import { triggerDownload, restoreFromData, supportsAutoBackup, triggerExcelDownl
 import { pickSnapshotDir, getSnapshotDir, clearSnapshotDir, listSnapshots, readSnapshot, writeSnapshot, log, trashSnapshot, summarizeRanges, formatSummary, formatDetailed, getDebugMode, setDebugMode, subscribeSnapshots } from '../../snapshots';
 import type { SnapshotEntry, ChangeSummary } from '../../snapshots';
 import { useLogMount } from '../../useLogMount';
-import type { ItsmConfig, Task } from '../../types';
+import type { ItsmConfig, Task , MinutesField } from '../../types';
 import { flaggedTasks } from '../../greenPlay';
 import { TaskModal } from '../TaskModal/TaskModal';
 
@@ -75,6 +77,130 @@ function RequestersList() {
 // Shows exactly what the Green Play review will walk through on next open:
 // the un-walked remainder of an in-flight session plus any newly flagged
 // tasks (mirrors the sidebar badge / GreenPlay sync logic).
+// Meeting-minutes builder fields (✉ assistant → ✎): add/disable/reorder;
+// the email is composed from the enabled fields in this order.
+function MinutesFieldsSection() {
+  const minutesFields = useStore(s => s.minutesFields);
+  const setMinutesFields = useStore(s => s.setMinutesFields);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [newLabel, setNewLabel] = useState('');
+
+  function patch(id: string, p: Partial<MinutesField>) {
+    setMinutesFields(minutesFields.map(f => f.id === id ? { ...f, ...p } : f));
+  }
+
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Meeting minutes fields</div>
+      <div style={{ fontSize: 12.5, color: 'var(--t-muted)', marginBottom: 12 }}>
+        The ✎ Meeting minutes form in the communication assistant builds its email from these, in this order. Drag to reorder, uncheck to disable, add your own in between.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+        {minutesFields.map((f, i) => (
+          <div key={f.id} draggable
+            onDragStart={() => setDragIdx(i)}
+            onDragOver={e => { if (dragIdx !== null) e.preventDefault(); }}
+            onDrop={() => { if (dragIdx !== null && dragIdx !== i) { const n = [...minutesFields]; const [x] = n.splice(dragIdx, 1); n.splice(i, 0, x); setMinutesFields(n); } setDragIdx(null); }}
+            onDragEnd={() => setDragIdx(null)}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 8, fontSize: 13, opacity: dragIdx === i ? 0.45 : 1, cursor: 'grab' }}>
+            <span style={{ color: 'var(--t-muted)', fontSize: 12 }}>⠿</span>
+            <input type="checkbox" checked={f.enabled} onChange={e => patch(f.id, { enabled: e.target.checked })} style={{ cursor: 'pointer' }} />
+            <input value={f.label} onChange={e => patch(f.id, { label: e.target.value })}
+              style={{ flex: 1, fontSize: 13, fontWeight: 600, border: 'none', outline: 'none', background: 'transparent', color: f.enabled ? 'var(--t-txt)' : 'var(--t-muted)' }} />
+            <select value={f.kind} onChange={e => patch(f.id, { kind: e.target.value as MinutesField['kind'] })}
+              style={{ fontSize: 12, padding: '3px 6px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)' }}>
+              <option value="text">One line</option>
+              <option value="multiline">Paragraph</option>
+              <option value="bullets">Bullets</option>
+            </select>
+            <span onClick={() => setMinutesFields(minutesFields.filter(x => x.id !== f.id))}
+              title="Remove field" style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 15, lineHeight: 1 }}>×</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && newLabel.trim()) { setMinutesFields([...minutesFields, { id: 'mf' + Date.now().toString(36), label: newLabel.trim(), kind: 'text', enabled: true }]); setNewLabel(''); } }}
+          placeholder="Add a field (e.g. Decisions)…"
+          style={{ fontSize: 13, padding: '7px 11px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', width: 240 }} />
+        <button onClick={() => { if (newLabel.trim()) { setMinutesFields([...minutesFields, { id: 'mf' + Date.now().toString(36), label: newLabel.trim(), kind: 'text', enabled: true }]); setNewLabel(''); } }}
+          disabled={!newLabel.trim()}
+          style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 12.5, fontWeight: 600, padding: '7px 12px', borderRadius: 7, cursor: 'pointer', opacity: newLabel.trim() ? 1 : 0.5 }}>
+          + Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Everything currently ON HOLD (⏸ / ⏭ buttons): what's parked, why, and
+// when it comes back — with an immediate-release button.
+function OnHoldSection() {
+  const items = useStore(s => s.items);
+  const returnFromHold = useStore(s => s.returnFromHold);
+  const [open, setOpen] = useState(false);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+
+  const held = items.filter((it): it is Task => it.kind === 'task' && !it.archived && it.status === 'waiting');
+  const fmtDue = (t: Task) => {
+    if (!t.holdSchedule) return 'no schedule';
+    if (t.holdSchedule.type === 'once') {
+      const d = new Date(t.holdSchedule.at);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const day = d.getTime() - today.getTime() < 86400_000 && d.getTime() >= today.getTime() ? '' : `${d.getDate()}/${d.getMonth() + 1} `;
+      return `back ${day}${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
+    return 'recurring';
+  };
+
+  return (
+    <div style={card}>
+      <div onClick={() => setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6, cursor: 'pointer' }}>
+        <div style={{ fontSize: 15, fontWeight: 700 }}>On hold</div>
+        <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 9px', borderRadius: 20, background: held.length > 0 ? 'var(--t-amber-bg)' : 'var(--t-surf3)', color: held.length > 0 ? 'var(--t-amber)' : 'var(--t-muted)' }}>
+          {held.length}
+        </span>
+        <div style={{ marginLeft: 'auto' }}>
+          <button onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+            style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 7, cursor: 'pointer' }}>
+            {open ? 'Hide queue' : 'Show queue'}
+          </button>
+        </div>
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: open && held.length > 0 ? 12 : 0 }}>
+        Parked cards (⏸ hold, ⏭ 1h, ⏭ 17:00) and when they rejoin the feed — they return with the +100 boost.
+      </div>
+      {open && (
+        held.length === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>Nothing is on hold.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {held.map(t => (
+              <div key={t.id}
+                onClick={() => setOpenTaskId(t.id)}
+                title="Open the task"
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>
+                <span style={{ fontSize: 13, flexShrink: 0 }}>⏸</span>
+                <span style={{ flex: 1, minWidth: 0, fontWeight: 500, color: 'var(--t-txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+                {t.toCheck?.trim() && (
+                  <span style={{ fontSize: 11.5, color: 'var(--t-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180, flexShrink: 0 }}>{t.toCheck}</span>
+                )}
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--t-amber)', flexShrink: 0 }}>{fmtDue(t)}</span>
+                <button onClick={e => { e.stopPropagation(); returnFromHold(t.id); }}
+                  title="Release now (returns to the feed boosted)"
+                  style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}>
+                  Release
+                </button>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+      {openTaskId && <TaskModal taskId={openTaskId} onClose={() => setOpenTaskId(null)} urlDriven={false} />}
+    </div>
+  );
+}
+
 function ReviewQueueSection() {
   const items = useStore(s => s.items);
   const reviewSession = useStore(s => s.reviewSession);
@@ -223,6 +349,7 @@ function ManagedList({ title, items, onAdd, onRemove }: { title: string; items: 
 
 const SETTINGS_TABS = [
   { id: 'general', label: 'General' },
+  { id: 'dashboard', label: 'Dashboard' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'review', label: 'Review' },
   { id: 'responsibilities', label: 'Responsibilities' },
@@ -638,6 +765,7 @@ export function Settings() {
       {/* Jira (multi-host) */}
       {tab === 'integrations' && (<>
       <JiraHostsSection />
+      <CustomSystemsSection />
 
       {/* ITSM (ServiceNow) */}
       {(() => {
@@ -688,7 +816,12 @@ export function Settings() {
       {tab === 'review' && (<>
         <ReviewQueueSection />
         <SprintQueueSection />
+        <OnHoldSection />
       </>)}
+
+      {tab === 'general' && <MinutesFieldsSection />}
+
+      {tab === 'dashboard' && <DashboardSection />}
 
       {tab === 'responsibilities' && <ResponsibilitiesSection />}
 

@@ -5,6 +5,7 @@ import { QUICK_BLUE } from '../Common/QuickToActSection';
 import { buildMailEntry } from '../../mailEntry';
 import { MailEntryFields } from '../Mail/MailEntryFields';
 import { FieldPanel } from '../Play/Play';
+import { firstTicketUrl } from '../../ticketWindow';
 
 interface Props {
   onClose: () => void;
@@ -38,7 +39,7 @@ export function buildSprintPool(
   const aged: { t: SprintTarget; at: number }[] = [];
   if (toggles.mail) for (const it of items) if (it.kind === 'task' && it.type === 'mail' && !it.archived) mail.push({ t: { kind: 'mail', taskId: it.id }, at: it.createdAt });
   if (toggles.quickSubtask) for (const t of work) for (const s of t.subtasks) if (s.isQuick && !s.done) aged.push({ t: { kind: 'subtask', taskId: t.id, subId: s.id }, at: s.createdAt ?? 0 });
-  if (toggles.quickTask) for (const t of work) if (t.quick) aged.push({ t: { kind: 'task', taskId: t.id }, at: t.createdAt });
+  if (toggles.quickTask) for (const t of work) if (t.quick || t.type === 'quick') aged.push({ t: { kind: 'task', taskId: t.id }, at: t.createdAt });
   const pos = new Map(order.map((k, i) => [k, i]));
   const section = (list: { t: SprintTarget; at: number }[]) => {
     list.sort((a, b) => a.at - b.at);
@@ -135,6 +136,10 @@ export function SprintMode({ onClose }: Props) {
   const items = useStore(s => s.items);
   const updateItem = useStore(s => s.updateItem);
   const toggleSubtaskDone = useStore(s => s.toggleSubtaskDone);
+  const completeItem = useStore(s => s.completeItem);
+  const jiraConfigs = useStore(s => s.jiraConfigs);
+  const itsmConfig = useStore(s => s.itsmConfig);
+  const customSystems = useStore(s => s.customSystems);
   const updateSubtask = useStore(s => s.updateSubtask);
   const createItem = useStore(s => s.createItem);
   const deleteItem = useStore(s => s.deleteItem);
@@ -146,6 +151,25 @@ export function SprintMode({ onClose }: Props) {
   }, []);
   const [idx, setIdx] = useState(0);
   const [doneCount, setDoneCount] = useState(0);
+  const [allDoneTask, setAllDoneTask] = useState<string | null>(null);
+  // Banner keyboard: capture-phase so sprint's own keys don't fire.
+  const allDoneRef = useRef<string | null>(null);
+  allDoneRef.current = allDoneTask;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const id = allDoneRef.current;
+      if (!id) return;
+      if (e.key === 'Enter' || e.key === 'ArrowRight') { e.preventDefault(); e.stopImmediatePropagation(); setAllDoneTask(null); }
+      else if (e.code === 'KeyT') {
+        const st = useStore.getState();
+        const t = st.items.find((i): i is Task => i.id === id && i.kind === 'task');
+        const url = t ? firstTicketUrl(t, st.jiraConfigs, st.itsmConfig, st.customSystems) : null;
+        if (url) { e.preventDefault(); e.stopImmediatePropagation(); window.open(url, '_blank'); }
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
   const [skipCount, setSkipCount] = useState(0);
   const [expanded, setExpanded] = useState(false);
   // ⊞ drawer: empty fields hide behind one icon; picking one reveals it as
@@ -203,8 +227,15 @@ export function SprintMode({ onClose }: Props) {
 
   function markDone() {
     if (!target || !resolved) return;
-    if (target.kind === 'subtask') toggleSubtaskDone(target.taskId, target.subId);
-    else updateItem(target.taskId, { status: 'done' });
+    if (target.kind === 'subtask') {
+      // If this was the LAST open subtask, surface it: the task itself may
+      // now be closable (or worth a look at its ticket).
+      const parent = items.find((i): i is Task => i.id === target.taskId && i.kind === 'task');
+      const remaining = parent ? parent.subtasks.filter(su => !su.done && su.id !== target.subId).length : 1;
+      if (parent && remaining === 0) setAllDoneTask(parent.id);
+      toggleSubtaskDone(target.taskId, target.subId);
+    }
+    if (target.kind !== 'subtask') updateItem(target.taskId, { status: 'done' });
     setDoneCount(n => n + 1);
     setIdx(i => i + 1);
   }
@@ -323,6 +354,28 @@ export function SprintMode({ onClose }: Props) {
         </div>
       )}
 
+      {/* Last-open-subtask celebration: keyboard →/↵ skip · t ticket */}
+      {allDoneTask && (() => {
+        const t = items.find((i): i is Task => i.id === allDoneTask && i.kind === 'task');
+        if (!t || t.archived) return null;
+        const url = firstTicketUrl(t, jiraConfigs, itsmConfig, customSystems);
+        const mini: React.CSSProperties = { border: '1px solid #3a3a40', background: '#2b2b30', color: '#ddd', fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap' };
+        // (keys handled in the banner effect below)
+        return (
+          <div style={{ position: 'fixed', left: '50%', bottom: 92, transform: 'translateX(-50%)', zIndex: 6, display: 'flex', alignItems: 'center', gap: 10, background: '#232327', border: '1px solid oklch(0.5 0.13 150)', borderRadius: 14, padding: '12px 16px', boxShadow: '0 10px 32px rgba(0,0,0,0.5)', maxWidth: '92vw' }}>
+            <span style={{ fontSize: 16, flexShrink: 0 }}>🎉</span>
+            <span style={{ fontSize: 13.5, color: '#eee', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>
+              No open subtasks left on “{t.title}”
+            </span>
+            {url && <button onClick={() => window.open(url, '_blank')} style={mini}>Ticket ↗ <kbd style={{ opacity: 0.6 }}>t</kbd></button>}
+            <button onClick={() => { completeItem(t.id); setAllDoneTask(null); }}
+              style={{ ...mini, background: 'oklch(0.45 0.12 150)', borderColor: 'oklch(0.5 0.13 150)', color: 'white' }}>
+              ✓ Close the task
+            </button>
+            <button onClick={() => setAllDoneTask(null)} style={mini}>Skip <kbd style={{ opacity: 0.6 }}>→/↵</kbd></button>
+          </div>
+        );
+      })()}
       {finished ? (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
           <div style={{ fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em' }}>

@@ -18,7 +18,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     rows: [
       { keys: ['⌘/Ctrl', 'K'], what: 'Create task / reminder (Shift+Enter there creates it tagged Quick)' },
       { keys: ['⌘/Ctrl', 'F'], what: 'Search — spotlight anywhere, focuses the box on Explore' },
-      { keys: ['1', '…', '7'], what: 'Switch tab: Feed · Explore · Kanban · Table · Archive · Docs · Settings' },
+      { keys: ['1', '…', '9'], what: 'Switch tab: Home · Feed · Explore · Kanban · Table · Quick Help · Archive · Docs · Settings' },
       { keys: ['r'], what: 'Start the Green Play review' },
       { keys: ['m'], what: 'Open the communication assistant' },
       { keys: ['s'], what: 'Start Sprint (war mode)' },

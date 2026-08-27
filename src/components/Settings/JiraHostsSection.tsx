@@ -79,7 +79,7 @@ export function JiraHostsSection() {
     setDraft({
       host: c.host, username: c.username, apiToken: c.apiToken, authMode: c.authMode ?? 'pat',
       projectKey: c.projectKey, component: c.component, defaultAssigneeId: c.defaultAssigneeId,
-      pid: c.pid ?? '', issueTypeId: c.issueTypeId ?? '', priorityId: c.priorityId ?? '',
+      pid: c.pid ?? '', issueTypeId: c.issueTypeId ?? '', priorityId: c.priorityId ?? '', urgentLabel: c.urgentLabel ?? '',
       summaryTemplate: c.summaryTemplate ?? '', createUrlTemplate: c.createUrlTemplate ?? '',
     });
   }
@@ -236,6 +236,9 @@ export function JiraHostsSection() {
             </div>
             <div><div style={fl}>Default Assignee (Jira username)</div>
               <input value={draft.defaultAssigneeId} onChange={e => setDraft(d => ({ ...d, defaultAssigneeId: e.target.value }))} placeholder="jsmith (optional)" style={fi} />
+            </div>
+            <div><div style={fl}>Urgent-task Label</div>
+              <input value={draft.urgentLabel ?? ''} onChange={e => setDraft(d => ({ ...d, urgentLabel: e.target.value }))} placeholder="unplanned (added to Urgent-type tickets)" style={fi} />
             </div>
           </div>
           <div style={grp}>Ticket create defaults (API)</div>

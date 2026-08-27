@@ -4,6 +4,9 @@ A personal task-management app built with React, TypeScript, and Vite. All data 
 
 ## Key features
 
+- **Dashboard homepage** (`⌂`, key 1, the landing view) — clickable stat tiles (hover ▶ jumps into the flow), the daily agenda pipeline (Review → Plan → Communication → Sprint → Today's tasks, plus your own custom steps), a "Continue: <next step>" button, a Plan activation card until today is planned (then today's tasks in work order), and 🚶 Walkthrough mode: the app navigates you screen-by-screen through the agenda, waiting at each until that step's done-condition is met. Everything is configurable in Settings → Dashboard: tiles on/off + order, agenda steps, gamification master toggle (visuals later), and a dashboard version switcher.
+- **Task types** — every task carries a Type label: **Planned** (real, Jira-backed work), **Urgent / same-day** (unplanned; stays in the feed; its Jira gets a configurable label), **Quick help** (small asks — skip the feed entirely, live in the ⚡ Quick Help walker view + Sprint). New tasks always get a type (default Planned); legacy untyped tasks show highlighted until labeled. The Table filters by type.
+
 **Working the queue**
 - **Card feed** — one card at a time from a scored queue (urgent / important / quick tags, staleness, hold-return boost); a thin frosted transport bar (← back · ⏸ hold · ▶ play · 🎉 complete · continue →); "for today" focus mode
 - **Green Play review** (`r`) — guided walkthrough per task: create/update/close Jira, break into subtasks, estimate, log comms; resumable sessions with a queue preview in Settings
@@ -20,6 +23,11 @@ A personal task-management app built with React, TypeScript, and Vite. All data 
 
 **Integrations** (all configured from Settings — URLs, fields, and templates are data, so it adapts to any organization)
 - **Jira**: multiple hosts (Data Center; PAT Bearer auth or username+password Basic, per host), create via REST (pre-filled create-URL opens as fallback when the API is unreachable), summary templates, comments, close transitions
+- **Custom systems**: Settings → Integrations → Custom systems — URL-template integrations (name + base URL + open/create URIs); every card gets a ticket row per system with ↗/⧉ open and a Create button
+- **Meeting minutes**: ✎ button in the communication assistant — configurable fields (Settings → General: add/disable/reorder, one-line/paragraph/bullets) compose a ready-to-send email as a new mail entry
+- **Day summary (Σ)**: in Review — everything completed/progressed/created for yesterday or today, built from store data, copyable and savable into Docs' read-only "Review summaries" archive (kept a year)
+- **Hide-for-now**: transport-bar ⏭ 1h / ⏭ 17:00 park the current card (hold machinery, returns boosted); Settings → Review shows the On-hold queue with release buttons
+- **Requester quick-create**: every requester dropdown ends with "+ New requester…" (name + Jira username → Reporter mapping)
 - **Ticket buttons everywhere**: ↗ opens the Jira/ITSM ticket in a new tab; ⧉ opens it in a centered popup window (same logged-in session, reused per ticket)
 - **ServiceNow**: INC/CHG creation from reusable templates (`#sncreate`) with FILL prompts, plus live ticket-status sync on cards
 - **AI assignment**: send a task to any OpenAI/Anthropic-style endpoint from the table; reply goes to the logs

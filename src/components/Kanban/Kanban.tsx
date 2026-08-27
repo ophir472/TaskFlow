@@ -3,8 +3,9 @@ import { useStore } from '../../store';
 import type { Task, TaskStatus } from '../../types';
 
 const COLUMNS: { key: TaskStatus; label: string }[] = [
-  { key: 'in_progress', label: 'In Progress' },
   { key: 'backlog', label: 'Backlog' },
+  { key: 'todo', label: 'To Do' },
+  { key: 'in_progress', label: 'In Progress' },
   { key: 'waiting', label: 'Waiting' },
   { key: 'done', label: 'Done' },
 ];

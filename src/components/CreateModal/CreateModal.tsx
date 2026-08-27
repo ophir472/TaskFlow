@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { backdropCloseProps } from '../../backdrop';
 import { useStore } from '../../store';
+import { RequesterSelect } from '../Common/RequesterSelect';
 import { useLogMount } from '../../useLogMount';
 import { nextId } from '../../engine';
 import type { Item, ScheduleSpec } from '../../types';
@@ -45,6 +46,10 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
   const [notes, setNotes] = useState('');
   const [schedule, setSchedule] = useState<ScheduleSpec | null>(null);
   const [forToday, setForToday] = useState(false);
+  const [workType, setWorkType] = useState<'planned' | 'urgent' | 'quick'>('planned');
+  const [status, setStatus] = useState<'backlog' | 'todo' | 'in_progress' | 'waiting'>('backlog');
+  const [subs, setSubs] = useState<string[]>([]);
+  const [subDraft, setSubDraft] = useState('');
   const [urgent, setUrgent] = useState(false);
   const [important, setImportant] = useState(false);
   const [quick, setQuick] = useState(false);
@@ -69,8 +74,10 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
         // Seed the Teams communication field with the typed value (createItem
         // only auto-seeds when communications is absent).
         communications: [{ id: 'c' + now + Math.random().toString(36).slice(2, 5), label: 'Teams', value: communication }],
-        requester, project, status: 'backlog', forToday, urgent, important, quick: quick || asQuick, noTag: (quick || asQuick) ? false : noTag,
-        toCheck: '', priorityBoost: false, subtasks: [],
+        type: workType,
+        requester, project, status, forToday, urgent: urgent || workType === 'urgent', important, quick: quick || asQuick, noTag: (quick || asQuick) ? false : noTag,
+        toCheck: '', priorityBoost: false,
+        subtasks: subs.map(st => ({ id: nextId('s'), title: st, done: false, isNext: false, jira: '', generalLink: '', notes: '', blockers: '', createdAt: now })),
         bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false,
       };
     } else {
@@ -120,6 +127,14 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
               <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--t-txt)' }}>For today</span>
             </label>
             <div>
+              <div style={lbl}>Kind</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {([['planned', 'Planned'], ['urgent', 'Urgent / same-day'], ['quick', 'Quick help']] as const).map(([k, label]) => (
+                  <div key={k} onClick={() => setWorkType(k)} style={chip(workType === k)}>{workType === k ? '✓ ' : ''}{label}</div>
+                ))}
+              </div>
+            </div>
+            <div>
               <div style={lbl}>Tags</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {TAG_DEFS.map(({ key, label }) => {
@@ -128,10 +143,34 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
                 })}
               </div>
             </div>
+            <div>
+              <div style={lbl}>Subtasks</div>
+              {subs.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+                  {subs.map((st, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--t-txt)', padding: '4px 10px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 7 }}>
+                      <span style={{ flex: 1 }}>{st}</span>
+                      <span onClick={() => setSubs(list => list.filter((_, j) => j !== i))} style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 14, lineHeight: 1 }}>×</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <input value={subDraft} onChange={e => setSubDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && subDraft.trim()) { e.preventDefault(); e.stopPropagation(); setSubs(list => [...list, subDraft.trim()]); setSubDraft(''); }
+                }}
+                placeholder="Add a subtask, Enter to add…" style={inp} />
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div><div style={lbl}>Requester</div>
-                <select value={requester} onChange={e => setRequester(e.target.value)} style={sel}>
-                  <option value="">—</option>{requesters.map(r => <option key={r} value={r}>{r}</option>)}
+                <RequesterSelect value={requester} onChange={setRequester} style={sel} />
+              </div>
+              <div><div style={lbl}>Status</div>
+                <select value={status} onChange={e => setStatus(e.target.value as 'backlog' | 'todo' | 'in_progress' | 'waiting')} style={sel}>
+                  <option value="backlog">Backlog</option>
+                  <option value="todo">To do</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="waiting">Waiting</option>
                 </select>
               </div>
               <div><div style={lbl}>Project</div>

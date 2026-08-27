@@ -275,6 +275,11 @@ export function Docs() {
     setDocPageContent(page.id, next);
   }
 
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [reviewsOpen, setReviewsOpen] = useState(false);
+  const [selSummaryId, setSelSummaryId] = useState<string | null>(null);
+  const reviewSummaries = useStore(s => s.reviewSummaries);
+  const [pagesCollapsed, setPagesCollapsed] = useState(false);
   const colHdr: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0 2px 6px' };
   const rowSt = (active: boolean): React.CSSProperties => ({
     display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '7px 9px', borderRadius: 7, cursor: 'pointer',
@@ -291,9 +296,20 @@ export function Docs() {
 
   return (
     <div style={{ flex: 1, display: 'flex', minHeight: 0, padding: '0 36px 24px', gap: 0 }}>
-      {/* ── Notebooks + categories column ── */}
+      {/* ── Notebooks + categories column (collapsible) ── */}
+      {navCollapsed ? (
+        <div onClick={() => setNavCollapsed(false)} title="Expand notebooks"
+          style={{ width: 26, flexShrink: 0, borderRight: '1px solid var(--t-brd)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 6, gap: 8, color: 'var(--t-muted)' }}>
+          <span style={{ fontSize: 12 }}>›</span>
+          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', writingMode: 'vertical-rl' }}>Notebooks</span>
+        </div>
+      ) : (
       <div style={{ width: 190, flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0, paddingRight: 14, borderRight: '1px solid var(--t-brd)' }}>
-        <div style={colHdr}>Notebooks</div>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ ...colHdr, flex: 1 }}>Notebooks</div>
+          <span onClick={() => setNavCollapsed(true)} title="Collapse column"
+            style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 12, padding: '0 2px 6px' }}>‹</span>
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {notebooks.map(n => (
             <div key={n.id} style={rowSt(nb?.id === n.id)}
@@ -324,12 +340,61 @@ export function Docs() {
             <ColumnAdd placeholder="+ Category" onAdd={name => addDocCategory(nb.id, name)} />
           </>
         )}
+        {/* Read-only Reviews archive — system section, can't be deleted or edited */}
+        <div onClick={() => { setReviewsOpen(true); setSelSummaryId(reviewSummaries[0]?.id ?? null); }}
+          title="Auto-saved day summaries (read-only, kept a year)"
+          style={{ marginTop: 'auto', paddingTop: 14, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: 'var(--t-muted)', fontSize: 12.5, fontWeight: 600 }}>
+          <span>☑</span><span>Review summaries</span>
+          <span style={{ marginLeft: 'auto', fontSize: 11 }}>{reviewSummaries.length}</span>
+        </div>
       </div>
+      )}
+      {reviewsOpen && (
+        <div onClick={() => setReviewsOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: 'min(760px, 94vw)', height: 'min(560px, 86vh)', display: 'flex', background: 'var(--t-surf)', borderRadius: 16, border: '1px solid var(--t-brd)', boxShadow: '0 24px 70px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
+            <div style={{ width: 170, flexShrink: 0, borderRight: '1px solid var(--t-brd)', padding: 14, overflowY: 'auto' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Review summaries</div>
+              {reviewSummaries.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--t-muted)' }}>None yet — save one from Review's Σ Summary.</div>}
+              {reviewSummaries.map(r => (
+                <div key={r.id} onClick={() => setSelSummaryId(r.id)}
+                  style={{ padding: '6px 8px', borderRadius: 7, fontSize: 12.5, cursor: 'pointer', fontWeight: selSummaryId === r.id ? 700 : 500, background: selSummaryId === r.id ? 'var(--t-acc-bg)' : 'transparent', color: selSummaryId === r.id ? 'var(--t-acc-dk)' : 'var(--t-txt2)' }}>
+                  {r.date}
+                </div>
+              ))}
+            </div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--t-brd)' }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--t-txt)' }}>
+                  {reviewSummaries.find(r => r.id === selSummaryId)?.date ?? '—'}
+                </span>
+                <span style={{ marginLeft: 10, fontSize: 11, color: 'var(--t-muted)' }}>read-only · auto-pruned after a year</span>
+                <span onClick={() => setReviewsOpen(false)} title="Close" style={{ marginLeft: 'auto', cursor: 'pointer', color: 'var(--t-muted)', fontSize: 18, lineHeight: 1 }}>×</span>
+              </div>
+              <pre style={{ flex: 1, margin: 0, padding: '14px 18px', overflowY: 'auto', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--t-txt)' }}>
+                {reviewSummaries.find(r => r.id === selSummaryId)?.text ?? 'Select a summary.'}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* ── Pages column ── */}
-      {nb && cat && (
+      {/* ── Pages column (collapsible) ── */}
+      {nb && cat && pagesCollapsed && (
+        <div onClick={() => setPagesCollapsed(false)} title="Expand pages"
+          style={{ width: 26, flexShrink: 0, borderRight: '1px solid var(--t-brd)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 6, gap: 8, color: 'var(--t-muted)' }}>
+          <span style={{ fontSize: 12 }}>›</span>
+          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', writingMode: 'vertical-rl', maxHeight: 160, overflow: 'hidden' }}>{cat.name}</span>
+        </div>
+      )}
+      {nb && cat && !pagesCollapsed && (
         <div style={{ width: 210, flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '0 14px', borderRight: '1px solid var(--t-brd)' }}>
-          <div style={colHdr}>{cat.name}</div>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <div style={{ ...colHdr, flex: 1 }}>{cat.name}</div>
+            <span onClick={() => setPagesCollapsed(true)} title="Collapse column"
+              style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 12, padding: '0 2px 6px' }}>‹</span>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
             {cat.pages.map(p => (
               <div key={p.id} style={rowSt(page?.id === p.id)} onClick={() => openPage(p.id)}>

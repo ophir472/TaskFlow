@@ -4,10 +4,12 @@ import { flaggedTasks } from '../../greenPlay';
 import type { Task } from '../../types';
 
 const NAV: { key: View; label: string; icon: string }[] = [
+  { key: 'home', label: 'Home', icon: '⌂' },
   { key: 'feed', label: 'Card Feed', icon: '🂡' },
   { key: 'explore', label: 'Explore', icon: '⌕' },
   { key: 'kanban', label: 'Kanban', icon: '⫴' },
   { key: 'table', label: 'Table', icon: '☰' },
+  { key: 'quickhelp', label: 'Quick Help', icon: '⚡' },
   { key: 'archive', label: 'Archive', icon: '🗑' },
   { key: 'docs', label: 'Docs', icon: '▤' },
   { key: 'settings', label: 'Settings', icon: '⚙' },
@@ -80,7 +82,7 @@ export function Sidebar({ onNewItem, onOpenReview, syncState }: Props) {
 
       {/* Top: logo — clicking navigates to the top of the card feed */}
       <div
-        onClick={e => { e.stopPropagation(); setDisplayId(null); setView('feed'); }}
+        onClick={e => { e.stopPropagation(); setDisplayId(null); setView('home'); }}
         title="Go to card feed"
         style={{
           display: 'flex', alignItems: 'center',

@@ -12,7 +12,9 @@ export function buildQueue(items: Item[]): Item[] {
   const active = items.filter(it => {
     if (it.archived) return false;
     if (it.kind === 'task') {
-      if ((it as Task).type === 'mail') return false;
+      // Mail entries and quick-help items never enter the scored feed —
+      // they live in the assistant / Quick Help view respectively.
+      if ((it as Task).type === 'mail' || (it as Task).type === 'quick') return false;
       return it.status !== 'done' && it.status !== 'archived' &&
         (it.status !== 'waiting' || it.priorityBoost);
     }

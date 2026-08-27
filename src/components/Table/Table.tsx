@@ -2,6 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
+import { MailEntryPopup } from '../Mail/MailEntryPopup';
+import { TypePicker } from '../Common/TypePicker';
+import { parseEstimate, formatMinutes } from '../../estimateParser';
 import { DailyPlay } from '../DailyPlay/DailyPlay';
 import { ReminderModal } from '../ReminderPopup/ReminderModal';
 import { AiAssignModal } from './AiAssignModal';
@@ -24,7 +27,12 @@ interface ColDef {
 
 const STD_COLS: ColDef[] = [
   { key: 'title', label: 'Title', defaultOn: true, getValue: it => it.title },
-  { key: 'type', label: 'Type', defaultOn: true, getValue: it => it.kind === 'task' ? 'Task' : 'Reminder' },
+  { key: 'type', label: 'Item', defaultOn: false, getValue: it => it.kind !== 'task' ? 'Reminder' : (it as Task).type === 'mail' ? '✉ Mail' : 'Task' },
+  { key: 'kind', label: 'Kind', defaultOn: true, getValue: it => {
+    if (it.kind !== 'task') return '';
+    const wt = (it as Task).type;
+    return wt === 'mail' ? '✉ mail' : wt === 'quick' ? 'Quick help' : wt === 'urgent' ? 'Urgent' : wt === 'planned' ? 'Planned' : 'untyped';
+  }},
   { key: 'requester', label: 'Requester', defaultOn: true, getValue: it => (it as Task).requester ?? '' },
   { key: 'project', label: 'Project', defaultOn: true, getValue: it => (it as Task).project ?? '' },
   { key: 'status', label: 'Status / Schedule', defaultOn: true, getValue: it => it.kind === 'task' ? it.status.replace('_', ' ') : formatSchedule((it as Reminder).schedule) },
@@ -43,26 +51,13 @@ const STD_COLS: ColDef[] = [
 
 // ── Styles ──────────────────────────────────────────────────────
 
-function ghostSelect(hasValue: boolean): React.CSSProperties {
-  return {
-    fontSize: 13,
-    padding: '5px 6px 5px 10px',
-    borderRadius: 6,
-    border: 'none',
-    background: hasValue ? 'var(--t-acc-bg)' : 'transparent',
-    color: hasValue ? 'var(--t-acc-dk)' : 'var(--t-muted)',
-    fontWeight: hasValue ? 500 : 400,
-    cursor: 'pointer',
-    outline: 'none',
-  };
-}
 const ghostBtn: React.CSSProperties = {
   fontSize: 13, padding: '5px 10px', borderRadius: 6, border: 'none',
   background: 'transparent', color: 'var(--t-muted)', cursor: 'pointer', fontWeight: 500,
 };
 const EDITABLE_COLS = new Set(['title', 'requester', 'project', 'status', 'jira', 'estimate']);
 const DEFAULT_COL_WIDTHS: Record<string, number> = {
-  title: 200, type: 110, requester: 120, project: 120,
+  title: 200, type: 110, kind: 200, requester: 120, project: 120,
   status: 130, jira: 90, tags: 150, estimate: 90, score: 65, created: 95, updated: 95,
 };
 
@@ -94,6 +89,7 @@ export function Table() {
   const [reqFilter, setReqFilter] = useState('');
   const [projFilter, setProjFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [workTypeFilter, setWorkTypeFilter] = useState('');
   const [tagFilter, setTagFilter] = useState('');
   const [minScore, setMinScore] = useState('');
   const [quickFilters, setQuickFilters] = useState<Set<string>>(new Set());
@@ -112,8 +108,34 @@ export function Table() {
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
   const [modalTaskId, setModalTaskId] = useState<string | null>(null);
   const [reminderModalId, setReminderModalId] = useState<string | null>(null);
+  const [mailPopupId, setMailPopupId] = useState<string | null>(null);
   const [aiTaskId, setAiTaskId] = useState<string | null>(null);
   const [dailyOpen, setDailyOpen] = useState(false);
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(0);
+  const [viewMode, setViewMode] = useState<'table' | 'cards' | 'pipeline' | 'gantt'>('table');
+  const [filterMenu, setFilterMenu] = useState<string | null>(null);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+  // A dashboard tile can hand over a filter (e.g. "No Jira yet") — apply it
+  // as a normal on-screen pill so it's visible and removable.
+  const tableFilterPreset = useStore(s => s.tableFilterPreset);
+  const setTableFilterPreset = useStore(s => s.setTableFilterPreset);
+  useEffect(() => {
+    if (!tableFilterPreset) return;
+    if (tableFilterPreset === 'nojira') setQuickFilters(prev => new Set(prev).add('nojira'));
+    setTableFilterPreset(null);
+  }, [tableFilterPreset, setTableFilterPreset]);
+
+  useEffect(() => { setPage(0); }, [workTypeFilter, typeFilter, reqFilter, projFilter, statusFilter, tagFilter, minScore, quickFilters, viewMode]);
+
+  useEffect(() => {
+    if (!filterMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) setFilterMenu(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [filterMenu]);
   const colWidths = tableColWidthsStore;
   const [hoveredResize, setHoveredResize] = useState<string | null>(null);
 
@@ -230,6 +252,11 @@ export function Table() {
     if (reqFilter && (it as Task).requester !== reqFilter) return false;
     if (projFilter && (it as Task).project !== projFilter) return false;
     if (typeFilter && it.kind !== typeFilter) return false;
+    // Work-type label filter (planned / urgent / quick help / untyped)
+    if (workTypeFilter && it.kind === 'task') {
+      const wt = (it as Task).type;
+      if (workTypeFilter === 'untyped' ? (wt !== undefined) : wt !== workTypeFilter) return false;
+    }
     if (statusFilter && it.kind === 'task' && it.status !== statusFilter) return false;
     // Tag priority filter
     if (tagFilter && it.kind === 'task') {
@@ -245,7 +272,13 @@ export function Table() {
     if (quickFilters.has('updatedToday') && it.updatedAt < todayStart) return false;
     if (quickFilters.has('forToday') && !(it.kind === 'task' && (it as Task).forToday)) return false;
     if (quickFilters.has('untagged') && !(it.kind === 'task' && !(it as Task).urgent && !(it as Task).important && !(it as Task).quick && !(it as Task).noTag)) return false;
-    if (quickFilters.has('mail') && !(it.kind === 'task' && (it as Task).type === 'mail')) return false;
+    // Mail entries are hidden by DEFAULT — the ✉ Mail filter flips the view
+    // to only them.
+    {
+      const isMailRow = it.kind === 'task' && (it as Task).type === 'mail';
+      if (quickFilters.has('mail') ? !isMailRow : isMailRow) return false;
+    }
+    if (quickFilters.has('nojira') && !(it.kind === 'task' && ((it as Task).type === 'planned' || (it as Task).type === 'urgent') && !((it as Task).jiraLink ?? '').trim())) return false;
     return true;
   });
 
@@ -311,8 +344,14 @@ export function Table() {
     }
   }
 
-  // Keep refs current for keydown handler
-  rowsRef.current = rows;
+  // Pagination — keeps the table scannable; bulk actions and select-all
+  // still operate on the FULL filtered set.
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  const pagedRows = rows.slice(safePage * pageSize, (safePage + 1) * pageSize);
+
+  // Keep refs current for keydown handler (keyboard walks the visible page)
+  rowsRef.current = pagedRows;
   focusedIdxRef.current = focusedRowIdx;
 
   // Arrow key row navigation
@@ -376,6 +415,8 @@ export function Table() {
     // task modal doesn't know how to render them.
     const item = items.find(it => it.id === id);
     if (item?.kind === 'reminder') { setReminderModalId(id); return; }
+    // A mail row IS a mail entry — show the mail form, not a task card.
+    if (item?.kind === 'task' && (item as Task).type === 'mail') { setMailPopupId(id); return; }
     // Push URL so browser back closes the modal
     window.location.hash = `table/task/${id}`;
   }
@@ -470,67 +511,95 @@ export function Table() {
     <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', overflowX: 'hidden' }}>
       {/* Filters + column picker */}
       <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={ghostSelect(!!typeFilter)}>
-          <option value="">All types</option>
-          <option value="task">Task</option>
-          <option value="reminder">Reminder</option>
-        </select>
-        <select value={reqFilter} onChange={e => setReqFilter(e.target.value)} style={ghostSelect(!!reqFilter)}>
-          <option value="">All requesters</option>
-          {requesters.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
-        <select value={projFilter} onChange={e => setProjFilter(e.target.value)} style={ghostSelect(!!projFilter)}>
-          <option value="">All projects</option>
-          {projects.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={ghostSelect(!!statusFilter)}>
-          <option value="">All statuses</option>
-          <option value="in_progress">In progress</option>
-          <option value="backlog">Backlog</option>
-          <option value="waiting">Waiting</option>
-          <option value="done">Done</option>
-        </select>
-        <select value={tagFilter} onChange={e => setTagFilter(e.target.value)} style={ghostSelect(!!tagFilter)}>
-          <option value="">All tags</option>
-          <option value="urgent">Urgent</option>
-          <option value="important">Important</option>
-          <option value="quick">Quick</option>
-          <option value="noTag">None of these</option>
-        </select>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: minScore ? 'var(--t-acc-dk)' : 'var(--t-muted)', whiteSpace: 'nowrap', padding: '4px 8px', borderRadius: 6, background: minScore ? 'var(--t-acc-bg)' : 'transparent' }}>
-          Score ≥
-          <input type="number" min="0" value={minScore} onChange={e => setMinScore(e.target.value)} placeholder="—"
-            style={{ width: 36, fontSize: 12, padding: '2px 4px', borderRadius: 4, border: 'none', background: 'transparent', color: 'inherit', outline: 'none', textAlign: 'center' }} />
+        {/* + Filter — Linear-style: one button, a popover of fields, active
+            filters render as removable pills. */}
+        <div style={{ position: 'relative' }} ref={filterMenuRef}>
+          <button onClick={() => setFilterMenu(m => (m ? null : 'root'))}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 7, border: '1px dashed var(--t-brd2)', background: 'transparent', color: 'var(--t-muted)', cursor: 'pointer' }}>
+            <span style={{ fontSize: 13 }}>+</span> Filter
+          </button>
+          {filterMenu && (
+            <div style={{ position: 'absolute', left: 0, top: 'calc(100% + 6px)', zIndex: 40, minWidth: 210, maxHeight: 380, overflowY: 'auto', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 10px 32px rgba(0,0,0,0.18)', padding: '4px 0' }}>
+              {(() => {
+                const groupHdr: React.CSSProperties = { padding: '7px 14px 3px', fontSize: 10.5, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' };
+                const optSt: React.CSSProperties = { padding: '6px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--t-txt2)', whiteSpace: 'nowrap' };
+                const opt = (key: string, label: string, apply: () => void) => (
+                  <div key={key} onClick={() => { apply(); setFilterMenu(null); }} style={optSt}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    {label}
+                  </div>
+                );
+                return (
+                  <>
+                    <div style={groupHdr}>Kind</div>
+                    {opt('k-planned', 'Planned', () => setWorkTypeFilter('planned'))}
+                    {opt('k-urgent', 'Urgent / same-day', () => setWorkTypeFilter('urgent'))}
+                    {opt('k-quick', 'Quick help', () => setWorkTypeFilter('quick'))}
+                    {opt('k-untyped', 'Untyped', () => setWorkTypeFilter('untyped'))}
+                    <div style={groupHdr}>Status</div>
+                    {(['backlog', 'todo', 'in_progress', 'waiting', 'done'] as const).map(st =>
+                      opt(`s-${st}`, st === 'todo' ? 'To do' : st.replace('_', ' ').replace(/^./, c => c.toUpperCase()), () => setStatusFilter(st)))}
+                    <div style={groupHdr}>Quick</div>
+                    {opt('q-nojira', 'No Jira yet', () => setQuickFilters(prev => new Set(prev).add('nojira')))}
+                    {opt('q-mail', '✉ Mail', () => setQuickFilters(prev => new Set(prev).add('mail')))}
+                    {opt('q-created', 'Created today', () => setQuickFilters(prev => new Set(prev).add('createdToday')))}
+                    {opt('q-updated', 'Updated today', () => setQuickFilters(prev => new Set(prev).add('updatedToday')))}
+                    {opt('q-untagged', 'Untagged', () => setQuickFilters(prev => new Set(prev).add('untagged')))}
+                    <div style={groupHdr}>Tag</div>
+                    {opt('t-urgent', 'Urgent', () => setTagFilter('urgent'))}
+                    {opt('t-important', 'Important', () => setTagFilter('important'))}
+                    {opt('t-quick', 'Quick', () => setTagFilter('quick'))}
+                    {opt('t-none', 'None of these', () => setTagFilter('noTag'))}
+                    {requesters.length > 0 && <div style={groupHdr}>Requester</div>}
+                    {requesters.map(r => opt(`r-${r}`, r, () => setReqFilter(r)))}
+                    {projects.length > 0 && <div style={groupHdr}>Project</div>}
+                    {projects.map(p => opt(`p-${p}`, p, () => setProjFilter(p)))}
+                    <div style={groupHdr}>Item</div>
+                    {opt('i-task', 'Tasks', () => setTypeFilter('task'))}
+                    {opt('i-reminder', 'Reminders', () => setTypeFilter('reminder'))}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', fontSize: 12.5, color: 'var(--t-txt2)', borderTop: '1px solid var(--t-brd2)', marginTop: 4 }}>
+                      Score ≥
+                      <input type="number" min="0" value={minScore} onChange={e => setMinScore(e.target.value)} placeholder="—"
+                        style={{ width: 44, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', textAlign: 'center' }} />
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
         </div>
 
-        {/* Quick filter chips */}
-        {([
-          { key: 'createdToday', label: 'Created today' },
-          { key: 'updatedToday', label: 'Updated today' },
-          { key: 'forToday', label: 'Marked today' },
-          { key: 'untagged', label: 'Untagged' },
-          { key: 'mail', label: '✉ Mail' },
-        ] as const).map(({ key, label }) => {
-          const active = quickFilters.has(key);
+        {/* Active filter pills */}
+        {(() => {
+          const QF_LABELS: Record<string, string> = { createdToday: 'Created today', updatedToday: 'Updated today', forToday: 'Today scope', untagged: 'Untagged', mail: '✉ Mail', nojira: 'No Jira yet' };
+          const KIND_LABELS: Record<string, string> = { planned: 'Planned', urgent: 'Urgent', quick: 'Quick help', untyped: 'Untyped' };
+          const pills: { label: string; clear: () => void }[] = [];
+          if (workTypeFilter) pills.push({ label: `Kind: ${KIND_LABELS[workTypeFilter] ?? workTypeFilter}`, clear: () => setWorkTypeFilter('') });
+          if (statusFilter) pills.push({ label: `Status: ${statusFilter.replace('_', ' ')}`, clear: () => setStatusFilter('') });
+          if (reqFilter) pills.push({ label: `Requester: ${reqFilter}`, clear: () => setReqFilter('') });
+          if (projFilter) pills.push({ label: `Project: ${projFilter}`, clear: () => setProjFilter('') });
+          if (tagFilter) pills.push({ label: `Tag: ${tagFilter === 'noTag' ? 'none' : tagFilter}`, clear: () => setTagFilter('') });
+          if (typeFilter) pills.push({ label: `Item: ${typeFilter}`, clear: () => setTypeFilter('') });
+          if (minScore) pills.push({ label: `Score ≥ ${minScore}`, clear: () => setMinScore('') });
+          for (const k of quickFilters) if (k !== 'forToday') pills.push({ label: QF_LABELS[k] ?? k, clear: () => setQuickFilters(prev => { const n = new Set(prev); n.delete(k); return n; }) });
           return (
-            <button key={key}
-              onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; })}
-              style={{ fontSize: 12.5, padding: '5px 10px', borderRadius: 6, border: 'none', background: active ? 'var(--t-acc-bg)' : 'transparent', color: active ? 'var(--t-acc-dk)' : 'var(--t-muted)', cursor: 'pointer', fontWeight: active ? 500 : 400, whiteSpace: 'nowrap' }}
-              onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--t-surf2)'; }}
-              onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
-              {label}
-            </button>
+            <>
+              {pills.map(p => (
+                <span key={p.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 7, background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', border: '1px solid color-mix(in oklab, var(--t-acc) 30%, transparent)', whiteSpace: 'nowrap' }}>
+                  {p.label}
+                  <span onClick={p.clear} style={{ cursor: 'pointer', fontSize: 13, lineHeight: 1, opacity: 0.7 }}>×</span>
+                </span>
+              ))}
+              {pills.length > 1 && (
+                <button onClick={() => { setTypeFilter(''); setWorkTypeFilter(''); setReqFilter(''); setProjFilter(''); setStatusFilter(''); setTagFilter(''); setMinScore(''); setQuickFilters(prev => new Set([...prev].filter(x => x === 'forToday'))); }}
+                  style={{ border: 'none', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, cursor: 'pointer', padding: '4px 6px' }}>
+                  Clear all
+                </button>
+              )}
+            </>
           );
-        })}
-
-        {(typeFilter || reqFilter || projFilter || statusFilter || tagFilter || minScore || quickFilters.size > 0) && (
-          <button onClick={() => { setTypeFilter(''); setReqFilter(''); setProjFilter(''); setStatusFilter(''); setTagFilter(''); setMinScore(''); setQuickFilters(new Set()); }}
-            style={{ ...ghostBtn, fontSize: 12 }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            title="Clear all filters">Clear filters</button>
-        )}
+        })()}
 
         {items.some(it => it.kind === 'task' && (it as Task).manuallyMoved) && (
           <button onClick={resetManualOrder}
@@ -578,21 +647,27 @@ export function Table() {
           </>
         )}
 
-        <button onClick={() => setDailyOpen(true)}
-          title="Open the Daily play — pick which subtasks you're doing today"
-          style={{
-            marginLeft: 'auto',
-            border: 'none',
-            background: 'oklch(0.6 0.14 150)',
-            color: 'white',
-            fontSize: 13, fontWeight: 700,
-            padding: '7px 14px', borderRadius: 999,
-            cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: 6,
-          }}>
-          <span style={{ fontSize: 11 }}>▶</span>
-          Daily
-        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has('forToday')) n.delete('forToday'); else n.add('forToday'); return n; })}
+            title="Show only tasks marked for today"
+            style={{ fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid ' + (quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-brd)'), background: quickFilters.has('forToday') ? 'var(--t-amber-bg)' : 'var(--t-surf)', color: quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-txt2)' }}>
+            ◷ Today
+          </button>
+          {/* View switcher — table · cards · pipeline · gantt */}
+          <div style={{ display: 'flex', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
+            {([['table', '☰', 'Table'], ['cards', '▦', 'Cards'], ['pipeline', '⇉', 'Pipeline (by status)'], ['gantt', '𝄜', 'Gantt (by estimates)']] as const).map(([mode, icon, tip]) => (
+              <button key={mode} onClick={() => setViewMode(mode)} title={tip}
+                style={{ border: 'none', borderLeft: mode !== 'table' ? '1px solid var(--t-brd)' : 'none', background: viewMode === mode ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: viewMode === mode ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 13, fontWeight: 700, padding: '6px 11px', cursor: 'pointer' }}>
+                {icon}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setDailyOpen(true)}
+            title="Daily — today's work, pick what you're doing (also: d)"
+            style={{ border: 'none', background: 'oklch(0.6 0.14 150)', color: 'white', fontSize: 12.5, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 10 }}>▶</span> Daily
+          </button>
+        </div>
 
         <div style={{ position: 'relative' }} ref={colPickerRef}>
           <button onClick={() => setColPickerOpen(o => !o)}
@@ -616,8 +691,96 @@ export function Table() {
         </div>
       </div>
 
+      {/* Pipeline view — filtered tasks by status, board-style */}
+      {viewMode === 'pipeline' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, alignItems: 'start' }}>
+          {([['backlog', 'Backlog'], ['todo', 'To do'], ['in_progress', 'In progress'], ['waiting', 'Waiting'], ['done', 'Done']] as const).map(([st, label]) => {
+            const colRows = rows.filter(it => it.kind === 'task' && (st === 'done' ? (it as Task).status === 'done' || it.archived : (it as Task).status === st && !it.archived)) as Task[];
+            return (
+              <div key={st} style={{ background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 12, padding: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                  {label} · {colRows.length}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {colRows.map(t2 => (
+                    <div key={t2.id} onClick={() => openTask(t2.id)} title="Open"
+                      style={{ background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 9, padding: '9px 11px', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: 'var(--t-txt)', lineHeight: 1.35 }}>
+                      {t2.title}
+                      {t2.forToday && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--t-amber)', fontWeight: 700 }}>◷</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Gantt view — sequential bars sized by remaining estimates */}
+      {viewMode === 'gantt' && (() => {
+        const gRows = (rows.filter(it => it.kind === 'task' && !it.archived) as Task[]).map(t2 => {
+          const mins = t2.subtasks.filter(su => !su.done).reduce((n, su) => n + (parseEstimate(su.estimate) || 0), 0)
+            || parseEstimate(t2.estimate) || 60;
+          return { t: t2, mins };
+        });
+        const total = gRows.reduce((n, r) => n + r.mins, 0) || 1;
+        let acc = 0;
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {gRows.length === 0 && <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>Nothing matches the filters.</div>}
+            {gRows.map(({ t: t2, mins }) => {
+              const left = (acc / total) * 100;
+              const width = Math.max((mins / total) * 100, 3);
+              acc += mins;
+              return (
+                <div key={t2.id} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span onClick={() => openTask(t2.id)} title="Open"
+                    style={{ width: 220, flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--t-txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                    {t2.title}
+                  </span>
+                  <div style={{ flex: 1, height: 26, background: 'var(--t-surf2)', borderRadius: 6, position: 'relative', overflow: 'hidden' }}>
+                    <div onClick={() => openTask(t2.id)} title={`~${formatMinutes(mins)} remaining`}
+                      style={{ position: 'absolute', left: `${left}%`, width: `${width}%`, top: 3, bottom: 3, background: t2.forToday ? 'var(--t-amber)' : 'var(--t-acc)', opacity: 0.85, borderRadius: 5, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 10.5, fontWeight: 700, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      {formatMinutes(mins)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{ fontSize: 11.5, color: 'var(--t-muted)', marginTop: 4 }}>
+              Sequential by current order · bar length = remaining estimate (subtasks first, task estimate fallback, 1h default) · total ~{formatMinutes(total)}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Card view of the SAME filtered rows */}
+      {viewMode === 'cards' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12 }}>
+          {pagedRows.map(it => {
+            const isT = it.kind === 'task';
+            const tt = it as Task;
+            return (
+              <div key={it.id} onClick={() => openTask(it.id)}
+                title="Open"
+                style={{ background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderTop: `3px solid ${isT ? (tt.type === 'urgent' ? 'var(--t-urgent)' : tt.type === 'quick' ? 'var(--t-quick)' : tt.type === 'mail' ? 'var(--t-amber)' : 'var(--t-acc)') : 'var(--t-amber)'}`, borderRadius: 12, padding: '12px 14px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 88 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--t-txt)', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{it.title}</div>
+                <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--t-muted)', flexWrap: 'wrap' }}>
+                  {isT && <span style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{tt.type === 'mail' ? '✉ mail' : (tt.type ?? 'untyped')}</span>}
+                  {isT && <span>{tt.status.replace('_', ' ')}</span>}
+                  {isT && tt.requester && <span>{tt.requester}</span>}
+                  {isT && tt.jiraLink && <span>{tt.jiraLink}</span>}
+                  {isT && tt.forToday && <span style={{ color: 'var(--t-amber)', fontWeight: 700 }}>◷ today</span>}
+                </div>
+              </div>
+            );
+          })}
+          {rows.length === 0 && <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>Nothing matches the filters.</div>}
+        </div>
+      )}
+
       {/* Table */}
-      <table style={{ width: 'auto', minWidth: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden', tableLayout: 'fixed' }}>
+      {viewMode === 'table' && <table style={{ width: 'auto', minWidth: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden', tableLayout: 'fixed' }}>
         <thead>
           <tr style={{ background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd)' }}>
             <th style={{ ...th, width: 34, cursor: 'default' }}></th>
@@ -653,7 +816,7 @@ export function Table() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((it, rowIdx) => {
+          {pagedRows.map((it, rowIdx) => {
             const isSelected = selected.has(it.id);
             const isToday = it.kind === 'task' && (it as Task).forToday;
             const isDragging = dragId === it.id;
@@ -814,6 +977,13 @@ export function Table() {
                       </td>
                     );
                   }
+                  if (col.key === 'kind' && it.kind === 'task' && (it as Task).type !== 'mail') {
+                    return (
+                      <td key={col.key} style={{ ...td }} onClick={e => e.stopPropagation()}>
+                        <TypePicker task={it as Task} compact />
+                      </td>
+                    );
+                  }
                   const jiraKey = col.key === 'jira' && it.kind === 'task' ? ((it as Task).jiraLink ?? '').trim() : '';
                   const jiraCellUrl = jiraKey ? jiraTicketUrl(jiraConfigs, jiraKey) : null;
                   return (
@@ -881,12 +1051,32 @@ export function Table() {
             </tr>
           )}
         </tbody>
-      </table>
+      </table>}
+
+      {(viewMode === 'table' || viewMode === 'cards') && rows.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end', fontSize: 12.5, color: 'var(--t-muted)' }}>
+          <span>{rows.length} row{rows.length !== 1 ? 's' : ''}</span>
+          {pageCount > 1 && (
+            <>
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={safePage === 0}
+                style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 13, padding: '3px 10px', borderRadius: 6, cursor: safePage === 0 ? 'default' : 'pointer', opacity: safePage === 0 ? 0.4 : 1 }}>‹</button>
+              <span>Page {safePage + 1} / {pageCount}</span>
+              <button onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1}
+                style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 13, padding: '3px 10px', borderRadius: 6, cursor: safePage >= pageCount - 1 ? 'default' : 'pointer', opacity: safePage >= pageCount - 1 ? 0.4 : 1 }}>›</button>
+            </>
+          )}
+          <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(0); }}
+            style={{ fontSize: 12, padding: '3px 6px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)' }}>
+            {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n} / page</option>)}
+          </select>
+        </div>
+      )}
       <div style={{ fontSize: 12, color: 'var(--t-muted)' }}>{rows.length} item{rows.length !== 1 ? 's' : ''}</div>
     </div>
     {modalTaskId && <TaskModal taskId={modalTaskId} allIds={rows.map(r => r.id)} onNavigate={navigateModal} onClose={closeTaskModal} />}
     {dailyOpen && <DailyPlay onClose={() => setDailyOpen(false)} />}
     {reminderModalId && <ReminderModal reminderId={reminderModalId} onClose={() => setReminderModalId(null)} />}
+      {mailPopupId && <MailEntryPopup entryId={mailPopupId} onClose={() => setMailPopupId(null)} />}
     {aiTaskId && (() => {
       const t = rows.find(r => r.id === aiTaskId);
       return t && t.kind === 'task' ? <AiAssignModal task={t as Task} onClose={() => setAiTaskId(null)} /> : null;

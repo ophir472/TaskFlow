@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { nextId } from '../../engine';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 
@@ -15,6 +16,25 @@ const inp: React.CSSProperties = { width: '100%', fontSize: 13.5, padding: '8px 
 export function MailEntryFields({ entry }: Props) {
   const items = useStore(s => s.items);
   const updateItem = useStore(s => s.updateItem);
+  const createItem = useStore(s => s.createItem);
+
+  // Spawn a real (planned) task from this mail and link the two. The title
+  // comes from the search field (spotlight-style quick-create) or falls back
+  // to the mail's subject.
+  function createTaskFromMail(title?: string) {
+    const now = Date.now();
+    const id = nextId('t');
+    createItem({
+      id, kind: 'task', type: 'planned', title: (title ?? '').trim() || entry.title, description: entry.whatIWantToSay ?? '',
+      notes: '', blockers: '', generalLink: '', jiraLink: '', requester: '', project: '',
+      status: 'backlog', forToday: false, urgent: false, important: false, quick: false, noTag: false,
+      toCheck: '', priorityBoost: false, subtasks: [],
+      bumpedAt: 0, staleness: 0, createdAt: now, updatedAt: now, archived: false,
+    });
+    updateItem(entry.id, { linkedTaskId: id });
+    setLinkQuery('');
+    setLinkSel(0);
+  }
 
   const [linkQuery, setLinkQuery] = useState('');
   const [linkSel, setLinkSel] = useState(0);
@@ -52,24 +72,38 @@ export function MailEntryFields({ entry }: Props) {
               value={linkQuery}
               onChange={e => { setLinkQuery(e.target.value); setLinkSel(0); }}
               onKeyDown={e => {
-                if (!linkCandidates.length) return;
-                if (e.key === 'ArrowDown') { e.preventDefault(); setLinkSel(s => Math.min(s + 1, linkCandidates.length - 1)); }
+                if (!linkQuery.trim()) return;
+                const totalRows = linkCandidates.length + 1; // + create row
+                if (e.key === 'ArrowDown') { e.preventDefault(); setLinkSel(s => Math.min(s + 1, totalRows - 1)); }
                 else if (e.key === 'ArrowUp') { e.preventDefault(); setLinkSel(s => Math.max(s - 1, 0)); }
-                else if (e.key === 'Enter') { e.preventDefault(); pickLink(linkCandidates[Math.min(linkSel, linkCandidates.length - 1)]); }
+                else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const sel = Math.min(linkSel, totalRows - 1);
+                  if (sel < linkCandidates.length) pickLink(linkCandidates[sel]);
+                  else createTaskFromMail(linkQuery);
+                }
                 else if (e.key === 'Escape') { e.stopPropagation(); setLinkQuery(''); }
               }}
               placeholder="Type to search a task to link…"
               style={inp} />
-            {linkCandidates.length > 0 && (
-              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 20, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 8, boxShadow: '0 10px 28px rgba(0,0,0,0.18)', maxHeight: 190, overflowY: 'auto', padding: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {linkQuery.trim() && (
+              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 20, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 8, boxShadow: '0 10px 28px rgba(0,0,0,0.18)', maxHeight: 220, overflowY: 'auto', padding: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {linkCandidates.map((t, i) => (
                   <div key={t.id}
                     onClick={() => pickLink(t)}
                     onMouseEnter={() => setLinkSel(i)}
-                    style={{ padding: '6px 10px', borderRadius: 6, fontSize: 12.5, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: i === Math.min(linkSel, linkCandidates.length - 1) ? 'var(--t-acc-bg)' : 'transparent', color: i === Math.min(linkSel, linkCandidates.length - 1) ? 'var(--t-acc-dk)' : 'var(--t-txt)' }}>
+                    style={{ padding: '6px 10px', borderRadius: 6, fontSize: 12.5, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: i === Math.min(linkSel, linkCandidates.length) ? 'var(--t-acc-bg)' : 'transparent', color: i === Math.min(linkSel, linkCandidates.length) ? 'var(--t-acc-dk)' : 'var(--t-txt)' }}>
                     {t.title}
                   </div>
                 ))}
+                {/* Quick-create — last keyboard-reachable row, spotlight-style */}
+                <div
+                  onClick={() => createTaskFromMail(linkQuery)}
+                  onMouseEnter={() => setLinkSel(linkCandidates.length)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 6, fontSize: 12.5, cursor: 'pointer', fontWeight: 600, background: Math.min(linkSel, linkCandidates.length) === linkCandidates.length ? 'var(--t-acc-bg)' : 'transparent', color: 'var(--t-acc-dk)' }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, lineHeight: 1 }}>+</span>
+                  Create task "<span style={{ fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkQuery.trim()}</span>" and link
+                </div>
               </div>
             )}
           </div>

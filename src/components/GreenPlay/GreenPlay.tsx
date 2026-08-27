@@ -7,6 +7,7 @@ import { EstimatesSection } from '../Common/EstimatesSection';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
 import { createJiraIssue, addJiraComment, closeJiraIssue } from '../../jira';
 import { ApiUnreachableError } from '../../apiLog';
+import { buildReviewSummary, dayRange } from '../../reviewSummary';
 import { getDefaultJiraConfig, getJiraConfigForKey, applySummaryTemplate, buildJiraCreateUrl } from '../../jiraHosts';
 import { itsmTicketUrl } from '../../itsm';
 
@@ -33,6 +34,9 @@ export function GreenPlay({ onClose }: Props) {
   const reviewSession = useStore(s => s.reviewSession);
   const syncReviewSessionWithFlags = useStore(s => s.syncReviewSessionWithFlags);
   const updateReviewProgress = useStore(s => s.updateReviewProgress);
+  const saveReviewSummary = useStore(s => s.saveReviewSummary);
+  const [summaryDay, setSummaryDay] = useState<number | null>(null); // 1 = yesterday, 0 = today
+  const [summarySaved, setSummarySaved] = useState(false);
   const endReview = useStore(s => s.endReview);
 
   // Bootstrap on mount: either start a fresh session with the currently-flagged
@@ -109,6 +113,7 @@ export function GreenPlay({ onClose }: Props) {
         summary,
         description: createJiraDesc,
         requestedBy: currentTask.requester ?? '',
+        labels: currentTask.type === 'urgent' && defaultJira.urgentLabel?.trim() ? [defaultJira.urgentLabel.trim()] : undefined,
         reporterAccountId: currentTask.requester ? requesterJiraIds[currentTask.requester] : undefined,
       });
       updateItem(currentTask.id, { jiraLink: result.key, description: createJiraDesc });
@@ -357,8 +362,15 @@ export function GreenPlay({ onClose }: Props) {
               Card {cardIdx + 1} of {tasks.length} · Step {stepIdx + 1} of {steps.length}
             </span>
           </div>
-          <button onClick={handleClose} title="Close · remaining cards stay in the queue"
-            style={{ border: 'none', background: 'transparent', fontSize: 20, color: 'var(--t-muted)', cursor: 'pointer', padding: '0 6px', lineHeight: 1 }}>×</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={() => { setSummaryDay(1); setSummarySaved(false); }}
+              title="Day summary — everything done/changed, ready to report"
+              style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 12.5, fontWeight: 700, padding: '5px 12px', borderRadius: 7, cursor: 'pointer' }}>
+              Σ Summary
+            </button>
+            <button onClick={handleClose} title="Close · remaining cards stay in the queue"
+              style={{ border: 'none', background: 'transparent', fontSize: 20, color: 'var(--t-muted)', cursor: 'pointer', padding: '0 6px', lineHeight: 1 }}>×</button>
+          </div>
         </div>
 
         {/* Body: card + side panel */}
@@ -604,6 +616,41 @@ export function GreenPlay({ onClose }: Props) {
           )}
         </div>
       </div>
+
+      {/* Day summary popup — report-ready text from store data only */}
+      {summaryDay !== null && (() => {
+        const { since, until, label } = dayRange(summaryDay);
+        const text = buildReviewSummary(useStore.getState().items, since, until);
+        return (
+          <div onClick={e => e.stopPropagation()}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 95, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 'min(640px, 92vw)', maxHeight: '80vh', display: 'flex', flexDirection: 'column', background: 'var(--t-surf)', borderRadius: 14, border: '1px solid var(--t-brd)', boxShadow: '0 24px 70px rgba(0,0,0,0.4)', padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)' }}>Σ Day summary — {label}</span>
+                {[1, 0].map(d => (
+                  <button key={d} onClick={() => { setSummaryDay(d); setSummarySaved(false); }}
+                    style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999, cursor: 'pointer', border: summaryDay === d ? '1px solid var(--t-acc)' : '1px solid var(--t-brd)', background: summaryDay === d ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: summaryDay === d ? 'var(--t-acc-dk)' : 'var(--t-muted)' }}>
+                    {d === 1 ? 'Yesterday' : 'Today'}
+                  </button>
+                ))}
+                <span onClick={() => setSummaryDay(null)} title="Close" style={{ marginLeft: 'auto', cursor: 'pointer', color: 'var(--t-muted)', fontSize: 18, lineHeight: 1 }}>×</span>
+              </div>
+              <textarea readOnly value={text}
+                style={{ flex: 1, minHeight: 260, fontSize: 13, fontFamily: 'inherit', lineHeight: 1.55, padding: '12px 14px', borderRadius: 10, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', resize: 'vertical', boxSizing: 'border-box' }} />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                <button onClick={() => { navigator.clipboard.writeText(text); }}
+                  style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 7, cursor: 'pointer' }}>
+                  ⧉ Copy
+                </button>
+                <button onClick={() => { saveReviewSummary(label, text); setSummarySaved(true); }}
+                  style={{ border: 'none', background: summarySaved ? 'var(--t-success)' : 'var(--t-acc)', color: 'white', fontSize: 12.5, fontWeight: 700, padding: '7px 16px', borderRadius: 7, cursor: 'pointer' }}>
+                  {summarySaved ? '✓ Saved to Docs → Reviews' : 'Save to Docs → Reviews'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

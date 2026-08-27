@@ -32,6 +32,7 @@ export function SnCreateMenu({ onClose }: Props) {
   const addSnTemplate = useStore(s => s.addSnTemplate);
   const itsmConfig = useStore(s => s.itsmConfig);
   const [infoId, setInfoId] = useState<string | null>(null);
+  const [tplSearch, setTplSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   // FILL step: the picked template + its resolved fields awaiting user edits.
   const [fillTpl, setFillTpl] = useState<SnTemplate | null>(null);
@@ -151,9 +152,14 @@ export function SnCreateMenu({ onClose }: Props) {
                 No templates yet — create your first right here (or in <b>Settings → ServiceNow Tickets</b>).
               </div>
             )}
+            {snConfig.templates.length > 0 && (
+              <input value={tplSearch} onChange={e => setTplSearch(e.target.value)} autoFocus
+                placeholder="Search templates…"
+                style={{ width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '8px 11px', borderRadius: 8, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', marginBottom: 10 }} />
+            )}
             {(
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                {snConfig.templates.map(t => (
+                {snConfig.templates.filter(t => !tplSearch.trim() || t.name.toLowerCase().includes(tplSearch.trim().toLowerCase())).map(t => (
                   <div key={t.id} onClick={() => pick(t)}
                     style={{
                       width: 180, boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
@@ -191,6 +197,11 @@ export function SnCreateMenu({ onClose }: Props) {
                     </a>
                   </div>
                 )}
+                {(infoTpl.extraLinks ?? []).filter(l => l.trim()).map((l, i) => (
+                  <div key={i}><b>Link {i + 2}:</b>{' '}
+                    <a href={/^https?:\/\//i.test(l) ? l : `https://${l}`} target="_blank" rel="noreferrer" style={{ color: 'var(--t-acc)' }}>{l} ↗</a>
+                  </div>
+                ))}
                 {infoTpl.exampleTicket && (
                   <div><b>Example:</b>{' '}
                     {(() => {

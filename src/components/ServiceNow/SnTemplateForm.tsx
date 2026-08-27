@@ -53,6 +53,17 @@ export function SnTemplateForm({ heading, saveLabel, initial, onSave, onCancel }
         <div><div style={fl}>Confluence page</div>
           <input value={draft.confluenceLink} onChange={e => setDraft(d => ({ ...d, confluenceLink: e.target.value }))} placeholder="https://confluence/…" style={fi} />
         </div>
+        {(draft.extraLinks ?? []).map((l, i) => (
+          <div key={i}><div style={fl}>Link {i + 2}</div>
+            <input value={l} onChange={e => setDraft(d => { const n = [...(d.extraLinks ?? [])]; n[i] = e.target.value; return { ...d, extraLinks: n }; })} placeholder="https://…" style={fi} />
+          </div>
+        ))}
+        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+          <button onClick={() => setDraft(d => ({ ...d, extraLinks: [...(d.extraLinks ?? []), ''] }))}
+            title="Add another link" style={{ border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '7px 12px', borderRadius: 7, cursor: 'pointer' }}>
+            + Link
+          </button>
+        </div>
         <div><div style={fl}>Example ticket</div>
           <input value={draft.exampleTicket} onChange={e => setDraft(d => ({ ...d, exampleTicket: e.target.value }))} placeholder="INC0012345" style={fi} />
         </div>

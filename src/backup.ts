@@ -89,6 +89,10 @@ export function triggerDownload(filename: string): void {
 
 // Defaults for every field added since v1 — ensures old backups load cleanly
 const STATE_DEFAULTS: Record<string, unknown> = {
+  requesters: [],
+  projects: [],
+  customFields: [],
+  history: [],
   taskOrder: [],
   jiraConfigs: [],
   jiraBoards: [],
@@ -100,6 +104,29 @@ const STATE_DEFAULTS: Record<string, unknown> = {
   sprintTypeToggles: { quickTask: true, quickSubtask: true, mail: true },
   sprintOrder: [],
   reviewOrder: [],
+  dashboardConfig: {
+    version: 'v1', gamification: false,
+    tiles: ['review', 'mail', 'sprint', 'quickhelp', 'open', 'nojira', 'unplannedToday'],
+    agendaSteps: [
+      { id: 'review', builtin: 'review', label: 'Review' },
+      { id: 'plan', builtin: 'plan', label: 'Plan' },
+      { id: 'mail', builtin: 'mail', label: 'Communication' },
+      { id: 'sprint', builtin: 'sprint', label: 'Sprint' },
+      { id: 'today', builtin: 'today', label: "Today's tasks" },
+    ],
+  },
+  agendaChecks: { date: '', ids: [] },
+  walkthrough: null,
+  customSystems: [],
+  reviewSummaries: [],
+  minutesFields: [
+    { id: 'topic', label: 'Topic', kind: 'text', enabled: true },
+    { id: 'when', label: 'When', kind: 'text', enabled: true },
+    { id: 'attendees', label: 'Attendees', kind: 'text', enabled: true },
+    { id: 'summary', label: 'Summary', kind: 'multiline', enabled: true },
+    { id: 'points', label: 'Discussion points', kind: 'bullets', enabled: true },
+    { id: 'actions', label: 'Action items', kind: 'bullets', enabled: true },
+  ],
   responsibilities: [],
   reviewSession: null,
   tableVisibleCols: null,
@@ -186,7 +213,10 @@ export function restoreFromData(data: Record<string, unknown>): void {
       items,
     };
 
-    // Always write the current schema version so Zustand doesn't discard the state
+    // Deliberately write a LOW schema version (2) so Zustand re-runs every
+    // migration on reload — old backups and old snapshots get the same
+    // upgrades as live data. All migrations are idempotent, so re-running
+    // them over already-migrated data is safe.
     localStorage.setItem('taskflow-store', JSON.stringify({ state: normalizedState, version: 2 }));
 
     // Log restore completion + count of imported items so the integrity check

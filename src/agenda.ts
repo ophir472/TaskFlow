@@ -1,0 +1,107 @@
+import type { Item, Task, AgendaStep, SprintTypeToggles, ReviewSession } from './types';
+import { buildSprintPool } from './components/Sprint/SprintMode';
+import { flaggedTasks } from './greenPlay';
+
+// ── Shared selectors for the Dashboard, its stat tiles, the agenda pipeline
+// and Walkthrough mode. Pure store data — logs are never consulted. ──
+
+export interface DashCounts {
+  review: number;
+  mail: number;
+  sprint: number;
+  quickhelp: number;
+  open: number;
+  nojira: number;
+  unplannedToday: number;
+  todayTasks: Task[];       // active (not yet completed) today-tasks
+  todayTotal: number;       // including already-completed ones
+  todayRemaining: number;
+}
+
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
+
+export function dashCounts(
+  items: Item[],
+  sprintToggles: SprintTypeToggles,
+  sprintOrder: string[],
+  reviewSession: ReviewSession | null,
+): DashCounts {
+  const flagged = flaggedTasks(items);
+  let review = flagged.length;
+  if (reviewSession) {
+    // Mirror the sidebar badge: un-walked session remainder + newly flagged.
+    const remaining = reviewSession.taskIds.slice(reviewSession.cardIdx);
+    const remainingIds = new Set(remaining);
+    review = remaining.length + flagged.filter(t => !remainingIds.has(t.id)).length;
+  }
+  const activeTasks = items.filter((it): it is Task =>
+    it.kind === 'task' && !it.archived && it.status !== 'done' && it.status !== 'archived');
+  const today = startOfToday();
+  // Completing archives the task but keeps forToday until the daily reset —
+  // count archived ones toward the total so "today done" is detectable.
+  const todayAll = items.filter((it): it is Task => it.kind === 'task' && it.type !== 'mail' && (it as Task).forToday);
+  const todayTasks = todayAll.filter(t => !t.archived && t.status !== 'done' && t.status !== 'archived');
+  return {
+    review,
+    mail: activeTasks.filter(t => t.type === 'mail').length,
+    sprint: buildSprintPool(items, sprintToggles, sprintOrder).length,
+    quickhelp: activeTasks.filter(t => t.type === 'quick').length,
+    open: activeTasks.filter(t => t.type !== 'mail').length,
+    nojira: activeTasks.filter(t => (t.type === 'planned' || t.type === 'urgent') && !t.jiraLink?.trim()).length,
+    unplannedToday: todayTasks.filter(t => (t.plannedAt ?? 0) < today).length,
+    todayTasks,
+    todayTotal: todayAll.length,
+    todayRemaining: todayTasks.length,
+  };
+}
+
+// ── Stat tiles — a data-driven registry; Settings picks which are shown ──
+
+export interface TileDef {
+  id: string;
+  label: string;
+  icon: string;
+  color: string;      // accent for count + hover play
+  hash: string;       // where clicking (or ▶) jumps
+  preset?: string;    // Table filter applied on arrival (e.g. 'nojira')
+  count: (c: DashCounts) => number;
+}
+
+export const TILE_DEFS: TileDef[] = [
+  { id: 'review', label: 'To review', icon: '☑', color: 'oklch(0.5 0.14 150)', hash: 'review', count: c => c.review },
+  { id: 'mail', label: 'Communications', icon: '✉', color: 'var(--t-amber)', hash: 'mail', count: c => c.mail },
+  { id: 'sprint', label: 'Sprint items', icon: '▶', color: 'var(--t-quick)', hash: 'sprint', count: c => c.sprint },
+  { id: 'quickhelp', label: 'Quick help', icon: '⚡', color: 'var(--t-quick)', hash: 'quickhelp', count: c => c.quickhelp },
+  { id: 'open', label: 'Open tasks', icon: '☰', color: 'var(--t-acc)', hash: 'table', count: c => c.open },
+  { id: 'nojira', label: 'No Jira yet', icon: '⧉', color: 'var(--t-urgent)', hash: 'table', preset: 'nojira', count: c => c.nojira },
+  { id: 'unplannedToday', label: 'Unplanned today', icon: '◷', color: 'var(--t-amber)', hash: 'plan', count: c => c.unplannedToday },
+];
+
+// ── Agenda pipeline — built-in step metadata + completion detection ──
+
+export const BUILTIN_STEPS: Record<string, { label: string; icon: string; hash: string; hint: string }> = {
+  review: { label: 'Review', icon: '☑', hash: 'review', hint: 'Walk every new/changed task — done when the review queue is empty' },
+  plan: { label: 'Plan', icon: '◷', hash: 'plan', hint: "Write each today-task's steps — done when nothing today is unplanned" },
+  mail: { label: 'Communication', icon: '✉', hash: 'mail', hint: 'Answer what you owe — done when no mail entries are pending' },
+  sprint: { label: 'Sprint', icon: '▶', hash: 'sprint', hint: 'Blitz the quick stuff — done when the sprint pool is empty' },
+  today: { label: "Today's tasks", icon: '★', hash: 'feed', hint: "Work the plan — done when every today-task is completed" },
+};
+
+export function defaultAgendaSteps(): AgendaStep[] {
+  return ['review', 'plan', 'mail', 'sprint', 'today'].map(k => ({ id: k, builtin: k as AgendaStep['builtin'], label: BUILTIN_STEPS[k].label }));
+}
+
+/** Whether a step is complete. Built-ins derive from live counts; custom
+ *  steps are manual checks (per-day, reset at midnight). */
+export function stepDone(step: AgendaStep, c: DashCounts, todayChecks: Set<string>): boolean {
+  switch (step.builtin) {
+    case 'review': return c.review === 0;
+    case 'plan': return c.todayTotal > 0 && c.unplannedToday === 0;
+    case 'mail': return c.mail === 0;
+    case 'sprint': return c.sprint === 0;
+    case 'today': return c.todayTotal > 0 && c.todayRemaining === 0;
+    default: return todayChecks.has(step.id);
+  }
+}
+
+export const todayKey = () => new Date().toISOString().slice(0, 10);

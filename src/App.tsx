@@ -3,9 +3,12 @@ import { useStore } from './store';
 import { getThemeVars } from './themes';
 import type { View } from './store';
 
-const VALID_VIEWS: View[] = ['feed', 'explore', 'kanban', 'table', 'archive', 'docs', 'settings'];
+const VALID_VIEWS: View[] = ['home', 'feed', 'explore', 'kanban', 'table', 'quickhelp', 'archive', 'docs', 'settings'];
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { CardFeed } from './components/CardFeed/CardFeed';
+import { QuickHelp } from './components/QuickHelp/QuickHelp';
+import { Home } from './components/Home/Home';
+import { WalkthroughBar } from './components/Home/WalkthroughBar';
 import { Explore } from './components/Explore/Explore';
 import { Spotlight } from './components/Explore/Spotlight';
 import { Kanban } from './components/Kanban/Kanban';
@@ -203,7 +206,10 @@ export default function App() {
         s.responsibilities !== prev.responsibilities ||
         s.sprintTypeToggles !== prev.sprintTypeToggles ||
         s.sprintOrder !== prev.sprintOrder ||
-        s.reviewOrder !== prev.reviewOrder;
+        s.reviewOrder !== prev.reviewOrder ||
+        s.dashboardConfig !== prev.dashboardConfig ||
+        s.customSystems !== prev.customSystems ||
+        s.minutesFields !== prev.minutesFields;
       if (settingsChanged) {
         if (settingsSnapshotTimer.current) clearTimeout(settingsSnapshotTimer.current);
         settingsSnapshotTimer.current = setTimeout(() => {
@@ -680,6 +686,8 @@ export default function App() {
           </div>
         )}
 
+        {view === 'home' && <Home />}
+        {view === 'quickhelp' && <QuickHelp onToast={toastTimer} />}
         {view === 'feed' && <CardFeed onToast={toastTimer} />}
         {view === 'explore' && <Explore focusTrigger={focusSearchTrigger} />}
         {view === 'kanban' && <Kanban />}
@@ -704,6 +712,7 @@ export default function App() {
       {sprintOpen && <SprintMode onClose={closeSprint} />}
       {planOpen && <PlanPopup onClose={closePlan} />}
       {tourOpen && <Tour onClose={() => setTourOpen(false)} />}
+      <WalkthroughBar />
       {playTaskId && <Play taskId={playTaskId} onClose={closePlay} />}
       {spotlightOpen && <Spotlight onClose={() => setSpotlightOpen(false)} onToast={toastTimer} />}
       {pendingReminderIds.length > 0 && <ReminderPopup />}

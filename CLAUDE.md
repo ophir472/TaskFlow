@@ -21,18 +21,23 @@ npm run preview    # preview the production build
 
 **`src/types.ts`** — all data types: `Task`, `Reminder`, `Responsibility`, `Subtask`, `Item` (union), `ChangeRecord`. Every item kind now has `priorityBoost: boolean` to allow the +100 Hold-return boost on all three kinds.
 
+**`src/agenda.ts`** — shared Dashboard selectors: `dashCounts` (tile numbers, today-planning state), `TILE_DEFS` registry, `BUILTIN_STEPS` + `stepDone` (agenda pipeline + Walkthrough done-detection). Pure store data, logs never consulted.
+
 **`src/engine.ts`** — pure functions: `scoreItem(item)`, `buildQueue(items)` (for-today override → needsTag tier → scored pool; needs-Jira tier retired), `nextId(prefix)`, `midnight()` (returns the UPCOMING midnight — the daily-reset deadline, NOT start-of-today).
 
 **`src/store.ts`** — single Zustand store, persisted to `taskflow-store` in localStorage. Keeps `history: ChangeRecord[]` capped at 100 entries (PRD §11 snapshot+history backup). Exposes all mutation actions (updateItem, toggleTag, holdItem, snoozeItem, completeItem, etc.). `checkDailyReset()` compares against `dailyResetAt` and resets `snoozesToday`/`promotionsToday` at midnight.
 
 **Components (highlights):**
-- `Sidebar` — nav (7 views incl. Docs), overlay buttons (✉ Mail w/ badge, ▶ Sprint, Review, ◷ Plan w/ unplanned-today badge), promotions pie, "+ New item"
+- `Home` — dashboard landing view (version registry, stat tiles, agenda pipeline, walkthrough start); `WalkthroughBar` — floating store-driven guide (`walkthrough` quiet state); `QuickHelp` — walker over type-'quick' tasks
+- `Sidebar` — nav (9 views: Home, Feed…Quick Help…Settings, keys 1–9), overlay buttons (✉ Mail w/ badge, ▶ Sprint, Review, ◷ Plan w/ unplanned-today badge), promotions pie, "+ New item"
 - `CardFeed` — primary screen; frosted transport bar (back/hold/play/complete/continue); hold panel; subtask rows (checkbox, ★ next, ◷ quick, click-to-slide-over)
 - Overlays (all hash-routed): `GreenPlay` review, `SprintMode`, `PlanPopup`, `Play` (dark focus mode), `MailAssistant` (+ shared `MailEntryFields`), `SnCreateMenu`, `DailyPlay` (Table-local), `ShortcutsHelp` (?), `Tour` (guided onboarding on self-cleaning `[Tour] ` sample data; pauses app shortcuts while active)
-- Shared card sections (parity!): `TicketSections`, `WaitingForSection`, `CommunicationSection` + `LinkedCommTable`, `QuickToActSection`, `SubtaskChecklist`, `EstimatesSection`, `ParentContextCard`
+- Shared card sections (parity!): `RequesterSelect` (+ new-requester popup), `TypePicker`, custom-system rows in TicketSections, `MailEntryPopup` (Table + Settings queues), `TicketSections`, `WaitingForSection`, `CommunicationSection` + `LinkedCommTable`, `QuickToActSection`, `SubtaskChecklist`, `EstimatesSection`, `ParentContextCard`
 - `Table`/`Archive` — inline edit, filters, bulk actions, AI assign; `Docs` — notebooks/categories/pages; `Settings` — five URL-driven tabs; queue sections there: sprint (type toggles + drag order within mail/tasks sections + click-through) and review (drag order honored by the walkthrough, × = quiet dismiss)
 
 ## Key business rules (PRD source of truth)
+
+- **Task types (2026-08-27):** `Task.type` = `'mail' | 'quick' | 'planned' | 'urgent'` (undefined = legacy, highlighted until set; `createItem` defaults new tasks to `'planned'`). `'quick'` (Quick help) and `'mail'` never enter the scored feed; `'quick'` joins the Sprint task section and the ⚡ Quick Help view. `'urgent'` = unplanned same-day; REST Jira create adds the host's `urgentLabel`.
 
 - **Queue tiers (§5.1, amended):** for-today override (any today-marked task → only those) → tasks missing all tags (and not marked noTag) → scored pool including reminders. The PRD's needs-Jira tier is retired by decision (2026-08-18); `noJira` only gates the review's Jira steps.
 - **Scoring (§5.2):** urgent=6, important=3, quick=1, staleness bonus=staleness field (0–1), hold-return boost=+100 temporary.

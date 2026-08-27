@@ -18,7 +18,7 @@ function authHeader(config: JiraConfig): string {
 
 export async function createJiraIssue(
   config: JiraConfig,
-  fields: { summary: string; description: string; requestedBy: string; reporterAccountId?: string }
+  fields: { summary: string; description: string; requestedBy: string; reporterAccountId?: string; labels?: string[] }
 ): Promise<{ key: string; url: string }> {
   const host = config.host.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
@@ -36,6 +36,7 @@ export async function createJiraIssue(
       // Reporter requires the "Modify Reporter" Jira permission; if the API
       // rejects it, the whole create fails, so we only send it when mapped.
       ...(fields.reporterAccountId ? { reporter: { name: fields.reporterAccountId } } : {}),
+      ...(fields.labels?.length ? { labels: fields.labels } : {}),
     },
   };
 
