@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
+import { MailEntryPopup } from '../Mail/MailEntryPopup';
 import { scoreItem } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
 import type { Item, Task, Reminder } from '../../types';
@@ -90,6 +91,7 @@ export function Archive() {
   const colPickerRef = useRef<HTMLDivElement>(null);
   const [focusedRowIdx, setFocusedRowIdx] = useState(-1);
   const [editCell, setEditCell] = useState<{ rowId: string; colKey: string } | null>(null);
+  const [mailPopupId, setMailPopupId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
   const [modalTaskId, setModalTaskId] = useState<string | null>(null);
@@ -323,6 +325,9 @@ export function Archive() {
   function commitEdit() { if (editCell) saveEdit(editValue, editCell.colKey, editCell.rowId); }
 
   function openTask(id: string) {
+    // Archived mail entries open the mail form, not a task card.
+    const item = items.find(it => it.id === id);
+    if (item?.kind === 'task' && (item as Task).type === 'mail') { setMailPopupId(id); return; }
     window.location.hash = `archive/task/${id}`;
   }
   function closeTaskModal() {
@@ -558,8 +563,9 @@ export function Archive() {
                             ) : col.key === 'status' ? (
                               <select autoFocus value={editValue} style={inpSt}
                                 onChange={e => saveEdit(e.target.value, col.key, it.id)} onBlur={() => setEditCell(null)}>
-                                <option value="in_progress">In progress</option>
                                 <option value="backlog">Backlog</option>
+                                <option value="todo">To do</option>
+                                <option value="in_progress">In progress</option>
                                 <option value="waiting">Waiting</option>
                                 <option value="done">Done</option>
                               </select>
@@ -573,6 +579,25 @@ export function Archive() {
                         );
                       }
                       const cellKey = `${it.id}:${col.key}`;
+                      if (col.key === 'title') {
+                        // Same as the main table: the text edits, the blank
+                        // space after the name opens the item.
+                        return (
+                          <td key={col.key}
+                            onMouseEnter={() => { if (isEditable) setHoveredCell(cellKey); }}
+                            onMouseLeave={() => setHoveredCell(null)}
+                            style={{ ...td, padding: 0, fontWeight: 500, color: 'var(--t-txt)', background: hoveredCell === cellKey ? 'var(--t-acc-bg)' : undefined }}>
+                            <div style={{ display: 'flex', alignItems: 'stretch', width: '100%' }}>
+                              <span onClick={isEditable ? e => startEdit(e, it.id, col.key) : undefined}
+                                title={String(col.getValue(it) || '')}
+                                style={{ maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: isEditable ? 'text' : 'default', padding: '10px 0 10px 14px' }}>
+                                {String(col.getValue(it) || '—')}
+                              </span>
+                              <span onClick={e => { e.stopPropagation(); openTask(it.id); }} title="Open" style={{ flex: 1, minWidth: 34, cursor: 'pointer' }} />
+                            </div>
+                          </td>
+                        );
+                      }
                       return (
                         <td key={col.key}
                           onClick={isEditable ? e => startEdit(e, it.id, col.key) : undefined}
@@ -603,6 +628,7 @@ export function Archive() {
       )}
     </div>
     {modalTaskId && <TaskModal taskId={modalTaskId} allIds={rows.map(r => r.id)} onNavigate={navigateModal} onClose={closeTaskModal} />}
+      {mailPopupId && <MailEntryPopup entryId={mailPopupId} onClose={() => setMailPopupId(null)} />}
     </>
   );
 }

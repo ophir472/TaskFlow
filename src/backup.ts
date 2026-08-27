@@ -106,7 +106,7 @@ const STATE_DEFAULTS: Record<string, unknown> = {
   reviewOrder: [],
   dashboardConfig: {
     version: 'v1', gamification: false,
-    tiles: ['review', 'mail', 'sprint', 'quickhelp', 'open', 'nojira', 'unplannedToday'],
+    tiles: ['review', 'mail', 'sprint', 'quickhelp', 'open', 'nojira', 'unplannedToday', 'hub'],
     agendaSteps: [
       { id: 'review', builtin: 'review', label: 'Review' },
       { id: 'plan', builtin: 'plan', label: 'Plan' },

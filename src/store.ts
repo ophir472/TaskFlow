@@ -20,7 +20,7 @@ const PROMOTION_GOAL = 3;
 // changes the URL, which would flip this flag mid-session).
 const IS_PREVIEW_MODE = typeof window !== 'undefined' && window.location.hash.startsWith('#preview/');
 
-export type View = 'home' | 'feed' | 'explore' | 'kanban' | 'table' | 'quickhelp' | 'archive' | 'docs' | 'settings';
+export type View = 'home' | 'feed' | 'explore' | 'kanban' | 'table' | 'quickhelp' | 'hub' | 'archive' | 'docs' | 'settings';
 
 interface AppState {
   items: Item[];
@@ -232,7 +232,7 @@ export const useStore = create<AppState>()(
       dashboardConfig: {
         version: 'v1',
         gamification: false,
-        tiles: ['review', 'mail', 'sprint', 'quickhelp', 'open', 'nojira', 'unplannedToday'],
+        tiles: ['review', 'mail', 'sprint', 'quickhelp', 'open', 'nojira', 'unplannedToday', 'hub'],
         agendaSteps: [
           { id: 'review', builtin: 'review', label: 'Review' },
           { id: 'plan', builtin: 'plan', label: 'Plan' },
@@ -1173,7 +1173,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'taskflow-store',
-      version: 8,
+      version: 9,
       storage: createJSONStorage(() => IS_PREVIEW_MODE ? sessionStorage : localStorage),
       skipHydration: IS_PREVIEW_MODE,
       // UI-only fields: kept in-memory per-tab, NOT persisted. Otherwise every
@@ -1269,6 +1269,11 @@ export const useStore = create<AppState>()(
             const at = persisted.tableVisibleCols.indexOf('title');
             persisted.tableVisibleCols.splice(at >= 0 ? at + 1 : 0, 0, 'kind');
           }
+        }
+        if (fromVersion < 9 && persisted.dashboardConfig?.tiles && Array.isArray(persisted.dashboardConfig.tiles)
+            && !persisted.dashboardConfig.tiles.includes('hub')) {
+          // Surface the new Hub tile once for saved dashboard configs.
+          persisted.dashboardConfig = { ...persisted.dashboardConfig, tiles: [...persisted.dashboardConfig.tiles, 'hub'] };
         }
         return persisted;
       },

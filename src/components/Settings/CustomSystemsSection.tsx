@@ -7,7 +7,7 @@ const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px so
 const fl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 };
 const fi: React.CSSProperties = { width: '100%', fontSize: 13, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', boxSizing: 'border-box', outline: 'none' };
 
-const EMPTY: Omit<CustomSystem, 'id'> = { name: '', baseUrl: '', openUri: '', createUri: '', templatesEnabled: false, templates: [] };
+const EMPTY: Omit<CustomSystem, 'id'> = { name: '', baseUrl: '', openUri: '', createUri: '', templatesEnabled: false, templates: [], showInHub: true };
 
 // Settings → Integrations → Custom systems: ITSM-like integrations that are
 // pure URL templates (no API). Each system adds a ticket row to every card:
@@ -27,7 +27,7 @@ export function CustomSystemsSection() {
 
   function save() {
     if (!canSave) return;
-    const clean = { name: draft.name.trim(), baseUrl: draft.baseUrl.trim(), openUri: draft.openUri?.trim() || undefined, createUri: draft.createUri?.trim() || undefined, templatesEnabled: !!draft.templatesEnabled, templates: (draft.templates ?? []).filter(t => t.name.trim() && t.uri.trim()) };
+    const clean = { name: draft.name.trim(), baseUrl: draft.baseUrl.trim(), openUri: draft.openUri?.trim() || undefined, createUri: draft.createUri?.trim() || undefined, templatesEnabled: !!draft.templatesEnabled, templates: (draft.templates ?? []).filter(t => t.name.trim() && t.uri.trim()), showInHub: draft.showInHub !== false };
     if (editingId) updateCustomSystem(editingId, clean);
     else addCustomSystem({ id: nextId('cs'), ...clean });
     setAdding(false); setEditingId(null); setDraft(EMPTY);
@@ -55,7 +55,7 @@ export function CustomSystemsSection() {
             <span style={{ flex: 1, minWidth: 0, color: 'var(--t-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {sys.baseUrl}{sys.createUri ? ' · create ✓' : ''}{sys.openUri ? ' · open ✓' : ''}{sys.templatesEnabled ? ` · ${(sys.templates ?? []).length} template${(sys.templates ?? []).length !== 1 ? 's' : ''}` : ''}
             </span>
-            <button onClick={() => { setEditingId(sys.id); setAdding(false); setDraft({ name: sys.name, baseUrl: sys.baseUrl, openUri: sys.openUri ?? '', createUri: sys.createUri ?? '', templatesEnabled: sys.templatesEnabled ?? false, templates: sys.templates ?? [] }); }}
+            <button onClick={() => { setEditingId(sys.id); setAdding(false); setDraft({ name: sys.name, baseUrl: sys.baseUrl, openUri: sys.openUri ?? '', createUri: sys.createUri ?? '', templatesEnabled: sys.templatesEnabled ?? false, templates: sys.templates ?? [], showInHub: sys.showInHub !== false }); }}
               style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}>
               Edit
             </button>
@@ -76,6 +76,10 @@ export function CustomSystemsSection() {
             <input value={draft.openUri} onChange={e => setDraft(d => ({ ...d, openUri: e.target.value }))} placeholder="/browse/ticket?id=" style={fi} />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 10 }}>
+              <input type="checkbox" checked={draft.showInHub !== false} onChange={e => setDraft(d => ({ ...d, showInHub: e.target.checked }))} />
+              Show this system's tickets on the ▣ Hub page
+            </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 10 }}>
               <input type="checkbox" checked={!!draft.templatesEnabled} onChange={e => setDraft(d => ({ ...d, templatesEnabled: e.target.checked }))} />
               Templates (SN-style) — the card's Create button offers these; use <b>FILL</b> in a URI to be prompted per-create

@@ -10,6 +10,7 @@ const NAV: { key: View; label: string; icon: string }[] = [
   { key: 'kanban', label: 'Kanban', icon: '⫴' },
   { key: 'table', label: 'Table', icon: '☰' },
   { key: 'quickhelp', label: 'Quick Help', icon: '⚡' },
+  { key: 'hub', label: 'Hub', icon: '▣' },
   { key: 'archive', label: 'Archive', icon: '🗑' },
   { key: 'docs', label: 'Docs', icon: '▤' },
   { key: 'settings', label: 'Settings', icon: '⚙' },

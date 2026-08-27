@@ -23,6 +23,7 @@ function HomeV1() {
   const sprintToggles = useStore(s => s.sprintTypeToggles);
   const sprintOrder = useStore(s => s.sprintOrder);
   const reviewSession = useStore(s => s.reviewSession);
+  const customSystems = useStore(s => s.customSystems);
   const config = useStore(s => s.dashboardConfig);
   const agendaChecks = useStore(s => s.agendaChecks);
   const toggleAgendaCheck = useStore(s => s.toggleAgendaCheck);
@@ -31,8 +32,8 @@ function HomeV1() {
   const [hoverTile, setHoverTile] = useState<string | null>(null);
 
   const counts = useMemo(
-    () => dashCounts(items, sprintToggles, sprintOrder, reviewSession),
-    [items, sprintToggles, sprintOrder, reviewSession]);
+    () => dashCounts(items, sprintToggles, sprintOrder, reviewSession, customSystems),
+    [items, sprintToggles, sprintOrder, reviewSession, customSystems]);
 
   const todayChecks = useMemo(
     () => new Set(agendaChecks.date === todayKey() ? agendaChecks.ids : []),

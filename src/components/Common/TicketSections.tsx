@@ -6,6 +6,7 @@ import { ApiUnreachableError } from '../../apiLog';
 import { openTicketWindow } from '../../ticketWindow';
 import { customOpenUrl, customCreateUrl, customTemplateUrl, openCustomUrl } from '../../customSystems';
 import { nextId } from '../../engine';
+import { RelevanceToggle, itsmKey, csKey } from '../Common/RelevanceToggle';
 import { getDefaultJiraConfig, jiraTicketUrl, applySummaryTemplate, buildJiraCreateUrl } from '../../jiraHosts';
 import { itsmTicketUrl, fetchSnTicket } from '../../itsm';
 
@@ -361,6 +362,7 @@ export function TicketSections({ task, onToast }: Props) {
             <span title="Updated in ServiceNow since you last opened it"
               style={{ color: 'var(--t-important)', fontSize: 9, flexShrink: 0, lineHeight: 1 }}>●</span>
           )}
+          {t.itsmTicket && <RelevanceToggle task={t} ticketKey={itsmKey(t.itsmTicket.trim())} />}
           {t.itsmTicket && (() => { const url = itsmTicketUrl(itsmConfig, t.itsmTicket); return url ? <><a href={url} target="_blank" rel="noreferrer" onClick={() => markItsmViewed(id)} style={extLink} title={`Open ${t.itsmTicket}`}>↗</a><span onClick={() => { markItsmViewed(id); openTicketWindow(url, t.itsmTicket ?? ''); }} style={{ ...extLink, cursor: 'pointer', fontSize: 13 }} title={`Open ${t.itsmTicket} in a popup window`}>⧉</span></> : null; })()}
           {snSync === 'syncing' && (
             <span title="Syncing ServiceNow status…"
@@ -401,6 +403,7 @@ export function TicketSections({ task, onToast }: Props) {
                     updateItem(id, { extraItsmTickets: pairs.map(p => p.tk), extraItsmTicketLabels: pairs.map(p => p.lb) });
                   }
                 }} />
+              {ticket && <RelevanceToggle task={t} ticketKey={itsmKey(ticket.trim())} />}
               {ticket && (() => { const url = itsmTicketUrl(itsmConfig, ticket); return url ? <><a href={url} target="_blank" rel="noreferrer" style={extLink} title={`Open ${ticket}`}>↗</a><span onClick={() => openTicketWindow(url, ticket)} style={{ ...extLink, cursor: 'pointer', fontSize: 13 }} title={`Open ${ticket} in a popup window`}>⧉</span></> : null; })()}
             </div>
             {!ticket.trim() && (
@@ -434,6 +437,7 @@ export function TicketSections({ task, onToast }: Props) {
                   <input value={val}
                     onChange={e => updateItem(id, { customTickets: { ...(t.customTickets ?? {}), [sys.id]: e.target.value } })}
                     placeholder={`${sys.name} ticket`} style={sInp} />
+                  {val.trim() && <RelevanceToggle task={t} ticketKey={csKey(sys.id, val.trim())} />}
                   {url && <>
                     <span onClick={() => openCustomUrl(`customsys:${sys.name}`, url)} style={{ ...extLink, cursor: 'pointer' }} title={`Open ${val}`}>↗</span>
                     <span onClick={() => openTicketWindow(url, val)} style={{ ...extLink, cursor: 'pointer', fontSize: 13 }} title={`Open ${val} in a popup window`}>⧉</span>

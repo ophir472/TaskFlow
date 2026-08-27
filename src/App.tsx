@@ -3,10 +3,12 @@ import { useStore } from './store';
 import { getThemeVars } from './themes';
 import type { View } from './store';
 
-const VALID_VIEWS: View[] = ['home', 'feed', 'explore', 'kanban', 'table', 'quickhelp', 'archive', 'docs', 'settings'];
+// 'hub' is LAST on purpose: digits 1–9 map by index and must stay stable.
+const VALID_VIEWS: View[] = ['home', 'feed', 'explore', 'kanban', 'table', 'quickhelp', 'archive', 'docs', 'settings', 'hub'];
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { CardFeed } from './components/CardFeed/CardFeed';
 import { QuickHelp } from './components/QuickHelp/QuickHelp';
+import { Hub } from './components/Hub/Hub';
 import { Home } from './components/Home/Home';
 import { WalkthroughBar } from './components/Home/WalkthroughBar';
 import { Explore } from './components/Explore/Explore';
@@ -688,6 +690,7 @@ export default function App() {
 
         {view === 'home' && <Home />}
         {view === 'quickhelp' && <QuickHelp onToast={toastTimer} />}
+        {view === 'hub' && <Hub />}
         {view === 'feed' && <CardFeed onToast={toastTimer} />}
         {view === 'explore' && <Explore focusTrigger={focusSearchTrigger} />}
         {view === 'kanban' && <Kanban />}

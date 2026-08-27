@@ -77,6 +77,9 @@ export interface CustomSystem {
   baseUrl: string;
   openUri?: string;
   createUri?: string;
+  // Whether this system's tickets are aggregated on the Hub page.
+  // Missing → true.
+  showInHub?: boolean;
   // SN-style templates: when enabled, the card's Create button offers the
   // named templates below; a template URI may contain FILL placeholders,
   // prompted for before opening (full URL = baseUrl + template uri).
@@ -378,6 +381,10 @@ export interface Task {
   // Per-custom-system ticket ids (CustomSystem.id → ticket). The card shows
   // one row per configured system, ITSM-style.
   customTickets?: Record<string, string>;
+  // Tickets marked NOT RELEVANT (✓ toggle on the card / Hub page): keys are
+  // `itsm:<ticket>` or `cs:<systemId>:<ticket>`. Marked tickets are hidden
+  // from the Hub and grey on the card; unmarking restores them.
+  irrelevantTickets?: string[];
   // ServiceNow sync for the primary ITSM ticket: last fetched status +
   // server-side update time, and when the user last opened the ticket (↗).
   // Set QUIETLY (no updatedAt bump / history) so background sync never flags
