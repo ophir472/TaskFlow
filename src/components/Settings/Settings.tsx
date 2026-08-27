@@ -5,6 +5,7 @@ import { THEMES } from '../../themes';
 import { ThemePicker } from './ThemePicker';
 import { ResponsibilitiesSection } from './ResponsibilitiesSection';
 import { DashboardSection } from './DashboardSection';
+import { APP_VERSION, RELEASES } from '../../releaseNotes';
 import { CustomSystemsSection } from './CustomSystemsSection';
 import { JiraHostsSection } from './JiraHostsSection';
 import { ServiceNowSection } from './ServiceNowSection';
@@ -355,11 +356,13 @@ const SETTINGS_TABS = [
   { id: 'responsibilities', label: 'Responsibilities' },
   { id: 'backup', label: 'Backup' },
 ] as const;
-type SettingsTab = typeof SETTINGS_TABS[number]['id'];
+type SettingsTab = typeof SETTINGS_TABS[number]['id'] | 'releases';
 
 function tabFromHash(): SettingsTab {
   const parts = window.location.hash.slice(1).split('/');
   const t = parts[0] === 'settings' ? parts[1] : undefined;
+  // 'releases' is a hidden tab (reached from the version footer, #settings/releases)
+  if (t === 'releases') return 'releases';
   return SETTINGS_TABS.some(x => x.id === t) ? (t as SettingsTab) : 'general';
 }
 
@@ -860,6 +863,47 @@ export function Settings() {
           </button>
         </div>
       </div>
+      )}
+
+      {/* Version footer — opens the full release-notes page */}
+      {tab !== 'releases' && (
+        <div style={{ textAlign: 'center', paddingTop: 10 }}>
+          <span onClick={() => { window.location.hash = 'settings/releases'; }}
+            title="Release notes"
+            style={{ fontSize: 12, color: 'var(--t-muted)', cursor: 'pointer', fontWeight: 600 }}>
+            TaskFlow v{APP_VERSION}
+          </span>
+        </div>
+      )}
+
+      {/* Release notes — a full page, every version (#settings/releases) */}
+      {tab === 'releases' && (
+        <div style={{ maxWidth: 760, width: '100%', margin: '0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 22 }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--t-txt)' }}>Release notes</span>
+            <span style={{ fontSize: 13, color: 'var(--t-muted)' }}>current: v{APP_VERSION}</span>
+            <span onClick={() => { window.location.hash = 'settings/general'; }}
+              style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 600, color: 'var(--t-acc-dk)', cursor: 'pointer' }}>
+              ← Back to Settings
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+            {RELEASES.map(r => (
+              <div key={r.version} style={{ background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: '16px 20px' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
+                  <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--t-txt)' }}>v{r.version}</span>
+                  <span style={{ fontSize: 12, color: 'var(--t-muted)' }}>{r.date}</span>
+                  {r.version === APP_VERSION && (
+                    <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>current</span>
+                  )}
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {r.notes.map((n, i) => <li key={i} style={{ fontSize: 13.5, color: 'var(--t-txt2)', lineHeight: 1.55 }}>{n}</li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

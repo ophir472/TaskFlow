@@ -86,7 +86,8 @@ Before pushing, verify and report:
 1. **0 lost data** — everything added triggers the sync and reaches backup (events registered; live file covers the rest).
 2. **Backward compatibility** — old persisted stores and old snapshots still load (optional fields or migrations).
 3. **Questions?** — surface anything ambiguous instead of guessing; Ophir wants the questions.
-4. **Summarize and push** — session summary (features, fixes, action items for the work computer), then commit + push with the Co-Authored-By trailer.
+4. **Version bump** — every push: bump `APP_VERSION` in `src/releaseNotes.ts` and PREPEND a release entry (version, date, user-facing notes). The version shows at the bottom of Settings; clicking it opens the history.
+5. **Summarize and push** — session summary (features, fixes, action items for the work computer), then commit + push with the Co-Authored-By trailer.
 
 ## Known drift / gotchas
 
