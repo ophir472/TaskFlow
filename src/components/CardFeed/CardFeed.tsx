@@ -17,7 +17,7 @@ import { TicketSections } from '../Common/TicketSections';
 import { TypePicker } from '../Common/TypePicker';
 import { RequesterSelect } from '../Common/RequesterSelect';
 import { FollowupSection } from '../Common/FollowupSection';
-import { ScopeToggle, SubScopeToggle } from '../Common/ScopeToggle';
+import { SubScopeToggle } from '../Common/ScopeToggle';
 
 interface Props {
   onToast: (msg: string) => void;
@@ -754,7 +754,6 @@ export function CardFeed({ onToast }: Props) {
               <div>
                 <div style={fl}>Kind</div>
                 <TypePicker task={t} compact />
-                <div style={{ marginTop: 6 }}><ScopeToggle task={t} compact /></div>
               </div>
               <div>
                 <div style={fl}>Requester</div>

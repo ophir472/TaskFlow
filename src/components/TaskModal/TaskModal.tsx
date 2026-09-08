@@ -14,7 +14,7 @@ import { TicketSections } from '../Common/TicketSections';
 import { TypePicker } from '../Common/TypePicker';
 import { RequesterSelect } from '../Common/RequesterSelect';
 import { FollowupSection } from '../Common/FollowupSection';
-import { ScopeToggle, SubScopeToggle } from '../Common/ScopeToggle';
+import { SubScopeToggle } from '../Common/ScopeToggle';
 
 interface Props {
   taskId: string;
@@ -266,7 +266,6 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
               <div style={fl}>Tags</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <TypePicker task={task} />
-                <ScopeToggle task={task} />
                 {TAG_DEFS.map(({ key, label, ac, ab, abr }) => {
                   const active = key === 'noTag' ? task.noTag : task[key];
                   return (

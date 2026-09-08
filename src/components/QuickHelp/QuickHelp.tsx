@@ -4,7 +4,6 @@ import type { Task } from '../../types';
 import { TypePicker } from '../Common/TypePicker';
 import { RequesterSelect } from '../Common/RequesterSelect';
 import { FollowupSection } from '../Common/FollowupSection';
-import { ScopeToggle } from '../Common/ScopeToggle';
 import { TicketSections } from '../Common/TicketSections';
 import { QuickToActSection } from '../Common/QuickToActSection';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
@@ -81,7 +80,7 @@ export function QuickHelp({ onToast }: Props) {
             ✓ Done
           </button>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}><TypePicker task={t} /><ScopeToggle task={t} /></div>
+        <TypePicker task={t} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
             <div style={fl}>Requester</div>

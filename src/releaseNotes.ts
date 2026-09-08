@@ -2,7 +2,7 @@
 // push (part of the session finish routine in CLAUDE.md). Shown at the
 // bottom of Settings; clicking the version opens the full history.
 
-export const APP_VERSION = '1.4.1';
+export const APP_VERSION = '1.4.2';
 
 export interface Release {
   version: string;
@@ -11,6 +11,13 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
+  {
+    version: '1.4.2',
+    date: '2026-08-27',
+    notes: [
+      'In scope is a sub-task property only — the task-level pill is gone; ▶ Play decides per step',
+    ],
+  },
   {
     version: '1.4.1',
     date: '2026-08-27',

@@ -140,7 +140,7 @@ export function Play({ taskId, onClose }: Props) {
     }
     const st = useStore.getState();
     const queue = buildQueue(st.items).filter((it): it is Task =>
-      it.kind === 'task' && it.id !== task.id && inScope(it) && (it as Task).subtasks.some(s => !s.done && inScope(s)));
+      it.kind === 'task' && it.id !== task.id && (it as Task).subtasks.some(s => !s.done && inScope(s)));
     if (queue.length) {
       history.replaceState(null, '', `#play/${queue[0].id}`);
       window.dispatchEvent(new HashChangeEvent('hashchange'));
