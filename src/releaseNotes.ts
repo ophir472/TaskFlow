@@ -2,7 +2,7 @@
 // push (part of the session finish routine in CLAUDE.md). Shown at the
 // bottom of Settings; clicking the version opens the full history.
 
-export const APP_VERSION = '1.5.0';
+export const APP_VERSION = '1.5.1';
 
 export interface Release {
   version: string;
@@ -11,6 +11,13 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
+  {
+    version: '1.5.1',
+    date: '2026-08-27',
+    notes: [
+      'Kind (Planned / Urgent / Quick help) is a dropdown too on existing tasks — card, popup, Quick Help and the Table column; the create form keeps its chips',
+    ],
+  },
   {
     version: '1.5.0',
     date: '2026-08-27',

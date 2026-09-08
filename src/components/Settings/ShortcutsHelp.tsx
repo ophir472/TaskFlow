@@ -97,10 +97,10 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     ],
   },
   {
-    title: 'Tags dropdown (card & task popup)',
+    title: 'Tags & Kind dropdowns (card, task popup, table)',
     rows: [
-      { keys: ['↑', '↓'], what: 'Move between Urgent / Important / Quick / None' },
-      { keys: ['Enter', 'Space'], what: 'Toggle the highlighted tag' },
+      { keys: ['↑', '↓'], what: 'Move between the options' },
+      { keys: ['Enter', 'Space'], what: 'Toggle the highlighted tag / pick the kind' },
       { keys: ['Esc'], what: 'Close (the card unpins)' },
     ],
   },
