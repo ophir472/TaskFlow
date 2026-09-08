@@ -2,7 +2,7 @@
 // push (part of the session finish routine in CLAUDE.md). Shown at the
 // bottom of Settings; clicking the version opens the full history.
 
-export const APP_VERSION = '1.5.1';
+export const APP_VERSION = '1.5.2';
 
 export interface Release {
   version: string;
@@ -11,6 +11,14 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
+  {
+    version: '1.5.2',
+    date: '2026-08-27',
+    notes: [
+      'Fix: the Kind dropdown inside the Table was clipped by the table — it now floats above it',
+      'Audit: every store event is registered for logs/versioning; reminder reschedules get a version-history line; backup defaults cover the daily counters',
+    ],
+  },
   {
     version: '1.5.1',
     date: '2026-08-27',

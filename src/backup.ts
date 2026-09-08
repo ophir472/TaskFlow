@@ -91,6 +91,8 @@ export function triggerDownload(filename: string): void {
 const STATE_DEFAULTS: Record<string, unknown> = {
   requesters: [],
   projects: [],
+  promotionsToday: 0,
+  dailyResetAt: 0,
   customFields: [],
   history: [],
   taskOrder: [],

@@ -1134,6 +1134,10 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
         s.otherChanges++;
         s.details.push({ action: d.done ? 'completed a followup' : 'reopened a followup', title: d.title ?? titleFor(d.taskId) });
         break;
+      case 'reminder:reschedule':
+        s.itemsUpdated++;
+        s.details.push({ action: 'rescheduled a reminder', title: titleFor(d.id) });
+        break;
       case 'minutes:fields':
         s.otherChanges++;
         s.details.push({ action: 'changed meeting-minutes fields', title: '' });

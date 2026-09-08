@@ -26,7 +26,12 @@ export function TypePicker({ task, compact }: { task: Task; compact?: boolean })
   const updateItem = useStore(s => s.updateItem);
   const [open, setOpen] = useState(false);
   const [hi, setHi] = useState(0);
+  const hiRef = useRef(0);
+  hiRef.current = hi;
   const ref = useRef<HTMLDivElement>(null);
+  // Popover is position:fixed (anchored to the button's rect) so it escapes
+  // overflow:hidden ancestors — e.g. the Table's Kind column.
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -38,7 +43,7 @@ export function TypePicker({ task, compact }: { task: Task; compact?: boolean })
       if (e.key === 'Escape') { e.stopImmediatePropagation(); setOpen(false); }
       else if (e.key === 'ArrowDown') { e.preventDefault(); setHi(i => (i + 1) % TYPE_DEFS.length); }
       else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(i => (i - 1 + TYPE_DEFS.length) % TYPE_DEFS.length); }
-      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setHi(i => { updateItem(task.id, { type: TYPE_DEFS[i].key }); return i; }); setOpen(false); }
+      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); updateItem(task.id, { type: TYPE_DEFS[hiRef.current].key }); setOpen(false); }
     };
     document.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey, true);
@@ -52,7 +57,7 @@ export function TypePicker({ task, compact }: { task: Task; compact?: boolean })
 
   return (
     <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
-      <button onClick={e => { e.stopPropagation(); setOpen(o => !o); }} title={open ? 'Close' : missing ? 'Set the kind' : `Kind: ${cur.label} — click to change`}
+      <button onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setAnchor({ top: r.bottom + 6, left: r.left }); setOpen(o => !o); }} title={open ? 'Close' : missing ? 'Set the kind' : `Kind: ${cur.label} — click to change`}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: compact ? '2px 8px' : '3px 10px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap',
           fontSize: compact ? 10.5 : 11.5, fontWeight: 700,
           border: missing ? '2px solid var(--t-amber)' : `1px solid ${open ? 'var(--t-acc)' : cur.color}`,
@@ -62,7 +67,7 @@ export function TypePicker({ task, compact }: { task: Task; compact?: boolean })
       </button>
       {open && (
         <div onClick={e => e.stopPropagation()}
-          style={{ position: 'absolute', left: 0, top: 'calc(100% + 6px)', zIndex: 40, display: 'flex', gap: 6, flexWrap: 'wrap', padding: 8, minWidth: 260, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 10px 32px rgba(0,0,0,0.18)' }}>
+          style={{ position: 'fixed', left: anchor?.left ?? 0, top: anchor?.top ?? 0, zIndex: 120, display: 'flex', gap: 6, flexWrap: 'wrap', padding: 8, minWidth: 260, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 10px 32px rgba(0,0,0,0.18)' }}>
           {TYPE_DEFS.map((d, i) => {
             const on = task.type === d.key;
             return (
