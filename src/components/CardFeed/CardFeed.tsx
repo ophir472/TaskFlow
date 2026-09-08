@@ -516,9 +516,9 @@ export function CardFeed({ onToast }: Props) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <TagDropdown task={t} open={tagEditMode}
                     onOpenChange={o => { if (o) { setDisplayId(current.id); setTagEditMode(true); } else { setTagEditMode(false); setDisplayId(null); } }} />
+                  <TypePicker task={t} />
                   {tagEditMode && <span style={{ fontSize: 11, color: 'var(--t-acc)' }}>card stays here while the tags are open</span>}
                 </div>
-                <div><TypePicker task={t} /></div>
               </div>
 
               {/* To check banner */}
