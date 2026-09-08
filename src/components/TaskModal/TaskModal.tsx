@@ -13,6 +13,7 @@ import { ResizableTextarea } from '../Common/ResizableTextarea';
 import { TicketSections } from '../Common/TicketSections';
 import { TypePicker } from '../Common/TypePicker';
 import { RequesterSelect } from '../Common/RequesterSelect';
+import { FollowupSection } from '../Common/FollowupSection';
 
 interface Props {
   taskId: string;
@@ -416,6 +417,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
 
             {/* Waiting for (collapsible) */}
             <WaitingForSection task={task} />
+            <FollowupSection task={task} />
 
             {/* Estimates (collapsible) */}
             <EstimatesSection task={task} />

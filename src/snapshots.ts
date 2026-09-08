@@ -749,6 +749,7 @@ const COALESCE_DATA_EVENTS = new Set([
     'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
     'task:update', 'task-order:set', 'manual-order:reset',
     'sprint:toggle', 'sprint-order:set', 'review-order:set', 'dashboard:config', 'customsys:add', 'customsys:update', 'customsys:remove', 'review:summary-save', 'minutes:fields',
+    'followup:add', 'followup:update', 'followup:remove', 'followup:progress', 'followup:done',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
     'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content',
@@ -861,6 +862,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
     'task:update', 'task-order:set', 'manual-order:reset',
     'sprint:toggle', 'sprint-order:set', 'review-order:set', 'dashboard:config', 'customsys:add', 'customsys:update', 'customsys:remove', 'review:summary-save', 'minutes:fields',
+    'followup:add', 'followup:update', 'followup:remove', 'followup:progress', 'followup:done',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
     'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
@@ -897,6 +899,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'sn:template:add', 'sn:template:update', 'sn:template:remove', 'ai-config:set',
     'task:update', 'task-order:set', 'manual-order:reset',
     'sprint:toggle', 'sprint-order:set', 'review-order:set', 'dashboard:config', 'customsys:add', 'customsys:update', 'customsys:remove', 'review:summary-save', 'minutes:fields',
+    'followup:add', 'followup:update', 'followup:remove', 'followup:progress', 'followup:done',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
     'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
@@ -1110,6 +1113,26 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
       case 'review:summary-save':
         s.otherChanges++;
         s.details.push({ action: 'saved a day summary to the Reviews archive', title: '' });
+        break;
+      case 'followup:add':
+        s.otherChanges++;
+        s.details.push({ action: 'added a followup', title: d.title ?? '' });
+        break;
+      case 'followup:update':
+        s.otherChanges++;
+        s.details.push({ action: 'edited a followup', title: titleFor(d.taskId) });
+        break;
+      case 'followup:remove':
+        s.otherChanges++;
+        s.details.push({ action: 'removed a followup', title: titleFor(d.taskId) });
+        break;
+      case 'followup:progress':
+        s.otherChanges++;
+        s.details.push({ action: d.on ? 'progressed a followup' : 'un-progressed a followup', title: d.title ?? titleFor(d.taskId) });
+        break;
+      case 'followup:done':
+        s.otherChanges++;
+        s.details.push({ action: d.done ? 'completed a followup' : 'reopened a followup', title: d.title ?? titleFor(d.taskId) });
         break;
       case 'minutes:fields':
         s.otherChanges++;

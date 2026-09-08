@@ -381,10 +381,15 @@ export interface Task {
   // Per-custom-system ticket ids (CustomSystem.id → ticket). The card shows
   // one row per configured system, ITSM-style.
   customTickets?: Record<string, string>;
-  // Tickets marked NOT RELEVANT (✓ toggle on the card / Hub page): keys are
-  // `itsm:<ticket>` or `cs:<systemId>:<ticket>`. Marked tickets are hidden
-  // from the Hub and grey on the card; unmarking restores them.
+  // Tickets marked DONE (the ✓ on the card's ticket rows / the Hub): keys are
+  // `itsm:<ticket>` or `cs:<systemId>:<ticket>`. Kept in sync with the
+  // ticket's auto-followup row (store.setFollowupDone) — one source of truth
+  // for "this ticket is handled".
   irrelevantTickets?: string[];
+  // Per-card "Followup" table (under Waiting for). Manual rows live here;
+  // ticket rows (ITSM / custom systems) are DERIVED at render and only get a
+  // record here (with `ticketKey`) once progressed/annotated/done.
+  followups?: Followup[];
   // ServiceNow sync for the primary ITSM ticket: last fetched status +
   // server-side update time, and when the user last opened the ticket (↗).
   // Set QUIETLY (no updatedAt bump / history) so background sync never flags
@@ -451,11 +456,25 @@ export interface Responsibility {
   updatedAt: number;
 }
 
-// A "Get back to <who>" note — the ENTIRE feature is: someone you owe a
-// follow-up to, plus a note on what. No schedule, no ticket link, no
-// scoring — it never enters the card feed. Lives only in search (Explore /
-// Spotlight) and the ▣ Hub. Title is always derived from `who` (kept in
-// sync by store.updateItem) — never edited directly.
+// One row of a card's Followup table. `progressedAt` marks "progressed" —
+// it strikes the row through ONLY while the stamp is from today, so the
+// mark resets itself at 00:00 with no scheduled job. `done` hides the row
+// (a "show completed" toggle reveals it). `ticketKey` marks the shadow
+// record of an auto ITSM/custom-system row (`itsm:<t>` / `cs:<sys>:<t>`).
+export interface Followup {
+  id: string;
+  title: string;
+  notes: string;
+  done: boolean;
+  doneAt?: number;
+  progressedAt?: number;
+  ticketKey?: string;
+  createdAt: number;
+}
+
+// LEGACY (v1.2.0 only): standalone "Get back to <who>" notes. Migration v10
+// converts each into a card with one followup row; the kind stays in the
+// union so pre-migration data still type-checks — nothing creates it now.
 export interface GetBackTo {
   id: string;
   kind: 'getback';

@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField, GetBackTo } from './types';
+import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField, Followup } from './types';
 import { EMPTY_SN_CONFIG } from './servicenow';
 import { EMPTY_AI_CONFIG } from './ai';
 import { triggerIfDue, computeNextDueAt } from './responsibilities';
 import { nextOccurrence } from './scheduleEngine';
-import { midnight } from './engine';
+import { midnight, nextId } from './engine';
 
 // Fire-and-forget log helper. Dynamic import avoids circular dep at module init.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,6 +19,17 @@ const PROMOTION_GOAL = 3;
 // See snapshots.ts IS_PREVIEW_MODE for why we cache (browsing inside the preview
 // changes the URL, which would flip this flag mid-session).
 const IS_PREVIEW_MODE = typeof window !== 'undefined' && window.location.hash.startsWith('#preview/');
+
+// Followup refs: a stored record by id, or a ticket row by key (its shadow
+// record is created on first touch so progress/notes/done have a home).
+export type FollowupRef = { id: string } | { ticketKey: string; title: string };
+const matchesRef = (f: Followup, ref: FollowupRef) => 'id' in ref ? f.id === ref.id : f.ticketKey === ref.ticketKey;
+function withFollowup(task: Task, ref: FollowupRef, mutate: (f: Followup) => Followup): Followup[] {
+  const list = task.followups ?? [];
+  if (list.some(f => matchesRef(f, ref))) return list.map(f => matchesRef(f, ref) ? mutate(f) : f);
+  if ('ticketKey' in ref) return [...list, mutate({ id: nextId('f'), title: ref.title, notes: '', done: false, ticketKey: ref.ticketKey, createdAt: Date.now() })];
+  return list;
+}
 
 export type View = 'home' | 'feed' | 'explore' | 'kanban' | 'table' | 'quickhelp' | 'hub' | 'archive' | 'docs' | 'settings';
 
@@ -93,6 +104,13 @@ interface AppState {
   updateTask: (id: string, patch: Partial<Task>) => void;
   updateSubtask: (parentId: string, subId: string, patch: Partial<Subtask>) => void;
   addSubtask: (parentId: string, title: string, opts?: { isQuick?: boolean; isNext?: boolean }) => void;
+  // Followup table (per card). A ref is either a stored record id or a
+  // ticket row (created as a shadow record on first touch).
+  addFollowup: (taskId: string, title: string, notes?: string) => void;
+  updateFollowup: (taskId: string, ref: FollowupRef, patch: Partial<Pick<Followup, 'title' | 'notes'>>) => void;
+  removeFollowup: (taskId: string, id: string) => void;
+  toggleFollowupProgressed: (taskId: string, ref: FollowupRef) => void;
+  setFollowupDone: (taskId: string, ref: FollowupRef, done: boolean) => void;
   deleteSubtask: (parentId: string, subId: string) => void;
   toggleTag: (id: string, key: 'urgent' | 'important' | 'quick' | 'noTag') => void;
   toggleSubtaskDone: (parentId: string, subId: string) => void;
@@ -291,11 +309,6 @@ export const useStore = create<AppState>()(
             if (it.kind === 'task' && nextNotes !== undefined && nextNotes !== it.notes) {
               merged = { ...merged, notesChangedAt: Date.now() } as Item;
             }
-            // "Get back to <who>" — title is derived, never edited directly.
-            const nextWho = (patch as Partial<GetBackTo>).who;
-            if (it.kind === 'getback' && nextWho !== undefined) {
-              merged = { ...merged, title: `Get back to ${nextWho.trim()}` } as Item;
-            }
             return merged;
           }),
           history: pushHistory(s.history, { ts: Date.now(), type: 'update', id, patch: patch as Partial<Item> })
@@ -307,6 +320,68 @@ export const useStore = create<AppState>()(
         set(s => ({
           items: s.items.map(it => it.id === id && it.kind === 'task' ? { ...it, ...patch, updatedAt: Date.now() } : it),
           history: pushHistory(s.history, { ts: Date.now(), type: 'updateTask', id })
+        }));
+      },
+
+      addFollowup: (taskId, title, notes = '') => {
+        const f: Followup = { id: nextId('f'), title: title.trim(), notes, done: false, createdAt: Date.now() };
+        slog('followup:add', { taskId, id: f.id, title: f.title });
+        set(s => ({
+          items: s.items.map(it => it.id === taskId && it.kind === 'task'
+            ? { ...it, followups: [...(it.followups ?? []), f], updatedAt: Date.now() } : it),
+        }));
+      },
+
+      updateFollowup: (taskId, ref, patch) => {
+        slog('followup:update', { taskId, ref, fields: Object.keys(patch) });
+        set(s => ({
+          items: s.items.map(it => it.id === taskId && it.kind === 'task'
+            ? { ...it, followups: withFollowup(it, ref, f => ({ ...f, ...patch })), updatedAt: Date.now() } : it),
+        }));
+      },
+
+      removeFollowup: (taskId, id) => {
+        slog('followup:remove', { taskId, id });
+        set(s => ({
+          items: s.items.map(it => it.id === taskId && it.kind === 'task'
+            ? { ...it, followups: (it.followups ?? []).filter(f => f.id !== id), updatedAt: Date.now() } : it),
+        }));
+      },
+
+      // "Progressed" = a today-only stamp (strikethrough until 00:00).
+      // Toggling off clears it.
+      toggleFollowupProgressed: (taskId, ref) => {
+        const start = new Date(); start.setHours(0, 0, 0, 0);
+        set(s => ({
+          items: s.items.map(it => {
+            if (it.id !== taskId || it.kind !== 'task') return it;
+            let on = false;
+            const followups = withFollowup(it, ref, f => {
+              on = (f.progressedAt ?? 0) < start.getTime();
+              return { ...f, progressedAt: on ? Date.now() : undefined };
+            });
+            slog('followup:progress', { taskId, ref, on, title: followups.find(f => matchesRef(f, ref))?.title });
+            return { ...it, followups, updatedAt: Date.now() };
+          }),
+        }));
+      },
+
+      // Done hides the row; for ticket rows it ALSO flips the ticket's ✓
+      // (irrelevantTickets) so the card's ticket row and the followup agree.
+      setFollowupDone: (taskId, ref, done) => {
+        set(s => ({
+          items: s.items.map(it => {
+            if (it.id !== taskId || it.kind !== 'task') return it;
+            const followups = withFollowup(it, ref, f => ({ ...f, done, doneAt: done ? Date.now() : undefined }));
+            const rec = followups.find(f => matchesRef(f, ref));
+            slog('followup:done', { taskId, ref, done, title: rec?.title });
+            let irrelevantTickets = it.irrelevantTickets;
+            if (rec?.ticketKey) {
+              const list = it.irrelevantTickets ?? [];
+              irrelevantTickets = done ? (list.includes(rec.ticketKey) ? list : [...list, rec.ticketKey]) : list.filter(k => k !== rec.ticketKey);
+            }
+            return { ...it, followups, irrelevantTickets, updatedAt: Date.now() };
+          }),
         }));
       },
 
@@ -1178,7 +1253,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'taskflow-store',
-      version: 9,
+      version: 10,
       storage: createJSONStorage(() => IS_PREVIEW_MODE ? sessionStorage : localStorage),
       skipHydration: IS_PREVIEW_MODE,
       // UI-only fields: kept in-memory per-tab, NOT persisted. Otherwise every
@@ -1273,6 +1348,25 @@ export const useStore = create<AppState>()(
           if (Array.isArray(persisted.tableVisibleCols) && !persisted.tableVisibleCols.includes('kind')) {
             const at = persisted.tableVisibleCols.indexOf('title');
             persisted.tableVisibleCols.splice(at >= 0 ? at + 1 : 0, 0, 'kind');
+          }
+        }
+        if (fromVersion < 10 && Array.isArray(persisted.items)) {
+          // v1.2.0's standalone "Get back to <who>" notes become a card each
+          // with one Followup row — nothing is dropped.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const legacy = persisted.items.filter((it: any) => it?.kind === 'getback');
+          if (legacy.length) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const converted = legacy.map((g: any) => ({
+              id: 't' + g.id, kind: 'task', type: 'planned', title: g.title || `Get back to ${g.who ?? ''}`,
+              description: '', notes: '', blockers: '', generalLink: '', jiraLink: '', requester: '', project: '',
+              status: 'backlog', forToday: false, urgent: false, important: false, quick: false, noTag: false,
+              toCheck: '', priorityBoost: false, subtasks: [],
+              followups: [{ id: 'f' + g.id, title: g.who ?? g.title ?? '', notes: g.notes ?? '', done: !!g.done, doneAt: g.doneAt, createdAt: g.createdAt ?? Date.now() }],
+              bumpedAt: g.bumpedAt ?? 0, staleness: 0, createdAt: g.createdAt ?? Date.now(), updatedAt: g.updatedAt ?? Date.now(), archived: !!g.done,
+            }));
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            persisted.items = [...persisted.items.filter((it: any) => it?.kind !== 'getback'), ...converted];
           }
         }
         if (fromVersion < 9 && persisted.dashboardConfig?.tiles && Array.isArray(persisted.dashboardConfig.tiles)

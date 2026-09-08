@@ -5,15 +5,14 @@ import { RequesterSelect } from '../Common/RequesterSelect';
 import { useLogMount } from '../../useLogMount';
 import { nextId } from '../../engine';
 import type { Item, ScheduleSpec } from '../../types';
-import { buildGetBackTo } from '../../getBackTo';
 import { SchedulePicker } from '../SchedulePicker/SchedulePicker';
 import { nextOccurrence } from '../../scheduleEngine';
 
-type CreateType = 'task' | 'reminder' | 'getback';
+type CreateType = 'task' | 'reminder';
 interface Props { onClose: () => void; onToast: (msg: string) => void; onCreated?: (id: string) => void; initialTitle?: string; }
 
 const TABS: { key: CreateType; label: string }[] = [
-  { key: 'task', label: 'Task' }, { key: 'reminder', label: 'Reminder' }, { key: 'getback', label: 'Get back to' },
+  { key: 'task', label: 'Task' }, { key: 'reminder', label: 'Reminder' },
 ];
 const TAG_DEFS: { key: 'urgent' | 'important' | 'quick' | 'noTag'; label: string }[] = [
   { key: 'urgent', label: 'Urgent' }, { key: 'important', label: 'Important' },
@@ -51,8 +50,6 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
   const [status, setStatus] = useState<'backlog' | 'todo' | 'in_progress' | 'waiting'>('backlog');
   const [subs, setSubs] = useState<string[]>([]);
   const [subDraft, setSubDraft] = useState('');
-  const [who, setWho] = useState('');
-  const [gbNotes, setGbNotes] = useState('');
   const [urgent, setUrgent] = useState(false);
   const [important, setImportant] = useState(false);
   const [quick, setQuick] = useState(false);
@@ -63,16 +60,11 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
     else { setNoTag(false); if (key === 'urgent') setUrgent(v => !v); if (key === 'important') setImportant(v => !v); if (key === 'quick') setQuick(v => !v); }
   }
 
-  const disabled = type === 'getback' ? !who.trim() : !title || (type === 'reminder' && !schedule);
+  const disabled = !title || (type === 'reminder' && !schedule);
   const now = Date.now();
 
   const handleSubmit = (asQuick = false) => {
     if (disabled) return;
-    if (type === 'getback') {
-      const item = buildGetBackTo(who, gbNotes);
-      createItem(item); onCreated?.(item.id); onToast('Created'); onClose();
-      return;
-    }
     const id = nextId(type === 'task' ? 't' : 'r');
     let item: Item;
     if (type === 'task') {
@@ -120,28 +112,12 @@ export function CreateModal({ onClose, onToast, onCreated, initialTitle = '' }: 
           ))}
         </div>
 
-        {type !== 'getback' ? (
-          <div>
-            <div style={lbl}>{type === 'task' ? 'Title' : 'Reminder text'}</div>
-            <input value={title} onChange={e => setTitle(e.target.value)} autoFocus
-              placeholder={type === 'task' ? 'What needs to get done?' : 'e.g. Call Dani about the proposal'}
-              onKeyDown={e => { if (e.key === 'Enter' && !disabled) handleSubmit(e.shiftKey); }} style={inp} />
-          </div>
-        ) : (
-          <>
-            <div>
-              <div style={lbl}>Who</div>
-              <input value={who} onChange={e => setWho(e.target.value)} autoFocus
-                placeholder="e.g. Dana Cohen"
-                onKeyDown={e => { if (e.key === 'Enter' && !disabled) handleSubmit(); }} style={inp} />
-            </div>
-            <div>
-              <div style={lbl}>Notes</div>
-              <textarea value={gbNotes} onChange={e => setGbNotes(e.target.value)} rows={3}
-                placeholder="What to bring up… (optional)" style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }} />
-            </div>
-          </>
-        )}
+        <div>
+          <div style={lbl}>{type === 'task' ? 'Title' : 'Reminder text'}</div>
+          <input value={title} onChange={e => setTitle(e.target.value)} autoFocus
+            placeholder={type === 'task' ? 'What needs to get done?' : 'e.g. Call Dani about the proposal'}
+            onKeyDown={e => { if (e.key === 'Enter' && !disabled) handleSubmit(e.shiftKey); }} style={inp} />
+        </div>
 
         {type === 'task' && (
           <>

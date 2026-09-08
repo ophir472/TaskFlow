@@ -6,8 +6,6 @@ import { searchItems } from './Explore';
 import { ReminderModal } from '../ReminderPopup/ReminderModal';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { MailEntryPopup } from '../Mail/MailEntryPopup';
-import { GetBackToModal } from '../GetBackTo/GetBackToModal';
-import { buildGetBackTo } from '../../getBackTo';
 import type { Item, Task } from '../../types';
 
 interface Props {
@@ -15,8 +13,8 @@ interface Props {
   onToast: (msg: string) => void;
 }
 
-const KIND_LABEL: Record<string, string> = { task: 'Task', reminder: 'Reminder', getback: 'Get back to' };
-const KIND_COLOR: Record<string, string> = { task: 'var(--t-txt2)', reminder: 'var(--t-amber)', getback: 'oklch(0.55 0.16 300)' };
+const KIND_LABEL: Record<string, string> = { task: 'Task', reminder: 'Reminder' };
+const KIND_COLOR: Record<string, string> = { task: 'var(--t-txt2)', reminder: 'var(--t-amber)' };
 
 // Floating spotlight-style search (Cmd+F anywhere outside the Explore tab).
 // Shows the same live results as the Explore tab, keyboard-navigable:
@@ -39,15 +37,12 @@ export function Spotlight({ onClose, onToast }: Props) {
   const [mailPopupId, setMailPopupId] = useState<string | null>(null);
   const mailPopupRef = useRef<string | null>(null);
   mailPopupRef.current = mailPopupId;
-  const [getBackModalId, setGetBackModalId] = useState<string | null>(null);
-  const getBackModalRef = useRef<string | null>(null);
-  getBackModalRef.current = getBackModalId;
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const results = useMemo(() => searchItems(items, query), [items, query]);
   const open = query.trim().length > 0;
-  const totalRows = results.length + 2; // + create-task row + get-back-to row
+  const totalRows = results.length + 1; // + quick-create row
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => { setHighlightIdx(-1); }, [query]);
@@ -56,7 +51,7 @@ export function Spotlight({ onClose, onToast }: Props) {
     function onKey(e: KeyboardEvent) {
       // When a form/modal is open on top, Escape belongs to it (each has
       // its own listener) — don't tear down the whole spotlight underneath.
-      if (reminderModalRef.current || taskModalRef.current || mailPopupRef.current || getBackModalRef.current) return;
+      if (reminderModalRef.current || taskModalRef.current || mailPopupRef.current) return;
       if (e.key === 'Escape') { e.preventDefault(); onClose(); }
     }
     window.addEventListener('keydown', onKey);
@@ -66,8 +61,8 @@ export function Spotlight({ onClose, onToast }: Props) {
   // Blur the input while the reminder form is open so its keyboard handling
   // isn't swallowed by the search field.
   useEffect(() => {
-    if (reminderModalId || taskModalId || getBackModalId) inputRef.current?.blur();
-  }, [reminderModalId, taskModalId, getBackModalId]);
+    if (reminderModalId || taskModalId) inputRef.current?.blur();
+  }, [reminderModalId, taskModalId]);
 
   // Keep the highlighted row visible while arrowing through a long list.
   useEffect(() => {
@@ -85,7 +80,6 @@ export function Spotlight({ onClose, onToast }: Props) {
   function handleOpen(item: Item) {
     // A mail entry IS a mail — show the mail form, not a task card.
     if (item.kind === 'task' && (item as Task).type === 'mail') { setMailPopupId(item.id); return; }
-    if (item.kind === 'getback') { setGetBackModalId(item.id); return; }
     if (item.kind === 'task') {
       // The card overlay opens right here, on top of the spotlight — no
       // page change. "Open in Explore →" is the way to the full list.
@@ -114,16 +108,8 @@ export function Spotlight({ onClose, onToast }: Props) {
     onClose();
   }
 
-  function quickCreateGetBack() {
-    const who = query.trim();
-    if (!who) return;
-    const item = buildGetBackTo(who);
-    createItem(item);
-    setGetBackModalId(item.id);
-  }
-
   function onInputKeyDown(e: React.KeyboardEvent) {
-    if (reminderModalId || getBackModalId) return;
+    if (reminderModalId) return;
     if (!open) {
       if (e.key === 'Enter') { e.preventDefault(); goExplore(); }
       return;
@@ -139,7 +125,6 @@ export function Spotlight({ onClose, onToast }: Props) {
       if (e.shiftKey) { quickCreate(); return; }
       if (highlightIdx >= 0 && highlightIdx < results.length) handleOpen(results[highlightIdx]);
       else if (highlightIdx === results.length) quickCreate();
-      else if (highlightIdx === results.length + 1) quickCreateGetBack();
       else goExplore();
     }
   }
@@ -224,18 +209,6 @@ export function Spotlight({ onClose, onToast }: Props) {
                 <span style={{ fontSize: 14, fontWeight: 500 }}>Create task "<span style={{ fontStyle: 'italic' }}>{query.trim()}</span>"</span>
                 <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--t-acc-dk)', background: 'var(--t-acc-bg)', padding: '2px 8px', borderRadius: 6, flexShrink: 0 }}>⇧↵</span>
               </div>
-              {/* Get back to <who> — second quick-create row */}
-              <div
-                onClick={quickCreateGetBack}
-                onMouseEnter={() => setHighlightIdx(results.length + 1)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '11px 20px',
-                  cursor: 'pointer', color: 'oklch(0.55 0.16 300)',
-                  background: highlightIdx === results.length + 1 ? 'oklch(0.94 0.05 300)' : 'var(--t-surf)',
-                }}>
-                <span style={{ fontSize: 17, fontWeight: 700, lineHeight: 1 }}>+</span>
-                <span style={{ fontSize: 14, fontWeight: 500 }}>Get back to "<span style={{ fontStyle: 'italic' }}>{query.trim()}</span>"</span>
-              </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '8px 20px', borderTop: '1px solid var(--t-brd2)', background: 'var(--t-surf2)', fontSize: 11, color: 'var(--t-muted)', flexShrink: 0 }}>
               <span onClick={goExplore} style={{ cursor: 'pointer', color: 'var(--t-acc-dk)', fontWeight: 600 }}>
@@ -247,11 +220,6 @@ export function Spotlight({ onClose, onToast }: Props) {
         )}
       </div>
 
-      {getBackModalId && (
-        <div onClick={e => e.stopPropagation()}>
-          <GetBackToModal id={getBackModalId} onClose={() => { setGetBackModalId(null); inputRef.current?.focus(); }} />
-        </div>
-      )}
       {/* Reminder form on top of the spotlight. stopPropagation so its
           backdrop click closes only the form, not the spotlight below. */}
       {reminderModalId && (

@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { TypePicker } from '../Common/TypePicker';
 import { RequesterSelect } from '../Common/RequesterSelect';
+import { FollowupSection } from '../Common/FollowupSection';
 import { TicketSections } from '../Common/TicketSections';
 import { QuickToActSection } from '../Common/QuickToActSection';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
@@ -97,6 +98,7 @@ export function QuickHelp({ onToast }: Props) {
         <QuickToActSection task={t} />
         <CommunicationSection taskId={t.id} task={t} fields={getCommunications(t.communications)} />
         <WaitingForSection task={t} />
+        <FollowupSection task={t} />
         <EstimatesSection task={t} />
         <TicketSections task={t} onToast={onToast} />
       </div>

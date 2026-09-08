@@ -4,9 +4,6 @@ import { useLogMount } from '../../useLogMount';
 import { nextId, scoreItem } from '../../engine';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { ReminderModal } from '../ReminderPopup/ReminderModal';
-import { GetBackToModal } from '../GetBackTo/GetBackToModal';
-import { buildGetBackTo } from '../../getBackTo';
-import type { GetBackTo } from '../../types';
 import type { Item, Task } from '../../types';
 
 interface Props {
@@ -27,17 +24,12 @@ export function searchItems(items: Item[], query: string): Item[] {
       if (t.jiraLink?.toLowerCase().includes(q)) return true;
       if (t.notes?.toLowerCase().includes(q)) return true;
     }
-    if (it.kind === 'getback') {
-      const g = it as GetBackTo;
-      if (g.who.toLowerCase().includes(q)) return true;
-      if (g.notes?.toLowerCase().includes(q)) return true;
-    }
     return false;
   });
 }
 
-const KIND_LABEL: Record<string, string> = { task: 'Task', reminder: 'Reminder', getback: 'Get back to' };
-const KIND_COLOR: Record<string, string> = { task: 'var(--t-txt2)', reminder: 'var(--t-amber)', getback: 'oklch(0.55 0.16 300)' };
+const KIND_LABEL: Record<string, string> = { task: 'Task', reminder: 'Reminder' };
+const KIND_COLOR: Record<string, string> = { task: 'var(--t-txt2)', reminder: 'var(--t-amber)' };
 
 export function Explore({ focusTrigger }: Props) {
   useLogMount('Explore');
@@ -50,7 +42,6 @@ export function Explore({ focusTrigger }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const [modalTaskId, setModalTaskId] = useState<string | null>(null);
   const [reminderModalId, setReminderModalId] = useState<string | null>(null);
-  const [getBackModalId, setGetBackModalId] = useState<string | null>(null);
   // Result-id list frozen at modal-open time, so editing the task inside the
   // modal (which may make it stop matching the query) doesn't yank it out of
   // allIds and break the ←/→ navigation mid-session.
@@ -60,7 +51,7 @@ export function Explore({ focusTrigger }: Props) {
 
   const results = useMemo(() => searchItems(items, query), [items, query]);
   const open = query.trim().length > 0;
-  const totalRows = results.length + 2; // + create-task row + get-back-to row
+  const totalRows = results.length + 1; // + quick-create row
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => { if (focusTrigger) inputRef.current?.focus(); }, [focusTrigger]);
@@ -77,8 +68,8 @@ export function Explore({ focusTrigger }: Props) {
   // if the search bar keeps focus after opening (Enter, or spotlight handoff),
   // ←/→ never reach the modal. Blur it whenever a modal is up.
   useEffect(() => {
-    if (modalTaskId || reminderModalId || getBackModalId) inputRef.current?.blur();
-  }, [modalTaskId, reminderModalId, getBackModalId]);
+    if (modalTaskId || reminderModalId) inputRef.current?.blur();
+  }, [modalTaskId, reminderModalId]);
 
   // URL-routed modal, same pattern as Table: #explore/task/{id}
   function openTask(id: string) {
@@ -108,7 +99,6 @@ export function Explore({ focusTrigger }: Props) {
 
   function handleOpen(item: Item) {
     if (item.kind === 'task') openTask(item.id);
-    else if (item.kind === 'getback') setGetBackModalId(item.id);
     else setReminderModalId(item.id);
   }
 
@@ -129,24 +119,14 @@ export function Explore({ focusTrigger }: Props) {
     openTask(id);
   }
 
-  function handleQuickCreateGetBack() {
-    const who = query.trim();
-    if (!who) return;
-    const item = buildGetBackTo(who);
-    createItem(item);
-    setQuery('');
-    setGetBackModalId(item.id);
-  }
-
   function onKeyDown(e: React.KeyboardEvent) {
     // A modal is open on top — leave every key to it (its own document-level
     // handler does Escape/arrows). Touching the query here would mutate the
     // result list underneath the open modal.
-    if (modalTaskId || reminderModalId || getBackModalId) return;
+    if (modalTaskId || reminderModalId) return;
     if (e.key === 'Escape') { setQuery(''); setHighlightIdx(-1); return; }
     if (!open) return;
     if (e.key === 'ArrowDown') {
-      // (shared with the get-back-to row below)
       e.preventDefault();
       setHighlightIdx(i => (i < totalRows - 1 ? i + 1 : 0));
     } else if (e.key === 'ArrowUp') {
@@ -157,7 +137,6 @@ export function Explore({ focusTrigger }: Props) {
       if (e.shiftKey) { handleQuickCreate(); return; }
       if (highlightIdx >= 0 && highlightIdx < results.length) handleOpen(results[highlightIdx]);
       else if (highlightIdx === results.length) handleQuickCreate();
-      else if (highlightIdx === results.length + 1) handleQuickCreateGetBack();
       else if (results.length > 0) handleOpen(results[0]);
       else handleQuickCreate();
     }
@@ -242,18 +221,6 @@ export function Explore({ focusTrigger }: Props) {
                 <span style={{ fontSize: 14, fontWeight: 500 }}>Create task "<span style={{ fontStyle: 'italic' }}>{query.trim()}</span>"</span>
                 <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--t-acc-dk)', background: 'var(--t-acc-bg)', padding: '2px 8px', borderRadius: 6, flexShrink: 0 }}>⇧↵</span>
               </div>
-              {/* Get back to <who> — second quick-create row */}
-              <div
-                onClick={handleQuickCreateGetBack}
-                onMouseEnter={() => setHighlightIdx(results.length + 1)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '12px 22px',
-                  cursor: 'pointer', color: 'oklch(0.55 0.16 300)',
-                  background: highlightIdx === results.length + 1 ? 'oklch(0.94 0.05 300)' : 'var(--t-surf)',
-                }}>
-                <span style={{ fontSize: 17, fontWeight: 700, lineHeight: 1 }}>+</span>
-                <span style={{ fontSize: 14, fontWeight: 500 }}>Get back to "<span style={{ fontStyle: 'italic' }}>{query.trim()}</span>"</span>
-              </div>
             </div>
             {/* Footer */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '8px 22px', borderTop: '1px solid var(--t-brd2)', background: 'var(--t-surf2)', fontSize: 11, color: 'var(--t-muted)' }}>
@@ -272,7 +239,6 @@ export function Explore({ focusTrigger }: Props) {
     </div>
     {modalTaskId && <TaskModal taskId={modalTaskId} allIds={modalAllIds ?? taskResults.map(r => r.id)} onNavigate={navigateModal} onClose={closeTaskModal} />}
     {reminderModalId && <ReminderModal reminderId={reminderModalId} onClose={() => setReminderModalId(null)} />}
-    {getBackModalId && <GetBackToModal id={getBackModalId} onClose={() => setGetBackModalId(null)} />}
     </>
   );
 }

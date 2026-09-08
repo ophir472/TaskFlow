@@ -16,6 +16,7 @@ import { SchedulePicker } from '../SchedulePicker/SchedulePicker';
 import { TicketSections } from '../Common/TicketSections';
 import { TypePicker } from '../Common/TypePicker';
 import { RequesterSelect } from '../Common/RequesterSelect';
+import { FollowupSection } from '../Common/FollowupSection';
 
 interface Props {
   onToast: (msg: string) => void;
@@ -153,8 +154,8 @@ export function CardFeed({ onToast }: Props) {
     setShowAllSubs(false);
     setShowDoneSubs(false);
   }, [displayItem?.id]);
-  // "Get back to" notes never enter this feed (excluded upstream in
-  // activeItems/queue) — narrow the type accordingly for the KIND_STYLE map.
+  // Legacy 'getback' items (migrated away in v10) never enter this feed
+  // (excluded upstream in activeItems/queue) — narrow for the KIND_STYLE map.
   const current = displayItem as Task | Reminder | null;
 
   // Only clear displayId when the item is deleted entirely — not when it's just outside the queue
@@ -730,6 +731,7 @@ export function CardFeed({ onToast }: Props) {
 
               {/* Waiting for (collapsible) */}
               <WaitingForSection task={t} />
+              <FollowupSection task={t} />
 
               {/* Estimates (collapsible) */}
               <EstimatesSection task={t} />

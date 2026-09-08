@@ -2,7 +2,7 @@
 // push (part of the session finish routine in CLAUDE.md). Shown at the
 // bottom of Settings; clicking the version opens the full history.
 
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 
 export interface Release {
   version: string;
@@ -11,6 +11,17 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
+  {
+    version: '1.3.0',
+    date: '2026-08-27',
+    notes: [
+      'Followup table on every card (under Waiting for): title + notes rows, plus an auto row per ITSM / custom-system ticket',
+      'Blue ✓ progressed (strikes through, resets at 00:00) · green ✓ done (hides, "Show completed" reveals); the ticket ✓ and its followup row are one state',
+      'Hub: today\'s cards\' followups (progressed/done disappear until "Show done"), all followups collapsed',
+      'Every progress/done is logged and versioned; Review\'s Σ day summary lists followups completed / progressed',
+      'Replaces v1.2.0\'s standalone "Get back to" notes — existing ones become a card with one followup row (nothing lost)',
+    ],
+  },
   {
     version: '1.2.0',
     date: '2026-08-27',
