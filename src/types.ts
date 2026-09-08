@@ -123,6 +123,9 @@ export interface Subtask {
   // Stamped when the subtask is marked done (cleared when un-done) — feeds
   // the day summary's "Progressed" section.
   doneAt?: number;
+  // false = this step is out of scope: ▶ Play never stars/executes it.
+  // Missing = in scope (backward compatible).
+  inScope?: boolean;
   isNext: boolean;
   jira: string;
   generalLink: string;
@@ -386,6 +389,9 @@ export interface Task {
   // ticket's auto-followup row (store.setFollowupDone) — one source of truth
   // for "this ticket is handled".
   irrelevantTickets?: string[];
+  // false = the whole task is out of scope for ▶ Play (its next-task queue
+  // and the walkthrough skip it). Missing = in scope.
+  inScope?: boolean;
   // Per-card "Followup" table (under Waiting for). Manual rows live here;
   // ticket rows (ITSM / custom systems) are DERIVED at render and only get a
   // record here (with `ticketKey`) once progressed/annotated/done.

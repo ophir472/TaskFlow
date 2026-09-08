@@ -2,7 +2,7 @@
 // push (part of the session finish routine in CLAUDE.md). Shown at the
 // bottom of Settings; clicking the version opens the full history.
 
-export const APP_VERSION = '1.3.1';
+export const APP_VERSION = '1.4.0';
 
 export interface Release {
   version: string;
@@ -11,6 +11,15 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
+  {
+    version: '1.4.0',
+    date: '2026-08-27',
+    notes: [
+      'In scope / out of scope on every task (◎ pill next to Kind) and every sub-task (◎ on the row)',
+      '▶ Play focus mode only stars and executes in-scope steps; its next-task queue and the walkthrough skip out-of-scope tasks',
+      'Default is in scope — nothing changes until you opt something out',
+    ],
+  },
   {
     version: '1.3.1',
     date: '2026-08-27',

@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { jiraTicketUrl } from '../../jiraHosts';
 import { buildQueue } from '../../engine';
+import { inScope } from '../Common/ScopeToggle';
 import { openTicketWindow } from '../../ticketWindow';
 import { itsmTicketUrl } from '../../itsm';
 import { SubtaskChecklist } from '../SubtaskPanel/SubtaskChecklist';
@@ -102,7 +103,9 @@ export function Play({ taskId, onClose }: Props) {
 
   // No steps yet → Plan writes steps first. Replace (not push) so Back
   // doesn't bounce between #play and #plan.
-  const noSteps = !!task && task.subtasks.length === 0;
+  // Only in-scope steps count — an out-of-scope step is invisible to Play.
+  const steps = task ? task.subtasks.filter(inScope) : [];
+  const noSteps = !!task && steps.length === 0;
   useEffect(() => {
     if (noSteps) {
       history.replaceState(null, '', '#plan');
@@ -110,8 +113,8 @@ export function Play({ taskId, onClose }: Props) {
     }
   }, [noSteps]);
 
-  const starred = task ? (task.subtasks.find(s => s.isNext && !s.done) ?? task.subtasks.find(s => !s.done)) : undefined;
-  const allDone = !!task && task.subtasks.length > 0 && task.subtasks.every(s => s.done);
+  const starred = task ? (steps.find(s => s.isNext && !s.done) ?? steps.find(s => !s.done)) : undefined;
+  const allDone = !!task && steps.length > 0 && steps.every(s => s.done);
 
   useEffect(() => { setRevealed(new Set()); setPickerOpen(false); }, [starred?.id]);
 
@@ -119,7 +122,7 @@ export function Play({ taskId, onClose }: Props) {
     if (!task || !starred) return;
     toggleSubtaskDone(task.id, starred.id);
     updateSubtask(task.id, starred.id, { isNext: false });
-    const next = task.subtasks.find(s => !s.done && s.id !== starred.id);
+    const next = steps.find(s => !s.done && s.id !== starred.id);
     if (next) updateSubtask(task.id, next.id, { isNext: true });
   }
 
@@ -127,7 +130,7 @@ export function Play({ taskId, onClose }: Props) {
   // was the last one, move to the next playable task in queue order.
   function skipNext() {
     if (!task || !starred) return;
-    const undone = task.subtasks.filter(s => !s.done);
+    const undone = steps.filter(s => !s.done);
     const i = undone.findIndex(s => s.id === starred.id);
     const next = undone[i + 1];
     if (next) {
@@ -137,7 +140,7 @@ export function Play({ taskId, onClose }: Props) {
     }
     const st = useStore.getState();
     const queue = buildQueue(st.items).filter((it): it is Task =>
-      it.kind === 'task' && it.id !== task.id && (it as Task).subtasks.some(s => !s.done));
+      it.kind === 'task' && it.id !== task.id && inScope(it) && (it as Task).subtasks.some(s => !s.done && inScope(s)));
     if (queue.length) {
       history.replaceState(null, '', `#play/${queue[0].id}`);
       window.dispatchEvent(new HashChangeEvent('hashchange'));

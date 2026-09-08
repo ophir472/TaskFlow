@@ -17,6 +17,7 @@ import { TicketSections } from '../Common/TicketSections';
 import { TypePicker } from '../Common/TypePicker';
 import { RequesterSelect } from '../Common/RequesterSelect';
 import { FollowupSection } from '../Common/FollowupSection';
+import { ScopeToggle, SubScopeToggle } from '../Common/ScopeToggle';
 
 interface Props {
   onToast: (msg: string) => void;
@@ -597,6 +598,7 @@ export function CardFeed({ onToast }: Props) {
                         <div onClick={() => setSubtaskPanel({ parentId: current.id, subId: sub.id })}
                           title="Open subtask details"
                           style={{ flex: 1, minWidth: 48, cursor: 'pointer', alignSelf: 'stretch' }} />
+                        <SubScopeToggle parentId={current.id} sub={sub} />
                         <div onClick={() => updateSubtask(current.id, sub.id, { isQuick: !sub.isQuick })} style={{ cursor: 'pointer', fontSize: 14, color: sub.isQuick ? 'oklch(0.55 0.16 250)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Quick to act">◷</div>
                         <div onClick={() => { markUnstarred(sub.id); toggleSubtaskNext(current.id, sub.id); }} style={{ cursor: 'pointer', fontSize: 15, color: 'var(--t-amber)', userSelect: 'none', flexShrink: 0 }} title="Unstar — return to the list">★</div>
                       </div>
@@ -653,6 +655,7 @@ export function CardFeed({ onToast }: Props) {
                         <div onClick={() => setSubtaskPanel({ parentId: current.id, subId: sub.id })}
                           title="Open subtask details"
                           style={{ flex: 1, minWidth: 48, cursor: 'pointer', alignSelf: 'stretch' }} />
+                        <SubScopeToggle parentId={current.id} sub={sub} />
                         <div onClick={() => updateSubtask(current.id, sub.id, { isQuick: !sub.isQuick })} style={{ cursor: 'pointer', fontSize: 14, color: sub.isQuick ? 'oklch(0.55 0.16 250)' : 'var(--t-brd)', userSelect: 'none', flexShrink: 0 }} title="Quick to act">◷</div>
                         <div onClick={() => {
                           // Starring this one displaces the current starred
@@ -751,6 +754,7 @@ export function CardFeed({ onToast }: Props) {
               <div>
                 <div style={fl}>Kind</div>
                 <TypePicker task={t} compact />
+                <div style={{ marginTop: 6 }}><ScopeToggle task={t} compact /></div>
               </div>
               <div>
                 <div style={fl}>Requester</div>

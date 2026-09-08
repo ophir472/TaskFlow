@@ -39,7 +39,7 @@ export function WalkthroughBar() {
     navigatedFor.current = step.id;
     if (step.builtin === 'today') {
       // Straight into focus mode on the first today-task (feed as fallback).
-      const first = counts.todayTasks[0];
+      const first = counts.todayTasks.find(t => t.inScope !== false);
       window.location.hash = first ? `play/${first.id}` : 'feed';
     } else if (step.builtin) window.location.hash = BUILTIN_STEPS[step.builtin].hash;
     // eslint-disable-next-line react-hooks/exhaustive-deps
