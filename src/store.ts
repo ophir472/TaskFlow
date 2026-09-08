@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField, Followup } from './types';
+import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField, Followup, GetBackTo } from './types';
 import { EMPTY_SN_CONFIG } from './servicenow';
 import { EMPTY_AI_CONFIG } from './ai';
 import { triggerIfDue, computeNextDueAt } from './responsibilities';
@@ -308,6 +308,11 @@ export const useStore = create<AppState>()(
             const nextNotes = (patch as Partial<Task>).notes;
             if (it.kind === 'task' && nextNotes !== undefined && nextNotes !== it.notes) {
               merged = { ...merged, notesChangedAt: Date.now() } as Item;
+            }
+            // "Get back to <who>" — title is derived, never edited directly.
+            const nextWho = (patch as Partial<GetBackTo>).who;
+            if (it.kind === 'getback' && nextWho !== undefined) {
+              merged = { ...merged, title: `Get back to ${nextWho.trim()}` } as Item;
             }
             return merged;
           }),
@@ -1253,7 +1258,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'taskflow-store',
-      version: 10,
+      version: 11,
       storage: createJSONStorage(() => IS_PREVIEW_MODE ? sessionStorage : localStorage),
       skipHydration: IS_PREVIEW_MODE,
       // UI-only fields: kept in-memory per-tab, NOT persisted. Otherwise every
@@ -1350,24 +1355,24 @@ export const useStore = create<AppState>()(
             persisted.tableVisibleCols.splice(at >= 0 ? at + 1 : 0, 0, 'kind');
           }
         }
-        if (fromVersion < 10 && Array.isArray(persisted.items)) {
-          // v1.2.0's standalone "Get back to <who>" notes become a card each
-          // with one Followup row — nothing is dropped.
+        if (fromVersion < 11 && Array.isArray(persisted.items)) {
+          // v1.3.0 (schema 10) briefly converted standalone "Get back to"
+          // notes into cards with one followup row (ids 'tg…' / 'fg…').
+          // That was reverted: turn those cards back into getback items.
+          // Stores that never ran v10 have nothing matching — no-op.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const legacy = persisted.items.filter((it: any) => it?.kind === 'getback');
-          if (legacy.length) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const converted = legacy.map((g: any) => ({
-              id: 't' + g.id, kind: 'task', type: 'planned', title: g.title || `Get back to ${g.who ?? ''}`,
-              description: '', notes: '', blockers: '', generalLink: '', jiraLink: '', requester: '', project: '',
-              status: 'backlog', forToday: false, urgent: false, important: false, quick: false, noTag: false,
-              toCheck: '', priorityBoost: false, subtasks: [],
-              followups: [{ id: 'f' + g.id, title: g.who ?? g.title ?? '', notes: g.notes ?? '', done: !!g.done, doneAt: g.doneAt, createdAt: g.createdAt ?? Date.now() }],
-              bumpedAt: g.bumpedAt ?? 0, staleness: 0, createdAt: g.createdAt ?? Date.now(), updatedAt: g.updatedAt ?? Date.now(), archived: !!g.done,
-            }));
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            persisted.items = [...persisted.items.filter((it: any) => it?.kind !== 'getback'), ...converted];
-          }
+          const isConverted = (it: any) => it?.kind === 'task' && /^tg/.test(it.id) && Array.isArray(it.followups)
+            && it.followups.length === 1 && it.followups[0]?.id === 'f' + it.id.slice(1);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          persisted.items = persisted.items.map((it: any) => {
+            if (!isConverted(it)) return it;
+            const f = it.followups[0];
+            return {
+              id: it.id.slice(1), kind: 'getback', title: it.title, who: f.title ?? '', notes: f.notes ?? '',
+              done: !!f.done, doneAt: f.doneAt, bumpedAt: it.bumpedAt ?? 0,
+              createdAt: it.createdAt ?? Date.now(), updatedAt: it.updatedAt ?? Date.now(), archived: false,
+            };
+          });
         }
         if (fromVersion < 9 && persisted.dashboardConfig?.tiles && Array.isArray(persisted.dashboardConfig.tiles)
             && !persisted.dashboardConfig.tiles.includes('hub')) {

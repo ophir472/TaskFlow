@@ -1,9 +1,10 @@
-import type { Item, Task } from './types';
+import type { Item, Task, GetBackTo } from './types';
 
 // Build a done-report for a day range from STORE data only (never the logs —
 // they're forensic). Sources: archived/done tasks (completion bumps
 // updatedAt), created tasks, subtasks with doneAt/changedAt stamps, planned
-// stamps, archived mail entries, and followup rows (progressed / completed).
+// stamps, archived mail entries, followup rows (progressed / completed) and
+// get-back-to notes (added / followed up).
 export function buildReviewSummary(items: Item[], since: number, until: number): string {
   const inRange = (ts?: number) => !!ts && ts >= since && ts < until;
   const tasks = items.filter((it): it is Task => it.kind === 'task' && it.type !== 'mail');
@@ -24,6 +25,9 @@ export function buildReviewSummary(items: Item[], since: number, until: number):
   const allTasks = items.filter((it): it is Task => it.kind === 'task');
   const fuProgressed = allTasks.flatMap(t => (t.followups ?? []).filter(f => inRange(f.progressedAt)).map(f => ({ t, f })));
   const fuDone = allTasks.flatMap(t => (t.followups ?? []).filter(f => f.done && inRange(f.doneAt)).map(f => ({ t, f })));
+  const getbacks = items.filter((it): it is GetBackTo => it.kind === 'getback');
+  const gbFollowedUp = getbacks.filter(g => g.done && inRange(g.doneAt));
+  const gbAdded = getbacks.filter(g => inRange(g.createdAt));
 
   const ticket = (t: Task) => t.jiraLink?.trim() ? ` (${t.jiraLink.trim()})` : t.itsmTicket?.trim() ? ` (${t.itsmTicket.trim()})` : '';
   const lines: string[] = [];
@@ -40,6 +44,8 @@ export function buildReviewSummary(items: Item[], since: number, until: number):
   section('Communications handled', mailHandled.map(m => m.title));
   section('Followups completed', fuDone.map(({ t, f }) => `${f.title}${f.notes.trim() ? ` — ${f.notes.trim()}` : ''} (${t.title})`));
   section('Followups progressed', fuProgressed.filter(x => !fuDone.some(y => y.f.id === x.f.id)).map(({ t, f }) => `${f.title} (${t.title})`));
+  section('Followed up with', gbFollowedUp.map(g => g.notes.trim() ? `${g.who} — ${g.notes.trim()}` : g.who));
+  section('Added to get-back-to', gbAdded.map(g => g.who));
   if (planned.length) lines.push(`Planned: ${planned.length} task${planned.length !== 1 ? 's' : ''} (${planned.map(t => t.title).join(', ')})`, '');
 
   return lines.length ? lines.join('\n').trimEnd() : 'Nothing recorded for this day.';

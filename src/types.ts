@@ -472,9 +472,12 @@ export interface Followup {
   createdAt: number;
 }
 
-// LEGACY (v1.2.0 only): standalone "Get back to <who>" notes. Migration v10
-// converts each into a card with one followup row; the kind stays in the
-// union so pre-migration data still type-checks — nothing creates it now.
+// A standalone "Get back to <who>" note — someone you owe a follow-up to,
+// plus a note on what. No schedule, no ticket link, no scoring — it never
+// enters the card feed. Lives only in search (Explore / Spotlight) and the
+// ▣ Hub. Title is always derived from `who` (kept in sync by
+// store.updateItem) — never edited directly. Coexists with the per-card
+// Followup table (that one is card-bound; this one is people-bound).
 export interface GetBackTo {
   id: string;
   kind: 'getback';

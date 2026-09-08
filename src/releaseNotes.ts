@@ -2,7 +2,7 @@
 // push (part of the session finish routine in CLAUDE.md). Shown at the
 // bottom of Settings; clicking the version opens the full history.
 
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.3.1';
 
 export interface Release {
   version: string;
@@ -11,6 +11,14 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
+  {
+    version: '1.3.1',
+    date: '2026-08-27',
+    notes: [
+      '"Get back to <who>" is back — alongside the new Followup table, not instead of it (Spotlight / Explore / ⌘K / Hub creation, popup with ✓ top-right and Done)',
+      'Notes that v1.3.0 had turned into cards are converted back automatically (migration v11) — nothing lost either way',
+    ],
+  },
   {
     version: '1.3.0',
     date: '2026-08-27',
