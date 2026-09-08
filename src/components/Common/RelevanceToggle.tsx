@@ -17,9 +17,9 @@ export function RelevanceToggle({ task, ticketKey, title }: { task: Task; ticket
         e.stopPropagation();
         setFollowupDone(task.id, { ticketKey, title: title ?? ticketKey.split(':').pop() ?? ticketKey }, !marked);
       }}
-      title={marked ? 'Done — click to reopen' : 'Mark done (also completes its followup row)'}
-      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: '50%', fontSize: 11, fontWeight: 800, cursor: 'pointer', flexShrink: 0, background: marked ? 'var(--t-success)' : 'transparent', color: marked ? 'white' : 'var(--t-brd)', border: marked ? 'none' : '1.5px solid var(--t-brd)' }}>
-      ✓
+      title={marked ? 'Done ✓✓✓ — click to reopen' : 'Mark done ✓✓✓ (also completes its followup row)'}
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: 18, minWidth: 34, padding: '0 5px', boxSizing: 'border-box', borderRadius: 999, fontSize: 10, fontWeight: 800, letterSpacing: '-1px', cursor: 'pointer', flexShrink: 0, background: marked ? 'var(--t-success)' : 'transparent', color: marked ? 'white' : 'var(--t-brd)', border: marked ? 'none' : '1.5px solid var(--t-brd)' }}>
+      ✓✓✓
     </span>
   );
 }

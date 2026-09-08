@@ -10,25 +10,26 @@ interface Props {
 export const PROGRESS_BLUE = 'oklch(0.55 0.15 250)';
 
 // The two marks every followup row carries — blue ✓ progressed (today-only,
-// strikes the row through, resets at 00:00), green ✓ done (hides the row).
+// strikes the row through, resets at 00:00), green ✓✓✓ done (hides the row).
+// Different glyph counts on purpose: one check = a step, three = finished.
 // Shared by the card section and the Hub so they can't drift.
 export function FollowupMarks({ taskId, row }: { taskId: string; row: FollowupRow }) {
   const toggleFollowupProgressed = useStore(s => s.toggleFollowupProgressed);
   const setFollowupDone = useStore(s => s.setFollowupDone);
   const prog = isProgressed(row);
-  const circle = (on: boolean, color: string): React.CSSProperties => ({
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: '50%',
-    fontSize: 11, fontWeight: 800, cursor: 'pointer', flexShrink: 0,
-    background: on ? color : 'transparent', color: on ? 'white' : 'var(--t-brd)', border: on ? 'none' : `1.5px solid ${on ? color : 'var(--t-brd)'}`,
+  const pill = (on: boolean, color: string, wide: boolean): React.CSSProperties => ({
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: 18, minWidth: wide ? 34 : 18, padding: wide ? '0 5px' : 0, borderRadius: 999,
+    fontSize: 10, fontWeight: 800, letterSpacing: wide ? '-1px' : 0, cursor: 'pointer', flexShrink: 0, boxSizing: 'border-box',
+    background: on ? color : 'transparent', color: on ? 'white' : 'var(--t-brd)', border: on ? 'none' : '1.5px solid var(--t-brd)',
   });
   return (
     <span style={{ display: 'inline-flex', gap: 4, flexShrink: 0 }}>
       <span onClick={e => { e.stopPropagation(); toggleFollowupProgressed(taskId, refOf(row)); }}
-        title={prog ? 'Progressed today — click to undo' : 'Progressed (strikes through until midnight)'}
-        style={circle(prog, PROGRESS_BLUE)}>✓</span>
+        title={prog ? 'Progressed today — click to undo' : 'Progressed ✓ (strikes through until midnight)'}
+        style={pill(prog, PROGRESS_BLUE, false)}>✓</span>
       <span onClick={e => { e.stopPropagation(); setFollowupDone(taskId, refOf(row), !row.done); }}
-        title={row.done ? 'Done — click to reopen' : 'Done (hides the row)'}
-        style={circle(row.done, 'var(--t-success)')}>✓</span>
+        title={row.done ? 'Done ✓✓✓ — click to reopen' : 'Done ✓✓✓ (hides the row)'}
+        style={pill(row.done, 'var(--t-success)', true)}>✓✓✓</span>
     </span>
   );
 }
@@ -89,7 +90,7 @@ export function FollowupSection({ task }: Props) {
             const prog = isProgressed(row);
             const struck = prog || row.done;
             return (
-              <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '44px minmax(120px, 1fr) minmax(120px, 1.4fr) 18px', gap: 6, alignItems: 'center', opacity: row.done ? 0.55 : 1 }}>
+              <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '60px minmax(120px, 1fr) minmax(120px, 1.4fr) 18px', gap: 6, alignItems: 'center', opacity: row.done ? 0.55 : 1 }}>
                 <FollowupMarks taskId={task.id} row={row} />
                 {row.manual ? (
                   <input
