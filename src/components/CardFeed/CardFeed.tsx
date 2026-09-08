@@ -518,6 +518,7 @@ export function CardFeed({ onToast }: Props) {
                     onOpenChange={o => { if (o) { setDisplayId(current.id); setTagEditMode(true); } else { setTagEditMode(false); setDisplayId(null); } }} />
                   {tagEditMode && <span style={{ fontSize: 11, color: 'var(--t-acc)' }}>card stays here while the tags are open</span>}
                 </div>
+                <div><TypePicker task={t} /></div>
               </div>
 
               {/* To check banner */}
@@ -719,10 +720,6 @@ export function CardFeed({ onToast }: Props) {
             {/* ── Sidebar ── */}
             <div style={{ width: 200, flexShrink: 0, borderLeft: '1px solid var(--t-brd2)', padding: '14px 14px 22px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ background: 'var(--t-surf2)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: '14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
-                <div style={fl}>Kind</div>
-                <TypePicker task={t} compact />
-              </div>
               <div>
                 <div style={fl}>Requester</div>
                 <RequesterSelect value={t.requester} onChange={v => updateItem(current.id, { requester: v })} style={sel} />
