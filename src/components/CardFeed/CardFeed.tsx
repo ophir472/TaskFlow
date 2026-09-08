@@ -9,7 +9,7 @@ import { CommunicationSection, getCommunications } from '../Common/Communication
 import { ResizableTextarea } from '../Common/ResizableTextarea';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { formatSchedule } from '../../scheduleEngine';
-import type { Item, Task, Subtask, ScheduleSpec } from '../../types';
+import type { Item, Task, Reminder, Subtask, ScheduleSpec } from '../../types';
 import { SubtaskPanel } from '../SubtaskPanel/SubtaskPanel';
 import { SubtaskFullPage } from '../SubtaskPanel/SubtaskFullPage';
 import { SchedulePicker } from '../SchedulePicker/SchedulePicker';
@@ -153,7 +153,9 @@ export function CardFeed({ onToast }: Props) {
     setShowAllSubs(false);
     setShowDoneSubs(false);
   }, [displayItem?.id]);
-  const current = displayItem;
+  // "Get back to" notes never enter this feed (excluded upstream in
+  // activeItems/queue) — narrow the type accordingly for the KIND_STYLE map.
+  const current = displayItem as Task | Reminder | null;
 
   // Only clear displayId when the item is deleted entirely — not when it's just outside the queue
   useEffect(() => {

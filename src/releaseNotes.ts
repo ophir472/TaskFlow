@@ -2,7 +2,7 @@
 // push (part of the session finish routine in CLAUDE.md). Shown at the
 // bottom of Settings; clicking the version opens the full history.
 
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 
 export interface Release {
   version: string;
@@ -11,6 +11,15 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
+  {
+    version: '1.2.0',
+    date: '2026-08-27',
+    notes: [
+      '"Get back to <who>" — a name + a note, nothing else; create it from Spotlight (⌘F), Explore search, ⌘K, or the Hub',
+      'Shows only on the ▣ Hub and in search — never the card feed, table, or Kanban; ✓ marks it followed up',
+      'Logged and versioned like every other edit; counted in Review\'s Σ day summary ("Followed up with" / "Added to get-back-to")',
+    ],
+  },
   {
     version: '1.1.0',
     date: '2026-08-27',

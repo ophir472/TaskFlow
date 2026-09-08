@@ -11,6 +11,8 @@ export function scoreItem(item: Item): number {
 export function buildQueue(items: Item[]): Item[] {
   const active = items.filter(it => {
     if (it.archived) return false;
+    // "Get back to" notes have no scoring/scheduling — Hub/search only.
+    if (it.kind === 'getback') return false;
     if (it.kind === 'task') {
       // Mail entries and quick-help items never enter the scored feed —
       // they live in the assistant / Quick Help view respectively.

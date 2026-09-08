@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField } from './types';
+import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField, GetBackTo } from './types';
 import { EMPTY_SN_CONFIG } from './servicenow';
 import { EMPTY_AI_CONFIG } from './ai';
 import { triggerIfDue, computeNextDueAt } from './responsibilities';
@@ -290,6 +290,11 @@ export const useStore = create<AppState>()(
             const nextNotes = (patch as Partial<Task>).notes;
             if (it.kind === 'task' && nextNotes !== undefined && nextNotes !== it.notes) {
               merged = { ...merged, notesChangedAt: Date.now() } as Item;
+            }
+            // "Get back to <who>" — title is derived, never edited directly.
+            const nextWho = (patch as Partial<GetBackTo>).who;
+            if (it.kind === 'getback' && nextWho !== undefined) {
+              merged = { ...merged, title: `Get back to ${nextWho.trim()}` } as Item;
             }
             return merged;
           }),

@@ -19,7 +19,7 @@ npm run preview    # preview the production build
 
 **`localApiProxy.ts`** (repo root, server-side only) — Vite plugin serving `/api-proxy/<scheme>/<host>/<path>`: forwards Jira/ServiceNow/AI REST calls from Node so browser CORS never applies (self-signed corporate certs accepted). Client side is `proxiedFetch` in `src/apiLog.ts` — proxy first, direct fetch fallback (marker header `x-taskflow-proxy` tells them apart), `ApiUnreachableError` only when both fail. Jira create is REST-first; the host's pre-filled create-URL opens only as unreachable-fallback. Jira targets DATA CENTER: PAT Bearer auth (per-host `authMode: 'basic'` switches to username:password Basic for instances that reject PATs), `/rest/api/2`, plain-text description/comment bodies, name-based reporter/assignee (the Cloud scheme — Basic email:token, api/3, ADF — was dropped by decision 2026-08-18; JiraConfig.username persists but is unused).
 
-**`src/types.ts`** — all data types: `Task`, `Reminder`, `Responsibility`, `Subtask`, `Item` (union), `ChangeRecord`. Every item kind now has `priorityBoost: boolean` to allow the +100 Hold-return boost on all three kinds.
+**`src/types.ts`** — all data types: `Task`, `Reminder`, `GetBackTo`, `Responsibility`, `Subtask`, `Item` (union), `ChangeRecord`. Every item kind now has `priorityBoost: boolean` to allow the +100 Hold-return boost on all three kinds (except `GetBackTo`, which has no scoring at all — see below).
 
 **`src/agenda.ts`** — shared Dashboard selectors: `dashCounts` (tile numbers, today-planning state), `TILE_DEFS` registry, `BUILTIN_STEPS` + `stepDone` (agenda pipeline + Walkthrough done-detection). Pure store data, logs never consulted.
 
@@ -28,7 +28,7 @@ npm run preview    # preview the production build
 **`src/store.ts`** — single Zustand store, persisted to `taskflow-store` in localStorage. Keeps `history: ChangeRecord[]` capped at 100 entries (PRD §11 snapshot+history backup). Exposes all mutation actions (updateItem, toggleTag, holdItem, snoozeItem, completeItem, etc.). `checkDailyReset()` compares against `dailyResetAt` and resets `snoozesToday`/`promotionsToday` at midnight.
 
 **Components (highlights):**
-- `Home` — dashboard landing view (version registry, stat tiles, agenda pipeline, walkthrough start); `WalkthroughBar` — floating store-driven guide (`walkthrough` quiet state); `QuickHelp` — walker over type-'quick' tasks
+- `Home` — dashboard landing view (version registry, stat tiles, agenda pipeline, walkthrough start); `WalkthroughBar` — floating store-driven guide (`walkthrough` quiet state); `QuickHelp` — walker over type-'quick' tasks; `Hub` — every ITSM/custom-system ticket + today's communications/waits + get-back-to notes, in one page; `GetBackToModal` — the one Who/Notes edit surface, opened from Explore/Spotlight results and Hub rows
 - `Sidebar` — nav (9 views: Home, Feed…Quick Help…Settings, keys 1–9), overlay buttons (✉ Mail w/ badge, ▶ Sprint, Review, ◷ Plan w/ unplanned-today badge), promotions pie, "+ New item"
 - `CardFeed` — primary screen; frosted transport bar (back/hold/play/complete/continue); hold panel; subtask rows (checkbox, ★ next, ◷ quick, click-to-slide-over)
 - Overlays (all hash-routed): `GreenPlay` review, `SprintMode`, `PlanPopup`, `Play` (dark focus mode), `MailAssistant` (+ shared `MailEntryFields`), `SnCreateMenu`, `DailyPlay` (Table-local), `ShortcutsHelp` (?), `Tour` (guided onboarding on self-cleaning `[Tour] ` sample data; pauses app shortcuts while active)
@@ -37,6 +37,7 @@ npm run preview    # preview the production build
 
 ## Key business rules (PRD source of truth)
 
+- **Get back to `<who>` (2026-08-27):** `Item` kind `'getback'` — fields are `who` + `notes` only; `title` is always derived (`Get back to ${who}`, re-derived by `store.updateItem` whenever `who` changes — never edit `title` directly). No schedule, no scoring, no ticket link — `buildQueue`/`scoreItem`/Table/Kanban/Archive all explicitly exclude it. Lives only in Explore/Spotlight search and the ▣ Hub. Created via the one constructor `buildGetBackTo(who, notes?)` (`src/getBackTo.ts`). Reuses the generic `createItem`/`updateItem`/`deleteItem` actions — no new snapshot events needed, it's versioned and logged exactly like a task edit. `doneAt` stamps completion for the Σ day summary.
 - **Task types (2026-08-27):** `Task.type` = `'mail' | 'quick' | 'planned' | 'urgent'` (undefined = legacy, highlighted until set; `createItem` defaults new tasks to `'planned'`). `'quick'` (Quick help) and `'mail'` never enter the scored feed; `'quick'` joins the Sprint task section and the ⚡ Quick Help view. `'urgent'` = unplanned same-day; REST Jira create adds the host's `urgentLabel`.
 
 - **Queue tiers (§5.1, amended):** for-today override (any today-marked task → only those) → tasks missing all tags (and not marked noTag) → scored pool including reminders. The PRD's needs-Jira tier is retired by decision (2026-08-18); `noJira` only gates the review's Jira steps.

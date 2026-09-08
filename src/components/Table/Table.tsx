@@ -249,6 +249,8 @@ export function Table() {
   const todayStart = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); })();
   let rows = items.filter(it => {
     if (it.archived) return false;
+    // "Get back to" notes live only in the ▣ Hub and search — never the table.
+    if (it.kind === 'getback') return false;
     if (reqFilter && (it as Task).requester !== reqFilter) return false;
     if (projFilter && (it as Task).project !== projFilter) return false;
     if (typeFilter && it.kind !== typeFilter) return false;

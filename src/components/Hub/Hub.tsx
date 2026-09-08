@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
-import type { Task } from '../../types';
+import type { Task, GetBackTo as GetBackToItem } from '../../types';
 import { itsmTicketUrl } from '../../itsm';
 import { customOpenUrl } from '../../customSystems';
 import { openTicketWindow } from '../../ticketWindow';
 import { getCommunications } from '../Common/CommunicationSection';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { RelevanceToggle, itsmKey, csKey } from '../Common/RelevanceToggle';
+import { GetBackToModal } from '../GetBackTo/GetBackToModal';
+import { buildGetBackTo } from '../../getBackTo';
 
 const sectionCard: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 14, padding: '18px 20px' };
 const sectionTitle: React.CSSProperties = { fontSize: 14, fontWeight: 800, color: 'var(--t-txt)', display: 'flex', alignItems: 'center', gap: 8 };
@@ -25,10 +27,28 @@ export function Hub() {
   const updateItem = useStore(s => s.updateItem);
   const [showDismissed, setShowDismissed] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [getBackModalId, setGetBackModalId] = useState<string | null>(null);
+  const [gbWho, setGbWho] = useState('');
+  const [gbNotes, setGbNotes] = useState('');
+  const [showDoneGB, setShowDoneGB] = useState(false);
+  const createItem = useStore(s => s.createItem);
 
   const tasks = items.filter((it): it is Task =>
     it.kind === 'task' && it.type !== 'mail' && !it.archived && it.status !== 'done' && it.status !== 'archived');
   const todayTasks = tasks.filter(t => t.forToday);
+
+  // ── "Get back to" notes — not tied to today or any card ──
+  const gbAll = items.filter((it): it is GetBackToItem => it.kind === 'getback');
+  const gbOpen = gbAll.filter(g => !g.done).sort((a, b) => b.createdAt - a.createdAt);
+  const gbDone = gbAll.filter(g => g.done);
+
+  function addGetBack() {
+    const who = gbWho.trim();
+    if (!who) return;
+    createItem(buildGetBackTo(who, gbNotes));
+    setGbWho('');
+    setGbNotes('');
+  }
 
   // ── ITSM tickets from every card ──
   const itsmRows = tasks.flatMap(t =>
@@ -168,9 +188,57 @@ export function Hub() {
             ))}
           </div>
         </div>
+
+        {/* Get back to <who> — not tied to any card or to today */}
+        <div style={sectionCard}>
+          <div style={{ ...sectionTitle, marginBottom: 12 }}>
+            Get back to <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t-muted)' }}>{gbOpen.length}</span>
+            {gbDone.length > 0 && (
+              <button onClick={() => setShowDoneGB(d => !d)}
+                style={{ marginLeft: 'auto', border: '1px solid var(--t-brd)', background: showDoneGB ? 'var(--t-surf2)' : 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 7, cursor: 'pointer' }}>
+                {showDoneGB ? 'Hide' : 'Show'} done ({gbDone.length})
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <input value={gbWho} onChange={e => setGbWho(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addGetBack(); }}
+              placeholder="Who…" style={{ width: 130, flexShrink: 0, fontSize: 12.5, padding: '7px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
+            <input value={gbNotes} onChange={e => setGbNotes(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addGetBack(); }}
+              placeholder="Notes (optional)" style={{ flex: 1, fontSize: 12.5, padding: '7px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
+            <button onClick={addGetBack} disabled={!gbWho.trim()}
+              style={{ border: 'none', background: 'oklch(0.55 0.16 300)', color: 'white', fontSize: 12.5, fontWeight: 700, padding: '7px 12px', borderRadius: 7, cursor: 'pointer', opacity: gbWho.trim() ? 1 : 0.5, flexShrink: 0 }}>
+              + Add
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {gbOpen.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--t-muted)' }}>Nobody pending — add who you owe a follow-up above.</div>}
+            {gbOpen.map(g => (
+              <div key={g.id} onClick={() => setGetBackModalId(g.id)} title="Open" style={{ ...rowSt, cursor: 'pointer' }}>
+                <span
+                  onClick={e => { e.stopPropagation(); updateItem(g.id, { done: true, doneAt: Date.now() }); }}
+                  title="Followed up"
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: '50%', fontSize: 11, fontWeight: 800, cursor: 'pointer', flexShrink: 0, background: 'transparent', color: 'var(--t-brd)', border: '1.5px solid var(--t-brd)' }}>✓</span>
+                <span style={{ fontWeight: 700, color: 'var(--t-txt)', flexShrink: 0 }}>{g.who}</span>
+                {g.notes.trim() && (
+                  <span style={{ flex: 1, minWidth: 0, color: 'var(--t-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={g.notes}>{g.notes}</span>
+                )}
+              </div>
+            ))}
+            {showDoneGB && gbDone.map(g => (
+              <div key={g.id} onClick={() => setGetBackModalId(g.id)} title="Open" style={{ ...rowSt, cursor: 'pointer', opacity: 0.55 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: '50%', fontSize: 11, fontWeight: 800, flexShrink: 0, background: 'var(--t-success)', color: 'white' }}>✓</span>
+                <span style={{ fontWeight: 700, color: 'var(--t-txt)', flexShrink: 0, textDecoration: 'line-through' }}>{g.who}</span>
+                {g.notes.trim() && <span style={{ flex: 1, minWidth: 0, color: 'var(--t-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.notes}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {openTaskId && <TaskModal taskId={openTaskId} onClose={() => setOpenTaskId(null)} urlDriven={false} />}
+      {getBackModalId && <GetBackToModal id={getBackModalId} onClose={() => setGetBackModalId(null)} />}
     </div>
   );
 }

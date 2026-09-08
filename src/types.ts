@@ -1,4 +1,4 @@
-export type ItemKind = 'task' | 'reminder';
+export type ItemKind = 'task' | 'reminder' | 'getback';
 // App-only statuses (unlinked from Jira or any external system).
 // Board order: backlog → todo → in_progress → waiting → done.
 export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'waiting' | 'done' | 'archived';
@@ -451,7 +451,26 @@ export interface Responsibility {
   updatedAt: number;
 }
 
-export type Item = Task | Reminder;
+// A "Get back to <who>" note — the ENTIRE feature is: someone you owe a
+// follow-up to, plus a note on what. No schedule, no ticket link, no
+// scoring — it never enters the card feed. Lives only in search (Explore /
+// Spotlight) and the ▣ Hub. Title is always derived from `who` (kept in
+// sync by store.updateItem) — never edited directly.
+export interface GetBackTo {
+  id: string;
+  kind: 'getback';
+  title: string;   // derived: `Get back to ${who}`
+  who: string;
+  notes: string;
+  done: boolean;
+  doneAt?: number;
+  bumpedAt: number;
+  createdAt: number;
+  updatedAt: number;
+  archived: boolean;
+}
+
+export type Item = Task | Reminder | GetBackTo;
 
 export interface ChangeRecord {
   ts: number;
