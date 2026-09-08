@@ -2,7 +2,7 @@
 // push (part of the session finish routine in CLAUDE.md). Shown at the
 // bottom of Settings; clicking the version opens the full history.
 
-export const APP_VERSION = '1.4.2';
+export const APP_VERSION = '1.5.0';
 
 export interface Release {
   version: string;
@@ -11,6 +11,15 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
+  {
+    version: '1.5.0',
+    date: '2026-08-27',
+    notes: [
+      'Priority tags on the card and in the task popup are a dropdown: collapsed it shows the chosen tags, open it shows the same four chips as before (↑↓ · ↵ · Esc)',
+      'Untagged cards show an amber "Untagged — pick tags" button and open it automatically, as the tag sweep did',
+      'The create form keeps its chip visuals',
+    ],
+  },
   {
     version: '1.4.2',
     date: '2026-08-27',

@@ -97,6 +97,14 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     ],
   },
   {
+    title: 'Tags dropdown (card & task popup)',
+    rows: [
+      { keys: ['↑', '↓'], what: 'Move between Urgent / Important / Quick / None' },
+      { keys: ['Enter', 'Space'], what: 'Toggle the highlighted tag' },
+      { keys: ['Esc'], what: 'Close (the card unpins)' },
+    ],
+  },
+  {
     title: 'Guided tour',
     rows: [
       { keys: ['→', 'Enter', 'Space'], what: 'Next step (finishes on the last one)' },

@@ -18,6 +18,7 @@ import { TypePicker } from '../Common/TypePicker';
 import { RequesterSelect } from '../Common/RequesterSelect';
 import { FollowupSection } from '../Common/FollowupSection';
 import { SubScopeToggle } from '../Common/ScopeToggle';
+import { TagDropdown } from '../Common/TagDropdown';
 
 interface Props {
   onToast: (msg: string) => void;
@@ -39,7 +40,6 @@ export function CardFeed({ onToast }: Props) {
   const sidebarCollapsed = useStore(s => s.sidebarCollapsed);
   const updateItem = useStore(s => s.updateItem);
   const updateItemCustomValue = useStore(s => s.updateItemCustomValue);
-  const toggleTag = useStore(s => s.toggleTag);
   const toggleSubtaskDone = useStore(s => s.toggleSubtaskDone);
   const toggleSubtaskNext = useStore(s => s.toggleSubtaskNext);
   const addSubtask = useStore(s => s.addSubtask);
@@ -380,13 +380,6 @@ export function CardFeed({ onToast }: Props) {
     ? `${queue.findIndex(it => it.id === current.id) + 1} of ${queue.length}`
     : null;
 
-  const TAG_DEFS: { key: 'urgent' | 'important' | 'quick' | 'noTag'; label: string; activeColor: string; activeBg: string; activeBorder: string }[] = [
-    { key: 'urgent',    label: 'Urgent',        activeColor: 'var(--t-urgent)',    activeBg: 'var(--t-urgent-bg)',    activeBorder: 'var(--t-urgent)'    },
-    { key: 'important', label: 'Important',     activeColor: 'var(--t-important)', activeBg: 'var(--t-important-bg)', activeBorder: 'var(--t-important)' },
-    { key: 'quick',     label: 'Quick',         activeColor: 'var(--t-quick)',     activeBg: 'var(--t-quick-bg)',     activeBorder: 'var(--t-quick)'     },
-    { key: 'noTag',     label: 'None of these', activeColor: 'var(--t-txt2)',      activeBg: 'var(--t-surf3)',        activeBorder: 'var(--t-muted)'     },
-  ];
-
   const KIND_STYLE = {
     task:           { color: 'var(--t-kind-task)',     bg: 'var(--t-kind-task-bg)',     border: 'var(--t-kind-task)'     },
     reminder:       { color: 'var(--t-kind-reminder)', bg: 'var(--t-kind-reminder-bg)', border: 'var(--t-kind-reminder)' },
@@ -516,40 +509,15 @@ export function CardFeed({ onToast }: Props) {
                 sidebar (Requester/Jira/…) out of the card. */}
             <div style={{ flex: 1, minWidth: 0, padding: '14px 20px 22px 26px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-              {/* Tags (pencil-locked) */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={fl}>Tags</span>
-                  <button
-                    onClick={() => {
-                      if (tagEditMode) { setTagEditMode(false); setDisplayId(null); }
-                      else { setDisplayId(current.id); setTagEditMode(true); }
-                    }}
-                    title={tagEditMode ? 'Done — reorder queue' : 'Edit tags'}
-                    style={{ border: 'none', background: tagEditMode ? 'var(--t-acc-bg)' : 'transparent', color: tagEditMode ? 'var(--t-acc-dk)' : 'var(--t-muted)', cursor: 'pointer', fontSize: 14, padding: '2px 8px', borderRadius: 6, fontWeight: tagEditMode ? 600 : 400, lineHeight: 1.4 }}
-                  >
-                    {tagEditMode ? 'Done' : '✎'}
-                  </button>
+              {/* Tags — a dropdown; while it's open the card is pinned (tag-edit
+                  mode) so queue re-sorts don't move it away mid-edit. */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={fl}>Tags</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <TagDropdown task={t} open={tagEditMode}
+                    onOpenChange={o => { if (o) { setDisplayId(current.id); setTagEditMode(true); } else { setTagEditMode(false); setDisplayId(null); } }} />
+                  {tagEditMode && <span style={{ fontSize: 11, color: 'var(--t-acc)' }}>card stays here while the tags are open</span>}
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {TAG_DEFS.map(({ key, label, activeColor, activeBg, activeBorder }) => {
-                    const active = t[key];
-                    return (
-                      <div key={key} onClick={() => tagEditMode && toggleTag(current.id, key)} style={{
-                        padding: '7px 13px', borderRadius: 20, fontSize: 13, fontWeight: 600,
-                        border: `1.5px solid ${active ? activeBorder : 'var(--t-brd)'}`,
-                        color: active ? activeColor : (tagEditMode ? 'var(--t-txt2)' : 'var(--t-muted)'),
-                        background: active ? activeBg : 'transparent',
-                        cursor: tagEditMode ? 'pointer' : 'default',
-                        userSelect: 'none', opacity: tagEditMode ? 1 : (active ? 1 : 0.55),
-                        transition: 'background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s',
-                      }}>
-                        {active ? '✓ ' : ''}{label}
-                      </div>
-                    );
-                  })}
-                </div>
-                {tagEditMode && <div style={{ fontSize: 11, color: 'var(--t-acc)' }}>Editing — card stays here until you click Done</div>}
               </div>
 
               {/* To check banner */}

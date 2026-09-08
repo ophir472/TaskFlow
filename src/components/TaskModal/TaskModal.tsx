@@ -15,6 +15,7 @@ import { TypePicker } from '../Common/TypePicker';
 import { RequesterSelect } from '../Common/RequesterSelect';
 import { FollowupSection } from '../Common/FollowupSection';
 import { SubScopeToggle } from '../Common/ScopeToggle';
+import { TagDropdown } from '../Common/TagDropdown';
 
 interface Props {
   taskId: string;
@@ -40,7 +41,6 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
   const projects = useStore(s => s.projects);
   const customFields = useStore(s => s.customFields);
   const updateItem = useStore(s => s.updateItem);
-  const toggleTag = useStore(s => s.toggleTag);
   const addSubtask = useStore(s => s.addSubtask);
   const deleteSubtask = useStore(s => s.deleteSubtask);
   const toggleSubtaskDone = useStore(s => s.toggleSubtaskDone);
@@ -146,13 +146,6 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
   if (!task) return null;
 
   const score = scoreItem(task);
-  const TAG_DEFS = [
-    { key: 'urgent' as const,    label: 'Urgent',        ac: 'var(--t-urgent)',    ab: 'var(--t-urgent-bg)',    abr: 'var(--t-urgent)'    },
-    { key: 'important' as const, label: 'Important',     ac: 'var(--t-important)', ab: 'var(--t-important-bg)', abr: 'var(--t-important)' },
-    { key: 'quick' as const,     label: 'Quick',         ac: 'var(--t-quick)',     ab: 'var(--t-quick-bg)',     abr: 'var(--t-quick)'     },
-    { key: 'noTag' as const,     label: 'None of these', ac: 'var(--t-txt2)',      ab: 'var(--t-surf3)',        abr: 'var(--t-muted)'     },
-  ];
-
   // Subtask view — renders inside the same modal when a subtask is opened
   if (sub) {
     return (
@@ -266,15 +259,7 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
               <div style={fl}>Tags</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <TypePicker task={task} />
-                {TAG_DEFS.map(({ key, label, ac, ab, abr }) => {
-                  const active = key === 'noTag' ? task.noTag : task[key];
-                  return (
-                    <div key={key} onClick={() => toggleTag(taskId, key)}
-                      style={{ padding: '7px 13px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer', userSelect: 'none', border: `1.5px solid ${active ? abr : 'var(--t-brd)'}`, color: active ? ac : 'var(--t-muted)', background: active ? ab : 'transparent' }}>
-                      {active ? '✓ ' : ''}{label}
-                    </div>
-                  );
-                })}
+                <TagDropdown task={task} />
               </div>
             </div>
 
