@@ -11,7 +11,7 @@ import type { Task } from '../../types';
 interface Props {
   content: string;
   dailyChecked?: Set<string>;
-  onToggleLine?: (line: number) => void;
+  onToggleLine?: (lines: number | number[]) => void;
   onToggleKeys?: (keys: string[], on: boolean) => void;
   onOpenPage?: (pageId: string) => void;
   onOpenTask?: (taskId: string) => void;
@@ -84,7 +84,7 @@ export function DocView({ content, dailyChecked, onToggleLine, onToggleKeys, onO
       const lines: number[] = [];
       const walk = (x: Block) => { if (x.t === 'check' && !x.children.some(c => c.t === 'check') && x.checked !== on) lines.push(x.line); x.children.forEach(walk); };
       walk(b);
-      lines.forEach(l => onToggleLine?.(l));
+      if (lines.length) onToggleLine?.(lines);
     } else onToggleLine?.(b.line);
   };
 

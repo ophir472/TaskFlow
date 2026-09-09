@@ -185,11 +185,13 @@ export function Docs() {
       if (dirtyRef.current) { setDocPageContent(dirtyRef.current.pageId, dirtyRef.current.content); dirtyRef.current = null; }
     }, 500);
   }
-  function toggleLine(lineIdx: number) {
+  function toggleLine(lineIdx: number | number[]) {
     if (!page) return;
     const lines = draft.split('\n');
-    const line = lines[lineIdx] ?? '';
-    lines[lineIdx] = line.includes('[ ]') ? line.replace('[ ]', '[x]') : line.replace('[x]', '[ ]');
+    for (const li of Array.isArray(lineIdx) ? lineIdx : [lineIdx]) {
+      const line = lines[li] ?? '';
+      lines[li] = /\[ \]/.test(line) ? line.replace('[ ]', '[x]') : line.replace(/\[[xX]\]/, '[ ]');
+    }
     const next = lines.join('\n');
     setDraft(next);
     dirtyRef.current = null;
