@@ -573,11 +573,25 @@ export function Table() {
     { group: 'Item', label: 'Reminders only', apply: () => setTypeFilter('reminder') },
     ...[3, 5, 7, 10].map(n => ({ group: 'Score', label: `Score ≥ ${n}`, apply: () => setMinScore(String(n)) })),
   ];
-  // Typed text narrows options; "status:wait" style qualifiers work because
-  // ':' is treated as a space against "group label".
-  const searchQ = search.trim().toLowerCase().replace(/:/g, ' ');
-  const visibleOptions = searchQ ? FILTER_OPTIONS.filter(o => `${o.group} ${o.label}`.toLowerCase().includes(searchQ)) : FILTER_OPTIONS;
-  function applyOption(o: { apply: () => void }) { o.apply(); setSearch(''); setSearchHi(-1); setSearchOpen(false); }
+  // Two levels, Kibana-style: with nothing typed the list is one row per
+  // FIELD ("status:" …); picking one (or typing "status:") shows its values.
+  // Free text without a field searches across all values ("wait" → Status:
+  // Waiting) as well as filtering the rows live.
+  const FIELDS = Array.from(new Set(FILTER_OPTIONS.map(o => o.group)));
+  const rawQ = search.trim().toLowerCase();
+  const colon = rawQ.indexOf(':');
+  const fieldTyped = colon >= 0 ? FIELDS.find(f => f.toLowerCase() === rawQ.slice(0, colon).trim()) : undefined;
+  const valueQ = colon >= 0 ? rawQ.slice(colon + 1).trim() : rawQ;
+  type Opt = { group: string; label: string; apply: () => void; isField?: boolean };
+  const visibleOptions: Opt[] = !rawQ
+    ? FIELDS.map(f => ({ group: f, label: `${f.toLowerCase()}:`, isField: true, apply: () => { setSearch(`${f.toLowerCase()}:`); setSearchHi(-1); setSearchOpen(true); searchRef.current?.focus(); } }))
+    : fieldTyped
+      ? FILTER_OPTIONS.filter(o => o.group === fieldTyped && (!valueQ || o.label.toLowerCase().includes(valueQ)))
+      : FILTER_OPTIONS.filter(o => `${o.group} ${o.label}`.toLowerCase().includes(rawQ.replace(/:/g, ' ')));
+  function applyOption(o: Opt) {
+    if (o.isField) { o.apply(); return; }
+    o.apply(); setSearch(''); setSearchHi(-1); setSearchOpen(false);
+  }
 
   return (
     <>
@@ -628,23 +642,26 @@ export function Table() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', fontSize: 11, color: 'var(--t-muted)', background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd2)' }}>
                   <span style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Suggestions</span>
                   <span>{visibleOptions.length}</span>
-                  <span style={{ marginLeft: 'auto' }}>{search.trim() ? 'text also filters the rows' : 'type to narrow'}</span>
+                  <span style={{ marginLeft: 'auto' }}>{!rawQ ? 'pick a field, or just type' : fieldTyped ? `values for ${fieldTyped.toLowerCase()}` : 'text also filters the rows'}</span>
                 </div>
                 <div style={{ maxHeight: 380, overflowY: 'auto' }}>
                   {visibleOptions.map((o, i) => {
                     const b = BADGE[o.group] ?? { code: '•', color: 'var(--t-muted)', desc: o.group };
                     const on = searchHi === i;
+                    const count = o.isField ? FILTER_OPTIONS.filter(x => x.group === o.group).length : 0;
                     return (
                       <div key={`${o.group}:${o.label}`}
                         onMouseDown={e => e.preventDefault()} onClick={() => applyOption(o)} onMouseEnter={() => setSearchHi(i)}
-                        style={{ display: 'grid', gridTemplateColumns: '22px 1fr auto', alignItems: 'center', gap: 10, padding: '6px 12px 6px 9px', cursor: 'pointer',
+                        style={{ display: 'grid', gridTemplateColumns: '22px 1fr auto', alignItems: 'center', gap: 10, padding: '4px 12px 4px 9px', cursor: 'pointer',
                           background: on ? `color-mix(in oklab, ${b.color} 10%, var(--t-surf))` : 'transparent',
                           boxShadow: on ? `inset 3px 0 0 ${b.color}` : 'none', borderBottom: '1px solid var(--t-brd2)' }}>
                         <span style={{ width: 20, height: 20, borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 800, color: 'white', background: b.color }}>{b.code}</span>
                         <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12.5, color: 'var(--t-txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          <span style={{ color: b.color }}>{o.group.toLowerCase()}</span><span style={{ color: 'var(--t-muted)' }}>: </span>{o.label}
+                          {o.isField
+                            ? <><span style={{ color: b.color }}>{o.label}</span><span style={{ color: 'var(--t-muted)' }}> …</span></>
+                            : <><span style={{ color: b.color }}>{o.group.toLowerCase()}</span><span style={{ color: 'var(--t-muted)' }}>: </span>{o.label}</>}
                         </span>
-                        <span style={{ fontSize: 11, color: 'var(--t-muted)', whiteSpace: 'nowrap' }}>{b.desc}</span>
+                        <span style={{ fontSize: 11, color: 'var(--t-muted)', whiteSpace: 'nowrap' }}>{o.isField ? `${count} · ${b.desc}` : b.desc}</span>
                       </div>
                     );
                   })}
