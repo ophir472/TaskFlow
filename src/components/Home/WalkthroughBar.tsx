@@ -28,6 +28,14 @@ export function WalkthroughBar() {
     () => new Set(agendaChecks.date === todayKey() ? agendaChecks.ids : []),
     [agendaChecks]);
 
+  // Stale walkthrough (started before today) → exit quietly.
+  useEffect(() => {
+    if (!walkthrough) return;
+    const t0 = new Date(); t0.setHours(0, 0, 0, 0);
+    if ((walkthrough.startedAt ?? 0) < t0.getTime()) setWalkthrough(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walkthrough?.stepId]);
+
   const idx = steps.findIndex(s => s.id === walkthrough?.stepId);
   const step = idx >= 0 ? steps[idx] : null;
   const done = step ? stepDone(step, counts, todayChecks, pageContent) : false;

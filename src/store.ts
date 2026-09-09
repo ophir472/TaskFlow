@@ -109,7 +109,10 @@ interface AppState {
   tableFilterPreset: string | null;
   // Walkthrough mode: currently active agenda step, null when off. Persisted
   // so a refresh mid-walkthrough resumes where it was.
-  walkthrough: { stepId: string } | null;
+  // startedAt (optional, 2026-09-10): a walkthrough is a same-day thing — one
+  // left running yesterday is dropped on the next open instead of hijacking
+  // navigation forever.
+  walkthrough: { stepId: string; startedAt?: number } | null;
   responsibilities: Responsibility[];
   // Reminders whose nextFireAt has passed and the popup is queued for them.
   // Transient — not persisted, rebuilt from items on every app open by the
@@ -1010,7 +1013,7 @@ export const useStore = create<AppState>()(
       // Quiet: walkthrough position is workflow meta, not data.
       setWalkthrough: (stepId) => {
         slog('walkthrough:set', { stepId });
-        set({ walkthrough: stepId ? { stepId } : null });
+        set(s => ({ walkthrough: stepId ? { stepId, startedAt: s.walkthrough?.startedAt ?? Date.now() } : null }));
       },
 
       // Quiet: a manual agenda check is daily-workflow meta, not data.

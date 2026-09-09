@@ -380,9 +380,12 @@ export default function App() {
     if (segOf(window.location.hash) !== seg) { fallback(); return; }
     const prevIsOverlay = OVERLAY_SEGS.has(segOf(prevHashRef.current)) || !prevHashRef.current;
     const walking = !!useStore.getState().walkthrough;
+    // Closing a step's screen by hand (×, outside, Esc) ends the walkthrough —
+    // the bar must not linger once you've clearly left the flow.
+    if (walking) { useStore.getState().setWalkthrough(null); toastTimer('Walkthrough ended — restart it from Home'); }
     if (prevIsOverlay || walking) window.location.replace(lastViewHashRef.current || '#home');
     else history.back();
-  }, []);
+  }, [toastTimer]);
   // '#review' is a pseudo-route: it opens the Green Play overlay on top of
   // whatever view is active (defaults to feed on a cold load).
   useEffect(() => {
