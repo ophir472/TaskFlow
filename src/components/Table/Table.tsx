@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { Fragment, useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
@@ -112,6 +112,8 @@ export function Table() {
   const [aiTaskId, setAiTaskId] = useState<string | null>(null);
   const [dailyOpen, setDailyOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [groupBy, setGroupBy] = useState<'' | 'requester' | 'project'>('');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(0);
@@ -357,9 +359,18 @@ export function Table() {
 
   // Pagination — keeps the table scannable; bulk actions and select-all
   // still operate on the FULL filtered set.
-  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  // Group by requester / project: rows sorted by group (stable, so the
+  // in-group order is untouched), no pagination while grouped.
+  const groupKeyOf = (it: Item) => (it.kind === 'task' && groupBy ? ((it as Task)[groupBy] || '').trim() : '') || '—';
+  const groupCounts = new Map<string, number>();
+  if (groupBy) for (const it of rows) groupCounts.set(groupKeyOf(it), (groupCounts.get(groupKeyOf(it)) ?? 0) + 1);
+  const groupedRows = groupBy ? [...rows].sort((a, b) => {
+    const ka = groupKeyOf(a), kb = groupKeyOf(b);
+    return (ka === '—' ? '\uffff' : ka).localeCompare(kb === '—' ? '\uffff' : kb);
+  }) : rows;
+  const pageCount = groupBy ? 1 : Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
-  const pagedRows = rows.slice(safePage * pageSize, (safePage + 1) * pageSize);
+  const pagedRows = groupBy ? groupedRows : rows.slice(safePage * pageSize, (safePage + 1) * pageSize);
 
   // Keep refs current for keydown handler (keyboard walks the visible page)
   rowsRef.current = pagedRows;
@@ -680,6 +691,16 @@ export function Table() {
             style={{ fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid ' + (quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-brd)'), background: quickFilters.has('forToday') ? 'var(--t-amber-bg)' : 'var(--t-surf)', color: quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-txt2)' }}>
             ◷ Today
           </button>
+          {/* Group by — requester / project (table view) */}
+          <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', padding: '0 8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Group</span>
+            {([['', 'None'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label]) => (
+              <button key={k || 'none'} onClick={() => { setGroupBy(k); setCollapsedGroups(new Set()); if (k) setViewMode('table'); }}
+                style={{ border: 'none', borderLeft: '1px solid var(--t-brd)', background: groupBy === k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer' }}>
+                {label}
+              </button>
+            ))}
+          </div>
           {/* View switcher — table · cards · pipeline · gantt */}
           <div style={{ display: 'flex', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
             {([['table', '☰', 'Table'], ['cards', '▦', 'Cards'], ['pipeline', '⇉', 'Pipeline (by status)'], ['gantt', '𝄜', 'Gantt (by estimates)']] as const).map(([mode, icon, tip]) => (
@@ -858,8 +879,24 @@ export function Table() {
               outlineOffset: '-2px',
             };
             const inpSt: CSSProperties = { width: '100%', fontSize: 13.5, padding: '5px 7px', border: '1px solid var(--t-acc)', borderRadius: 5, background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', boxSizing: 'border-box' };
+            const gKey = groupBy ? groupKeyOf(it) : null;
+            const showHeader = gKey !== null && (rowIdx === 0 || groupKeyOf(pagedRows[rowIdx - 1]) !== gKey);
+            const gCollapsed = gKey !== null && collapsedGroups.has(gKey);
+            const header = showHeader ? (
+              <tr key={`g:${gKey}`} onClick={() => setCollapsedGroups(prev => { const n = new Set(prev); if (n.has(gKey!)) n.delete(gKey!); else n.add(gKey!); return n; })}
+                style={{ background: 'var(--t-surf2)', cursor: 'pointer', borderTop: '1px solid var(--t-brd)' }}>
+                <td colSpan={cols.length + 2} style={{ padding: '8px 14px', fontSize: 12, fontWeight: 700, color: 'var(--t-txt2)' }}>
+                  <span style={{ display: 'inline-block', marginRight: 8, fontSize: 11, color: 'var(--t-muted)', transform: gCollapsed ? 'none' : 'rotate(90deg)', transition: 'transform 0.15s' }}>▸</span>
+                  {gKey === '—' ? `No ${groupBy}` : gKey}
+                  <span style={{ marginLeft: 8, fontWeight: 600, color: 'var(--t-muted)' }}>· {groupCounts.get(gKey!) ?? 0}</span>
+                </td>
+              </tr>
+            ) : null;
+            if (gCollapsed) return header;
             return (
-              <tr key={it.id}
+              <Fragment key={it.id}>
+              {header}
+              <tr
                 draggable
                 onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragId(it.id); }}
                 onDragOver={e => { e.preventDefault(); if (it.id !== dragId) setDragOverId(it.id); }}
@@ -1020,6 +1057,12 @@ export function Table() {
                       onMouseLeave={() => setHoveredCell(null)}
                       style={{ ...td, textAlign: col.align ?? 'left', fontWeight: col.key === 'title' ? 500 : 400, color: col.key === 'title' ? 'var(--t-txt)' : 'var(--t-txt2)', cursor: isEditable ? 'text' : 'default', background: hoveredCell === cellKey ? 'var(--t-acc-bg)' : undefined }}>
                       {String(col.getValue(it) || '—')}
+                      {(col.key === 'requester' || col.key === 'project') && String(col.getValue(it) || '') && (
+                        <span
+                          onClick={e => { e.stopPropagation(); const v = String(col.getValue(it)); if (col.key === 'requester') setReqFilter(v); else setProjFilter(v); }}
+                          title={`Show only this ${col.key}`}
+                          style={{ marginLeft: 6, fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', userSelect: 'none', opacity: hoveredCell === cellKey ? 1 : 0, transition: 'opacity 0.1s' }}>⌕</span>
+                      )}
                       {jiraCellUrl && (
                         <>
                           <span
@@ -1052,6 +1095,7 @@ export function Table() {
                   )}
                 </td>
               </tr>
+              </Fragment>
             );
           })}
           {rows.length === 0 && (
