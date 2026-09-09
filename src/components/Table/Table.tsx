@@ -587,7 +587,9 @@ export function Table() {
   // Sync modalTaskId from URL: #table/task/{id}
   useEffect(() => {
     function syncFromHash() {
-      const parts = window.location.hash.slice(1).split('/');
+      // The view segment may carry the query (#table?q=…) — strip it, or
+      // browser-back from #table/task/<id> to #table?q=… never closed the popup.
+      const parts = window.location.hash.slice(1).split('?')[0].split('/');
       if (parts[0] !== 'table') return;
       if (parts[1] === 'task' && parts[2]) setModalTaskId(parts[2]);
       else setModalTaskId(null);
