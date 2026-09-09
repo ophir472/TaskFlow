@@ -17,18 +17,22 @@ interface Props {
   // pins the card so queue re-sorts don't move it away mid-edit).
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  // Table cell: smaller button, popover position:fixed from the button's rect
+  // so it escapes overflow:hidden ancestors (same as TypePicker's Kind column).
+  compact?: boolean;
 }
 
 // Priority tags as a dropdown: collapsed, the button shows the chosen tags
 // (or "Untagged"); open, the same four chips as the create form. ↑↓ moves,
 // Enter/Space toggles, Esc closes. Shared by the card feed and the popup.
-export function TagDropdown({ task, open: openProp, onOpenChange }: Props) {
+export function TagDropdown({ task, open: openProp, onOpenChange, compact }: Props) {
   const toggleTag = useStore(s => s.toggleTag);
   const [openLocal, setOpenLocal] = useState(false);
   const open = openProp ?? openLocal;
   const setOpen = (v: boolean) => { setOpenLocal(v); onOpenChange?.(v); };
   const [hi, setHi] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -52,17 +56,17 @@ export function TagDropdown({ task, open: openProp, onOpenChange }: Props) {
 
   return (
     <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
-      <button onClick={() => setOpen(!open)} title={open ? 'Close' : 'Edit tags'}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px 5px 8px', borderRadius: 20, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+      <button onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setAnchor({ top: r.bottom + 6, left: r.left }); setOpen(!open); }} title={open ? 'Close' : 'Edit tags'}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: compact ? 4 : 6, padding: compact ? '2px 8px 2px 6px' : '5px 10px 5px 8px', borderRadius: 20, cursor: 'pointer', fontSize: compact ? 10.5 : 13, fontWeight: 600, whiteSpace: 'nowrap',
           border: `1.5px solid ${untagged ? 'var(--t-amber)' : open ? 'var(--t-acc)' : 'var(--t-brd)'}`,
           background: untagged ? 'var(--t-amber-bg)' : 'var(--t-surf)', color: untagged ? 'var(--t-amber)' : 'var(--t-txt2)' }}>
-        {untagged ? <span>Untagged — pick tags</span> : active.map(d => (
-          <span key={d.key} style={{ padding: '1px 8px', borderRadius: 20, fontSize: 12, fontWeight: 700, color: d.color, background: d.bg, border: `1px solid ${d.border}` }}>{d.label}</span>
+        {untagged ? <span>{compact ? 'Untagged' : 'Untagged — pick tags'}</span> : active.map(d => (
+          <span key={d.key} style={{ padding: compact ? '0 6px' : '1px 8px', borderRadius: 20, fontSize: compact ? 10.5 : 12, fontWeight: 700, color: d.color, background: d.bg, border: `1px solid ${d.border}` }}>{d.label}</span>
         ))}
         <span style={{ fontSize: 11, color: 'var(--t-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
       </button>
       {open && (
-        <div style={{ position: 'absolute', left: 0, top: 'calc(100% + 6px)', zIndex: 40, display: 'flex', gap: 8, flexWrap: 'wrap', padding: 10, minWidth: 320, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, boxShadow: '0 10px 32px rgba(0,0,0,0.18)' }}>
+        <div onClick={e => e.stopPropagation()} style={{ ...(compact ? { position: 'fixed' as const, left: anchor?.left ?? 0, top: anchor?.top ?? 0, zIndex: 120 } : { position: 'absolute' as const, left: 0, top: 'calc(100% + 6px)', zIndex: 40 }), display: 'flex', gap: 8, flexWrap: 'wrap', padding: 10, minWidth: 320, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, boxShadow: '0 10px 32px rgba(0,0,0,0.18)' }}>
           {TAG_DEFS.map((d, i) => {
             const on = !!task[d.key];
             return (

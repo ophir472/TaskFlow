@@ -7,6 +7,7 @@ import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { MailEntryPopup } from '../Mail/MailEntryPopup';
+import { TagDropdown } from '../Common/TagDropdown';
 import { TypePicker } from '../Common/TypePicker';
 import { parseEstimate, formatMinutes } from '../../estimateParser';
 import { DailyPlay } from '../DailyPlay/DailyPlay';
@@ -86,7 +87,6 @@ export function Table() {
   const setForToday = useStore(s => s.setForToday);
   const jiraConfigs = useStore(s => s.jiraConfigs);
   const openJira = (url: string, _key: string) => window.open(url, '_blank');
-  const toggleTag = useStore(s => s.toggleTag);
   const archiveItem = useStore(s => s.archiveItem);
   const unarchiveItem = useStore(s => s.unarchiveItem);
   const deleteItem = useStore(s => s.deleteItem);
@@ -1345,50 +1345,16 @@ export function Table() {
                   const isEditing = editCell?.rowId === it.id && editCell?.colKey === col.key;
                   // Tags column: pencil to edit, chips appear only in edit mode
                   if (col.key === 'tags') {
-                    const tagKey = `${it.id}:tags`;
-                    const isEditingTags = editCell?.rowId === it.id && editCell?.colKey === 'tags';
-                    const tagChips = [
-                      { key: 'urgent' as const, label: 'Urgent', color: 'var(--t-urgent)', bg: 'var(--t-urgent-bg)' },
-                      { key: 'important' as const, label: 'Important', color: 'var(--t-important)', bg: 'var(--t-important-bg)' },
-                      { key: 'quick' as const, label: 'Quick', color: 'var(--t-quick)', bg: 'var(--t-quick-bg)' },
-                      { key: 'noTag' as const, label: 'None', color: 'var(--t-muted)', bg: 'var(--t-surf2)' },
-                    ];
                     const t = it.kind === 'task' ? it as Task : null;
                     return (
-                      <td key={col.key}
-                        onMouseEnter={() => setHoveredCell(tagKey)}
-                        onMouseLeave={() => setHoveredCell(null)}
-                        onClick={e => e.stopPropagation()}
-                        style={{ ...td }}>
-                        {isEditingTags && t ? (
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                            {tagChips.map(({ key, label, color, bg }) => {
-                              const active = key === 'noTag' ? t.noTag : t[key];
-                              return (
-                                <button key={key} onClick={() => toggleTag(it.id, key)}
-                                  style={{ fontSize: 11, padding: '2px 7px', borderRadius: 10, border: `1px solid ${active ? color : 'var(--t-brd)'}`, background: active ? bg : 'transparent', color: active ? color : 'var(--t-muted)', cursor: 'pointer', fontWeight: active ? 700 : 400, whiteSpace: 'nowrap' }}>
-                                  {label}
-                                </button>
-                              );
-                            })}
-                            <button onClick={() => { setFrozenRowIds(null); setEditCell(null); }}
-                              style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, border: 'none', background: 'var(--t-acc)', color: 'white', cursor: 'pointer', fontWeight: 600 }}>
-                              Done
-                            </button>
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <span style={{ color: 'var(--t-txt2)', fontSize: 13.5 }}>{String(col.getValue(it) || '—')}</span>
-                            {t && (
-                              <span onClick={() => {
-                                setFrozenRowIds(rows.map(r => r.id)); // freeze order during tag edit
-                                setEditCell({ rowId: it.id, colKey: 'tags' });
-                              }}
-                                style={{ fontSize: 12, color: 'var(--t-muted)', cursor: 'pointer', opacity: hoveredCell === tagKey ? 1 : 0, transition: 'opacity 0.1s' }}
-                                title="Edit tags">✎</span>
-                            )}
-                          </div>
-                        )}
+                      <td key={col.key} style={{ ...td }} onClick={e => e.stopPropagation()}>
+                        {t ? (
+                          // Same dropdown as the Kind column (and the card / popup).
+                          // Row order is frozen while it's open so a score change
+                          // doesn't move the row out from under the picker.
+                          <TagDropdown task={t} compact
+                            onOpenChange={o => { if (o) setFrozenRowIds(rows.map(r => r.id)); else setFrozenRowIds(null); }} />
+                        ) : <span style={{ color: 'var(--t-muted)' }}>—</span>}
                       </td>
                     );
                   }
