@@ -828,7 +828,9 @@ export function Table() {
       )}
 
       {/* Table */}
-      {viewMode === 'table' && <table style={{ width: 'auto', minWidth: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden', tableLayout: 'fixed' }}>
+      {/* Horizontal scroll ONLY when the columns outgrow the page — overflow:auto
+          shows a scrollbar just in that case; the page itself never scrolls sideways. */}
+      {viewMode === 'table' && <div style={{ overflowX: 'auto', overflowY: 'visible', maxWidth: '100%' }}><table style={{ width: 'auto', minWidth: '100%', borderCollapse: 'collapse', fontSize: 13.5, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, overflow: 'hidden', tableLayout: 'fixed' }}>
         <thead>
           <tr style={{ background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd)' }}>
             <th style={{ ...th, width: 34, cursor: 'default' }}></th>
@@ -1122,7 +1124,7 @@ export function Table() {
             </tr>
           )}
         </tbody>
-      </table>}
+      </table></div>}
 
       {(viewMode === 'table' || viewMode === 'cards') && rows.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end', fontSize: 12.5, color: 'var(--t-muted)' }}>
