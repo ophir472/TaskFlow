@@ -118,6 +118,17 @@ export function Table() {
   useEffect(() => { setHeaderSlot(document.getElementById('view-header-slot')); }, []);
   const [groupBy, setGroupBy] = useState<'' | 'requester' | 'project'>('');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  // Second click on the active grouping button opens a picker of the
+  // existing requesters / projects (with counts); picking one filters on it.
+  const [groupMenu, setGroupMenu] = useState(false);
+  const [groupMenuHi, setGroupMenuHi] = useState(0);
+  const groupMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!groupMenu) return;
+    const onDown = (e: MouseEvent) => { if (groupMenuRef.current && !groupMenuRef.current.contains(e.target as Node)) setGroupMenu(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [groupMenu]);
   const searchRef = useRef<HTMLInputElement>(null);
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(0);
@@ -701,15 +712,46 @@ export function Table() {
             style={{ fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid ' + (quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-brd)'), background: quickFilters.has('forToday') ? 'var(--t-amber-bg)' : 'var(--t-surf)', color: quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-txt2)' }}>
             ◷ Today
           </button>
-          {/* Group by — requester / project (table view) */}
-          <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
-            {([['', 'None'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => (
-              <button key={k || 'none'} onClick={() => { setGroupBy(k); setCollapsedGroups(new Set()); if (k) setViewMode('table'); }}
-                title={k ? `Group rows by ${k}` : 'No grouping'}
-                style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer' }}>
-                {label}
-              </button>
-            ))}
+          {/* Group by — requester / project (table view). Active button shows ▾;
+              clicking it again lists the existing values to filter on. */}
+          <div ref={groupMenuRef} style={{ position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
+              {([['', 'None'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => (
+                <button key={k || 'none'}
+                  onClick={() => {
+                    if (groupBy === k && k) { setGroupMenu(m => !m); setGroupMenuHi(0); return; }
+                    setGroupBy(k); setCollapsedGroups(new Set()); setGroupMenu(false); if (k) setViewMode('table');
+                  }}
+                  title={k ? (groupBy === k ? `Pick a ${k} to filter on` : `Group rows by ${k}`) : 'No grouping'}
+                  style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  {label}{groupBy === k && k ? <span style={{ fontSize: 10, transform: groupMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span> : null}
+                </button>
+              ))}
+            </div>
+            {groupMenu && groupBy && (() => {
+              const known = groupBy === 'requester' ? requesters : projects;
+              const values = Array.from(new Set([...known, ...Array.from(groupCounts.keys()).filter(k => k !== '—')]));
+              const pick = (v: string) => { if (groupBy === 'requester') setReqFilter(v); else setProjFilter(v); setGroupMenu(false); };
+              return (
+                <div tabIndex={-1} autoFocus
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') { e.stopPropagation(); setGroupMenu(false); }
+                    else if (e.key === 'ArrowDown') { e.preventDefault(); setGroupMenuHi(h => (h + 1) % Math.max(values.length, 1)); }
+                    else if (e.key === 'ArrowUp') { e.preventDefault(); setGroupMenuHi(h => (h - 1 + values.length) % Math.max(values.length, 1)); }
+                    else if (e.key === 'Enter' && values[groupMenuHi]) { e.preventDefault(); pick(values[groupMenuHi]); }
+                  }}
+                  style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 40, minWidth: 220, maxHeight: 320, overflowY: 'auto', outline: 'none', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 10px 32px rgba(0,0,0,0.18)', padding: '4px 0' }}>
+                  {values.length === 0 && <div style={{ padding: '8px 14px', fontSize: 12.5, color: 'var(--t-muted)' }}>No {groupBy}s yet.</div>}
+                  {values.map((v, i) => (
+                    <div key={v} onClick={() => pick(v)} onMouseEnter={() => setGroupMenuHi(i)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--t-txt2)', background: groupMenuHi === i ? 'var(--t-surf2)' : 'transparent' }}>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>
+                      <span style={{ fontSize: 11, color: 'var(--t-muted)' }}>{groupCounts.get(v) ?? 0}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
           {/* View switcher — table · cards · pipeline · gantt */}
           <div style={{ display: 'flex', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
