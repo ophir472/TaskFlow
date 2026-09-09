@@ -7,7 +7,7 @@ import { DocEditor } from './DocEditor';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { CornerBanner } from '../Common/CornerBanner';
 import { LinkIcon } from '../Common/LinkIcon';
-import { leafCheckKeys, dailyCheckId } from '../../docBlocks';
+import { leafCheckKeys, dailyCheckId, parseFlat } from '../../docBlocks';
 import { todayKey } from '../../agenda';
 import { nextId } from '../../engine';
 
@@ -185,6 +185,13 @@ export function Docs() {
       if (dirtyRef.current) { setDocPageContent(dirtyRef.current.pageId, dirtyRef.current.content); dirtyRef.current = null; }
     }, 500);
   }
+  function commitDraft(next: string) {
+    if (!page) return;
+    setDraft(next);
+    dirtyRef.current = null;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setDocPageContent(page.id, next);
+  }
   function toggleLine(lineIdx: number | number[]) {
     if (!page) return;
     const lines = draft.split('\n');
@@ -211,10 +218,26 @@ export function Docs() {
   const dailyKeys = isDaily ? leafCheckKeys(draft) : [];
   const todayIds = new Set(agendaChecks.date === todayKey() ? agendaChecks.ids : []);
   const dailyChecked = new Set(page ? dailyKeys.filter(k => todayIds.has(dailyCheckId(page.id, k))) : []);
+  // Switching modes carries the ticks across so nothing visibly changes:
+  //  add    → today's ticks := the [x] marks, and the template is reset to [ ]
+  //  remove → the [x] marks := today's ticks (the text becomes the record)
   const toggleAgenda = () => {
     if (!page) return;
-    if (agendaStep) setDashboardConfig({ agendaSteps: agendaSteps.filter(st => st.id !== agendaStep.id) });
-    else setDashboardConfig({ agendaSteps: [...agendaSteps, { id: nextId('ag'), label: page.title, docPageId: page.id }] });
+    const flat = parseFlat(draft).filter(f => f.t === 'check') as Extract<ReturnType<typeof parseFlat>[number], { t: 'check' }>[];
+    const leaves = new Set(leafCheckKeys(draft));
+    const lines = draft.split('\n');
+    if (agendaStep) {
+      const ticked = new Set(dailyKeys.filter(k => todayIds.has(dailyCheckId(page.id, k))));
+      flat.forEach(f => { lines[f.line] = lines[f.line].replace(/\[[ xX]\]/, ticked.has(f.key) || (!leaves.has(f.key) && f.checked) ? '[x]' : '[ ]'); });
+      commitDraft(lines.join('\n'));
+      setDashboardConfig({ agendaSteps: agendaSteps.filter(st => st.id !== agendaStep.id) });
+    } else {
+      const on = flat.filter(f => f.checked && leaves.has(f.key)).map(f => dailyCheckId(page.id, f.key));
+      if (on.length) setAgendaChecks(on, true);
+      flat.forEach(f => { lines[f.line] = lines[f.line].replace(/\[[xX]\]/, '[ ]'); });
+      commitDraft(lines.join('\n'));
+      setDashboardConfig({ agendaSteps: [...agendaSteps, { id: nextId('ag'), label: page.title, docPageId: page.id }] });
+    }
   };
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<number | undefined>(undefined);
