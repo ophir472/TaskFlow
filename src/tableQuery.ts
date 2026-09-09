@@ -6,6 +6,9 @@
 
 export const IS_KEYS: Record<string, string> = {
   nojira: 'nojira', mail: 'mail', created: 'createdToday', updated: 'updatedToday', untagged: 'untagged', today: 'forToday',
+  // The Archive view was folded into the table (2026-09-10): archived rows
+  // show only with is:archived (or is:closed = archived today, or status:done).
+  archived: 'archived', closed: 'closedToday',
 };
 const IS_TOKEN: Record<string, string> = Object.fromEntries(Object.entries(IS_KEYS).map(([k, v]) => [v, k]));
 

@@ -22,8 +22,8 @@ const IS_PREVIEW_MODE = typeof window !== 'undefined' && window.location.hash.st
 
 // Status ⇄ archive stay linked for tasks, no matter where the status was
 // changed (popup, table/archive inline edit, kanban drag, updateTask):
-//   done ⇒ archived (lands in the Archive table)
-//   archived + any active status ⇒ un-archived (leaves the Archive table)
+//   done ⇒ archived (shows under the table's is:archived filter)
+//   archived + any active status ⇒ un-archived (back in the active table)
 //   in_progress ⇒ also marked Today (today ⇄ in-progress pairing)
 function linkStatus(prev: Task, merged: Task, nextStatus: Task['status'] | undefined): Task {
   if (nextStatus === undefined) return merged;
@@ -45,7 +45,7 @@ function withFollowup(task: Task, ref: FollowupRef, mutate: (f: Followup) => Fol
   return list;
 }
 
-export type View = 'home' | 'feed' | 'explore' | 'kanban' | 'table' | 'quickhelp' | 'hub' | 'archive' | 'docs' | 'settings';
+export type View = 'home' | 'feed' | 'explore' | 'kanban' | 'table' | 'quickhelp' | 'hub' | 'docs' | 'settings';
 
 interface AppState {
   items: Item[];
@@ -822,6 +822,8 @@ export const useStore = create<AppState>()(
       },
       setTaskOrder: (order) => { slog('task-order:set', { count: order.length }); set({ taskOrder: order }); },
       setTableVisibleCols: (cols) => { slog('table-cols:set', cols); set({ tableVisibleCols: cols }); },
+      // archiveVisibleCols / archiveColWidths are legacy (the Archive view was
+      // folded into the table 2026-09-10); kept so old stores and snapshots load.
       setArchiveVisibleCols: (cols) => { slog('archive-cols:set', cols); set({ archiveVisibleCols: cols }); },
       setTableColWidths: (widths) => { slog('table-widths:set', widths); set({ tableColWidths: widths }); },
       setArchiveColWidths: (widths) => { slog('archive-widths:set', widths); set({ archiveColWidths: widths }); },

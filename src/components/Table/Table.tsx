@@ -97,6 +97,7 @@ export function Table() {
   const openJira = (url: string, _key: string) => window.open(url, '_blank');
   const toggleTag = useStore(s => s.toggleTag);
   const archiveItem = useStore(s => s.archiveItem);
+  const unarchiveItem = useStore(s => s.unarchiveItem);
   const deleteItem = useStore(s => s.deleteItem);
   const createItem = useStore(s => s.createItem);
   const tableVisibleColsArr = useStore(s => s.tableVisibleCols);
@@ -361,8 +362,13 @@ export function Table() {
 
   // Filter rows
   const todayStart = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); })();
+  // Archived rows are a separate world: hidden unless the query asks for them
+  // (is:archived, is:closed, status:done) — then ONLY they show. This is the
+  // former Archive view, now just a filter.
+  const archivedView = quickFilters.has('archived') || quickFilters.has('closedToday') || statusFilter === 'done';
   let rows = items.filter(it => {
-    if (it.archived) return false;
+    if (!!it.archived !== archivedView) return false;
+    if (quickFilters.has('closedToday') && it.updatedAt < todayStart) return false;
     // "Get back to" notes live only in the ▣ Hub and search — never the table.
     if (it.kind === 'getback') return false;
     if (parsed.text) {
@@ -624,7 +630,15 @@ export function Table() {
     if (!ids.length) return;
     ids.forEach(id => archiveItem(id));
     setSelected(new Set());
-    showNotice(`${ids.length} item${ids.length > 1 ? 's' : ''} archived`, { label: 'Open archive', onClick: () => { window.location.hash = '#archive'; } });
+    showNotice(`${ids.length} item${ids.length > 1 ? 's' : ''} archived`, { label: 'Show archived', onClick: () => setQuickFilters(new Set(['archived'])) });
+  }
+
+  function bulkRestore() {
+    const ids = [...selected].filter(id => rows.some(r => r.id === id));
+    if (!ids.length) return;
+    ids.forEach(id => unarchiveItem(id));
+    setSelected(new Set());
+    showNotice(`${ids.length} item${ids.length > 1 ? 's' : ''} restored`, { label: 'Show active', onClick: () => { setQuickFilters(new Set()); setStatusFilter(''); } });
   }
 
   function bulkDelete() {
@@ -656,6 +670,8 @@ export function Table() {
     { group: 'Quick', label: 'Updated today', apply: () => setQuickFilters(prev => new Set(prev).add('updatedToday')) },
     { group: 'Quick', label: 'Untagged', apply: () => setQuickFilters(prev => new Set(prev).add('untagged')) },
     { group: 'Quick', label: 'Marked today', apply: () => setQuickFilters(prev => new Set(prev).add('forToday')) },
+    { group: 'Quick', label: '🗑 Archived', apply: () => setQuickFilters(prev => new Set(prev).add('archived')) },
+    { group: 'Quick', label: 'Closed today', apply: () => setQuickFilters(prev => new Set(prev).add('closedToday')) },
     { group: 'Tag', label: 'Urgent', apply: () => setTagFilter('urgent') },
     { group: 'Tag', label: 'Important', apply: () => setTagFilter('important') },
     { group: 'Tag', label: 'Quick', apply: () => setTagFilter('quick') },
@@ -698,7 +714,7 @@ export function Table() {
 
   // Active filters as pills — shown in the filter bar and repeated in the
   // empty state so "nothing matches" always comes with the way out.
-  const QF_LABELS: Record<string, string> = { createdToday: 'Created today', updatedToday: 'Updated today', forToday: 'Today scope', untagged: 'Untagged', mail: '✉ Mail', nojira: 'No Jira yet' };
+  const QF_LABELS: Record<string, string> = { createdToday: 'Created today', updatedToday: 'Updated today', forToday: 'Today scope', untagged: 'Untagged', mail: '✉ Mail', nojira: 'No Jira yet', archived: '🗑 Archived', closedToday: 'Closed today' };
   const KIND_LABELS: Record<string, string> = { planned: 'Planned', urgent: 'Urgent', quick: 'Quick help', untyped: 'Untyped' };
   const pills: { label: string; clear: () => void }[] = [];
   if (workTypeFilter) pills.push({ label: `Kind: ${KIND_LABELS[workTypeFilter] ?? workTypeFilter}`, clear: () => setWorkTypeFilter('') });
@@ -872,7 +888,13 @@ export function Table() {
               active one shows ▾ and lists the existing values to filter on). */}
           <div ref={groupMenuRef} style={{ position: 'relative' }}>
             <div style={{ display: 'flex', alignItems: 'stretch', height: 32, border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
-              {([['', groupBy ? 'Filtered by' : 'Not filtered'], ['today', '◷ Today'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => k === 'today' ? (
+              {([['', groupBy ? 'Filtered by' : 'Not filtered'], ['today', '◷ Today'], ['requester', 'Requester'], ['project', 'Project'], ['archived', '🗑 Archived']] as const).map(([k, label], i) => k === 'archived' ? (
+                <button key="archived" onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has('archived')) { n.delete('archived'); n.delete('closedToday'); } else n.add('archived'); return n; })}
+                  title={archivedView ? 'Back to active items' : 'Show archived items (the former Archive view)'}
+                  style={{ border: 'none', borderLeft: '1px solid var(--t-brd)', fontSize: 12, fontWeight: 700, padding: '0 10px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, background: archivedView ? 'var(--t-surf3)' : 'var(--t-surf)', color: archivedView ? 'var(--t-txt)' : 'var(--t-muted)' }}>
+                  {label}
+                </button>
+              ) : k === 'today' ? (
                 <button key="today" onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has('forToday')) n.delete('forToday'); else n.add('forToday'); return n; })}
                   title="Show only tasks marked for today"
                   style={{ border: 'none', borderLeft: '1px solid var(--t-brd)', fontSize: 12, fontWeight: 700, padding: '0 10px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, background: quickFilters.has('forToday') ? 'var(--t-amber-bg)' : 'var(--t-surf)', color: quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-muted)' }}>
@@ -988,11 +1010,11 @@ export function Table() {
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
               Clear
             </button>
-            <button onClick={bulkArchive}
+            <button onClick={archivedView ? bulkRestore : bulkArchive}
               style={{ ...ghostBtn, color: 'var(--t-acc)' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-acc-bg)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              ⊙ Archive
+              {archivedView ? '↩ Restore' : '⊙ Archive'}
             </button>
             <button onClick={bulkDelete}
               style={{ ...ghostBtn, color: 'var(--t-urgent)' }}

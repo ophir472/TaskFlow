@@ -238,7 +238,7 @@ export function MailAssistant({ onClose }: Props) {
               <b>{skipped} skipped</b>{stepIds.length === 0 && ' (nothing to walk through)'}
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--t-muted)', marginBottom: 16 }}>
-              Sent entries moved to the archive (✉ Mail filter there finds them). Skipped ones stay in the capture list.
+              Sent entries are archived (Table → 🗑 Archived + ✉ Mail finds them). Skipped ones stay in the capture list.
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => { window.location.hash = 'mail'; }} style={accBtn}>Back to capture</button>

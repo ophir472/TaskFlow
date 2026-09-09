@@ -4,7 +4,7 @@ import { getThemeVars } from './themes';
 import type { View } from './store';
 
 // 'hub' is LAST on purpose: digits 1–9 map by index and must stay stable.
-const VALID_VIEWS: View[] = ['home', 'feed', 'explore', 'kanban', 'table', 'quickhelp', 'archive', 'docs', 'settings', 'hub'];
+const VALID_VIEWS: View[] = ['home', 'feed', 'explore', 'kanban', 'table', 'quickhelp', 'docs', 'settings', 'hub'];
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { CardFeed } from './components/CardFeed/CardFeed';
 import { QuickHelp } from './components/QuickHelp/QuickHelp';
@@ -15,7 +15,6 @@ import { Explore } from './components/Explore/Explore';
 import { Spotlight } from './components/Explore/Spotlight';
 import { Kanban } from './components/Kanban/Kanban';
 import { Table } from './components/Table/Table';
-import { Archive } from './components/Archive/Archive';
 import { Settings } from './components/Settings/Settings';
 import { Docs } from './components/Docs/Docs';
 import { CreateModal } from './components/CreateModal/CreateModal';
@@ -38,7 +37,7 @@ import { buildQueue } from './engine';
 export type SyncState = 'idle' | 'syncing' | 'saved';
 
 const VIEW_TITLES: Record<string, string> = {
-  explore: 'Explore', kanban: 'Kanban', table: 'All Items', archive: 'Archive', docs: 'Docs', settings: 'Settings',
+  explore: 'Explore', kanban: 'Kanban', table: 'All Items', docs: 'Docs', settings: 'Settings',
 };
 
 export default function App() {
@@ -365,6 +364,15 @@ export default function App() {
   useEffect(() => {
     function syncFromHash() {
       const seg = window.location.hash.slice(1).split('/')[0].split('?')[0];
+      // The Archive view was folded into the table (2026-09-10). Old links
+      // and muscle memory land on the same rows: #archive → is:archived,
+      // #archive/task/<id> → the task popup. replace() fires hashchange
+      // without adding a history entry.
+      if (seg === 'archive') {
+        const task = /^#archive\/task\/([^/?]+)/.exec(window.location.hash)?.[1];
+        window.location.replace(task ? `#table/task/${task}` : '#table?q=is%3Aarchived');
+        return;
+      }
       if (VALID_VIEWS.includes(seg as View)) setView(seg as View);
       else if (!window.location.hash) setView('feed');
       setReviewOpen(seg === 'review');
@@ -699,7 +707,6 @@ export default function App() {
         {view === 'explore' && <Explore focusTrigger={focusSearchTrigger} />}
         {view === 'kanban' && <Kanban />}
         {view === 'table' && <Table />}
-        {view === 'archive' && <Archive />}
         {view === 'docs' && <Docs />}
         {view === 'settings' && <Settings />}
       </div>
