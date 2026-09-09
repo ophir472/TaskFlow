@@ -28,9 +28,9 @@ export function readBookmarksHash(): { open: boolean; scope: Scope; q: string } 
   return { open: true, scope: seg ? seg : null, q };
 }
 
-export function BookmarksHandle({ open }: { open: boolean }) {
+export function BookmarksHandle({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <div onClick={() => { if (open) history.back(); else window.location.hash = 'bookmarks'; }}
+    <div onClick={() => { if (open) onClose(); else window.location.hash = 'bookmarks'; }}
       title={open ? 'Close bookmarks (Esc)' : 'Bookmarks (b)'}
       style={{ position: 'fixed', left: 0, right: 0, bottom: 0, height: 16, zIndex: 601, cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'flex-end', pointerEvents: 'auto' }}>
       {/* the line */}
@@ -296,7 +296,7 @@ export function BookmarksDrawer({ open, onClose }: Props) {
 
   return (
     <>
-      <BookmarksHandle open={open} />
+      <BookmarksHandle open={open} onClose={onClose} />
       <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, height: '92vh', zIndex: 600, transform: open ? 'translateY(0)' : 'translateY(100%)', transition: 'transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1)', background: 'var(--t-bg)', borderTop: '1px solid var(--t-brd)', boxShadow: open ? '0 -12px 40px rgba(0,0,0,0.18)' : 'none', display: 'flex', flexDirection: 'column', pointerEvents: open ? 'auto' : 'none' }}
         aria-hidden={!open}>
         {/* grab line at the top edge */}

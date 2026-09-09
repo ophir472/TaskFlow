@@ -33,6 +33,9 @@ export function WalkthroughBar() {
   const done = step ? stepDone(step, counts, todayChecks, pageContent) : false;
 
   const navigatedFor = useRef<string | null>(null);
+  // replace, not push: hopping review → plan → mail must not stack overlay
+  // entries, or closing one would 'go back' into the previous one.
+  const go = (hash: string) => { if (window.location.hash !== `#${hash}`) window.location.replace(`#${hash}`); };
 
   // Enter the current step's screen once per step.
   useEffect(() => {
@@ -42,9 +45,9 @@ export function WalkthroughBar() {
     if (step.builtin === 'today') {
       // Straight into focus mode on the first today-task (feed as fallback).
       const first = counts.todayTasks[0];
-      window.location.hash = first ? `play/${first.id}` : 'feed';
-    } else if (step.builtin) window.location.hash = BUILTIN_STEPS[step.builtin].hash;
-    else if (step.docPageId) window.location.hash = `checklist/${step.docPageId}`;
+      go(first ? `play/${first.id}` : 'feed');
+    } else if (step.builtin) go(BUILTIN_STEPS[step.builtin].hash);
+    else if (step.docPageId) go(`checklist/${step.docPageId}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
@@ -59,7 +62,7 @@ export function WalkthroughBar() {
   function advance() {
     const next = steps[idx + 1];
     if (next) setWalkthrough(next.id);
-    else { setWalkthrough(null); window.location.hash = 'home'; }
+    else { setWalkthrough(null); window.location.replace('#home'); }
   }
 
   if (!walkthrough) return null;
@@ -77,7 +80,7 @@ export function WalkthroughBar() {
         </div>
       </div>
       {step.docPageId && !done && (
-        <button onClick={() => { window.location.hash = `checklist/${step.docPageId}`; }}
+        <button onClick={() => go(`checklist/${step.docPageId}`)}
           style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', flexShrink: 0 }}>
           ☑ Open checklist
         </button>

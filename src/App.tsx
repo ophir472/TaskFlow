@@ -4,6 +4,10 @@ import { getThemeVars } from './themes';
 import type { View } from './store';
 
 // 'hub' is LAST on purpose: digits 1–9 map by index and must stay stable.
+// Hash routes that are overlays on top of a view (not views themselves).
+const OVERLAY_SEGS = new Set(['review', 'sncreate', 'mail', 'sprint', 'plan', 'play', 'checklist', 'bookmarks']);
+const segOf = (hash: string) => hash.replace(/^#/, '').split('/')[0].split('?')[0];
+
 const VALID_VIEWS: View[] = ['home', 'feed', 'explore', 'kanban', 'table', 'quickhelp', 'docs', 'settings', 'hub'];
 import { Sidebar } from './components/Sidebar/Sidebar';
 import { CardFeed } from './components/CardFeed/CardFeed';
@@ -365,11 +369,27 @@ export default function App() {
 
   // Hash-based routing: URL → view on load and on back/forward
   // Also: every URL change triggers a snapshot write (fire-and-forget).
+  // Closing an overlay normally pops history (open + close = clean round
+  // trip). But when the previous entry is ANOTHER overlay — the walkthrough
+  // hops review → plan → mail by URL — back would re-open it, so we replace
+  // with the last real view instead. Same while the walkthrough is active.
+  const curHashRef = useRef(window.location.hash);
+  const prevHashRef = useRef('');
+  const lastViewHashRef = useRef('#home');
+  const leaveOverlay = useCallback((seg: string, fallback: () => void) => {
+    if (segOf(window.location.hash) !== seg) { fallback(); return; }
+    const prevIsOverlay = OVERLAY_SEGS.has(segOf(prevHashRef.current)) || !prevHashRef.current;
+    const walking = !!useStore.getState().walkthrough;
+    if (prevIsOverlay || walking) window.location.replace(lastViewHashRef.current || '#home');
+    else history.back();
+  }, []);
   // '#review' is a pseudo-route: it opens the Green Play overlay on top of
   // whatever view is active (defaults to feed on a cold load).
   useEffect(() => {
     function syncFromHash() {
       const seg = window.location.hash.slice(1).split('/')[0].split('?')[0];
+      if (window.location.hash !== curHashRef.current) { prevHashRef.current = curHashRef.current; curHashRef.current = window.location.hash; }
+      if (VALID_VIEWS.includes(seg as View)) lastViewHashRef.current = window.location.hash;
       // The Archive view was folded into the table (2026-09-10). Old links
       // and muscle memory land on the same rows: #archive → is:archived,
       // #archive/task/<id> → the task popup. replace() fires hashchange
@@ -420,30 +440,24 @@ export default function App() {
     if (window.location.hash.slice(1).split('/')[0] !== 'review') window.location.hash = 'review';
   }, []);
   const closeReview = useCallback(() => {
-    if (window.location.hash.slice(1).split('/')[0] === 'review') history.back();
-    else setReviewOpen(false);
-  }, []);
+    leaveOverlay('review', () => setReviewOpen(false));
+  }, [leaveOverlay]);
   // The ServiceNow create menu is the same kind of URL overlay (#sncreate).
   const closeSnMenu = useCallback(() => {
-    if (window.location.hash.slice(1).split('/')[0] === 'sncreate') history.back();
-    else setSnMenuOpen(false);
-  }, []);
+    leaveOverlay('sncreate', () => setSnMenuOpen(false));
+  }, [leaveOverlay]);
   const closeMail = useCallback(() => {
-    if (window.location.hash.slice(1).split('/')[0] === 'mail') history.back();
-    else setMailOpen(false);
-  }, []);
+    leaveOverlay('mail', () => setMailOpen(false));
+  }, [leaveOverlay]);
   const closeSprint = useCallback(() => {
-    if (window.location.hash.slice(1).split('/')[0] === 'sprint') history.back();
-    else setSprintOpen(false);
-  }, []);
+    leaveOverlay('sprint', () => setSprintOpen(false));
+  }, [leaveOverlay]);
   const closePlan = useCallback(() => {
-    if (window.location.hash.slice(1).split('/')[0] === 'plan') history.back();
-    else setPlanOpen(false);
-  }, []);
+    leaveOverlay('plan', () => setPlanOpen(false));
+  }, [leaveOverlay]);
   const closePlay = useCallback(() => {
-    if (window.location.hash.slice(1).split('/')[0] === 'play') history.back();
-    else setPlayTaskId(null);
-  }, []);
+    leaveOverlay('play', () => setPlayTaskId(null));
+  }, [leaveOverlay]);
 
   // Apply theme CSS variables
   useEffect(() => {
@@ -740,8 +754,8 @@ export default function App() {
       {sprintOpen && <SprintMode onClose={closeSprint} />}
       {planOpen && <PlanPopup onClose={closePlan} />}
       {tourOpen && <Tour onClose={() => setTourOpen(false)} />}
-      {checklistPageId && <ChecklistPopup pageId={checklistPageId} onClose={() => { if (window.location.hash.slice(1).split('/')[0] === 'checklist') history.back(); else setChecklistPageId(null); }} />}
-      <BookmarksDrawer open={bookmarksOpen} onClose={() => { if (window.location.hash.slice(1).split('/')[0].split('?')[0] === 'bookmarks') history.back(); else setBookmarksOpen(false); }} />
+      {checklistPageId && <ChecklistPopup pageId={checklistPageId} onClose={() => leaveOverlay('checklist', () => setChecklistPageId(null))} />}
+      <BookmarksDrawer open={bookmarksOpen} onClose={() => leaveOverlay('bookmarks', () => setBookmarksOpen(false))} />
       <WalkthroughBar />
       {playTaskId && <Play taskId={playTaskId} onClose={closePlay} />}
       {spotlightOpen && <Spotlight onClose={() => setSpotlightOpen(false)} onToast={toastTimer} />}
