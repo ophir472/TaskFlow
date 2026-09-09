@@ -401,11 +401,12 @@ export function Table() {
     if (quickFilters.has('updatedToday') && it.updatedAt < todayStart) return false;
     if (quickFilters.has('forToday') && !(it.kind === 'task' && (it as Task).forToday)) return false;
     if (quickFilters.has('untagged') && !(it.kind === 'task' && !(it as Task).urgent && !(it as Task).important && !(it as Task).quick && !(it as Task).noTag)) return false;
-    // Mail entries are hidden by DEFAULT — the ✉ Mail filter flips the view
-    // to only them.
+    // Mail entries are hidden by DEFAULT in the active table — the ✉ Mail
+    // filter flips the view to only them. The archived world shows everything
+    // that was archived (as the old Archive view did); ✉ Mail only narrows.
     {
       const isMailRow = it.kind === 'task' && (it as Task).type === 'mail';
-      if (quickFilters.has('mail') ? !isMailRow : isMailRow) return false;
+      if (quickFilters.has('mail') ? !isMailRow : (isMailRow && !archivedView)) return false;
     }
     if (quickFilters.has('nojira') && !(it.kind === 'task' && ((it as Task).type === 'planned' || (it as Task).type === 'urgent') && !((it as Task).jiraLink ?? '').trim())) return false;
     return true;
@@ -440,6 +441,10 @@ export function Table() {
       const bT = b.kind === 'task' && (b as Task).forToday ? 0 : 1;
       return aT - bT;
     });
+  } else if (archivedView) {
+    // Archived world: most recently closed first (archiving stamps updatedAt).
+    // Score/manual order mean nothing for closed work.
+    rows = [...rows].sort((a, b) => b.updatedAt - a.updatedAt);
   } else {
     // Merge: manual tasks hold their exact positions; auto tasks fill remaining slots by score
     const itemMap = new Map(rows.map(it => [it.id, it]));
