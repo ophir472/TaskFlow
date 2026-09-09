@@ -723,7 +723,7 @@ export function Table() {
                     setGroupBy(k); setCollapsedGroups(new Set()); setGroupMenu(false); if (k) setViewMode('table');
                   }}
                   title={k ? (groupBy === k ? `Pick a ${k} to filter on` : `Group rows by ${k}`) : (groupBy ? 'Clear the grouping' : 'No grouping')}
-                  style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k || (!k && groupBy) ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k || (!k && groupBy) ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k && k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : (!k && groupBy) ? 'var(--t-txt2)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                   {label}{groupBy === k && k ? <span style={{ fontSize: 10, transform: groupMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span> : null}
                 </button>
               ))}
