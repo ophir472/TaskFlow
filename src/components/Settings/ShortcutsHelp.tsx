@@ -106,6 +106,25 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     ],
   },
   {
+    title: 'Docs editor',
+    rows: [
+      { keys: ['/'], what: 'At the start of a line: block menu (to-do, headings, toggle, callout, table…) — ↑↓ ↵ esc' },
+      { keys: ['[', '['], what: 'Link picker over pages and tasks — ↑↓ ↵ esc' },
+      { keys: ['Enter'], what: 'Continue a list / to-do / numbering (empty item ends it)' },
+      { keys: ['Tab', '⇧Tab'], what: 'Indent / outdent the line (nests to-dos, fills a toggle)' },
+      { keys: ['⌘B', '⌘I', '⌘E', '⌘⇧X'], what: 'Bold · italic · code · strike the selection' },
+      { keys: ['⌘Enter'], what: 'Tick the to-do on the current line' },
+    ],
+  },
+  {
+    title: 'Daily checklist popup (agenda step)',
+    rows: [
+      { keys: ['↑', '↓'], what: 'Move between to-dos' },
+      { keys: ['Space', 'Enter'], what: 'Tick / untick' },
+      { keys: ['Esc'], what: 'Close' },
+    ],
+  },
+  {
     title: 'Guided tour',
     rows: [
       { keys: ['→', 'Enter', 'Space'], what: 'Next step (finishes on the last one)' },

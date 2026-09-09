@@ -94,6 +94,9 @@ export interface AgendaStep {
   id: string;
   builtin?: 'review' | 'plan' | 'mail' | 'sprint' | 'today';
   label: string;
+  // Checklist step (2026-09-10): a Docs page whose to-dos must all be ticked
+  // TODAY (ticks are agenda checks, reset at midnight; the page is the template).
+  docPageId?: string;
 }
 
 // Dashboard homepage configuration (Settings → Dashboard). Versions come

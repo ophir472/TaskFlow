@@ -10,6 +10,7 @@ import { CardFeed } from './components/CardFeed/CardFeed';
 import { QuickHelp } from './components/QuickHelp/QuickHelp';
 import { Hub } from './components/Hub/Hub';
 import { Home } from './components/Home/Home';
+import { ChecklistPopup } from './components/Docs/ChecklistPopup';
 import { WalkthroughBar } from './components/Home/WalkthroughBar';
 import { Explore } from './components/Explore/Explore';
 import { Spotlight } from './components/Explore/Spotlight';
@@ -143,6 +144,8 @@ export default function App() {
     return () => window.removeEventListener('taskflow:start-tour', h);
   }, []);
   const [playTaskId, setPlayTaskId] = useState<string | null>(null);
+  // Daily checklist popup (a Docs page as an agenda step) — #checklist/<pageId>
+  const [checklistPageId, setChecklistPageId] = useState<string | null>(null);
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -381,6 +384,7 @@ export default function App() {
       setSprintOpen(seg === 'sprint');
       setPlanOpen(seg === 'plan');
       setPlayTaskId(seg === 'play' ? (window.location.hash.slice(1).split('/')[1] ?? null) : null);
+      setChecklistPageId(seg === 'checklist' ? (window.location.hash.slice(1).split('/')[1]?.split('?')[0] ?? null) : null);
       // Snapshot on every navigation. Async, non-blocking.
       writeSnapshot().then(written => {
         if (written) log('snapshot:navigate', { hash: window.location.hash });
@@ -402,7 +406,7 @@ export default function App() {
   useEffect(() => {
     if (!viewUrlSynced.current) { viewUrlSynced.current = true; return; }
     const currentSeg = window.location.hash.slice(1).split('/')[0].split('?')[0];
-    if (currentSeg === 'review' || currentSeg === 'sncreate' || currentSeg === 'mail' || currentSeg === 'sprint' || currentSeg === 'plan' || currentSeg === 'play') return;
+    if (currentSeg === 'review' || currentSeg === 'sncreate' || currentSeg === 'mail' || currentSeg === 'sprint' || currentSeg === 'plan' || currentSeg === 'play' || currentSeg === 'checklist') return;
     if (currentSeg !== view) window.location.hash = view;
   }, [view]);
 
@@ -726,6 +730,7 @@ export default function App() {
       {sprintOpen && <SprintMode onClose={closeSprint} />}
       {planOpen && <PlanPopup onClose={closePlan} />}
       {tourOpen && <Tour onClose={() => setTourOpen(false)} />}
+      {checklistPageId && <ChecklistPopup pageId={checklistPageId} onClose={() => { if (window.location.hash.slice(1).split('/')[0] === 'checklist') history.back(); else setChecklistPageId(null); }} />}
       <WalkthroughBar />
       {playTaskId && <Play taskId={playTaskId} onClose={closePlay} />}
       {spotlightOpen && <Spotlight onClose={() => setSpotlightOpen(false)} onToast={toastTimer} />}

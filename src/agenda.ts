@@ -1,4 +1,5 @@
-import type { Item, Task, AgendaStep, SprintTypeToggles, ReviewSession, CustomSystem } from './types';
+import type { Item, Task, AgendaStep, SprintTypeToggles, ReviewSession, CustomSystem, DocNotebook } from './types';
+import { leafCheckKeys, dailyCheckId } from './docBlocks';
 import { buildSprintPool } from './components/Sprint/SprintMode';
 import { flaggedTasks } from './greenPlay';
 
@@ -107,9 +108,29 @@ export function defaultAgendaSteps(): AgendaStep[] {
   return ['review', 'plan', 'mail', 'sprint', 'today'].map(k => ({ id: k, builtin: k as AgendaStep['builtin'], label: BUILTIN_STEPS[k].label }));
 }
 
+/** Page-content lookup for checklist steps (pass to stepDone). */
+export function docPageContentLookup(notebooks: DocNotebook[]): (pageId: string) => string | null {
+  const map = new Map<string, string>();
+  notebooks.forEach(nb => nb.categories.forEach(c => c.pages.forEach(p => map.set(p.id, p.content))));
+  return id => map.get(id) ?? null;
+}
+
+/** Checklist step progress: [ticked today, total leaf to-dos]. */
+export function checklistProgress(pageId: string, content: string, todayChecks: Set<string>): [number, number] {
+  const keys = leafCheckKeys(content);
+  return [keys.filter(k => todayChecks.has(dailyCheckId(pageId, k))).length, keys.length];
+}
+
 /** Whether a step is complete. Built-ins derive from live counts; custom
- *  steps are manual checks (per-day, reset at midnight). */
-export function stepDone(step: AgendaStep, c: DashCounts, todayChecks: Set<string>): boolean {
+ *  steps are manual checks (per-day, reset at midnight); checklist steps are
+ *  done when every leaf to-do on their Docs page is ticked today. */
+export function stepDone(step: AgendaStep, c: DashCounts, todayChecks: Set<string>, pageContent?: (pageId: string) => string | null): boolean {
+  if (step.docPageId) {
+    const content = pageContent?.(step.docPageId);
+    if (content == null) return false;
+    const [done, total] = checklistProgress(step.docPageId, content, todayChecks);
+    return total > 0 && done === total;
+  }
   switch (step.builtin) {
     case 'review': return c.review === 0;
     case 'plan': return c.todayTotal > 0 && c.unplannedToday === 0;

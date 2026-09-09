@@ -26,15 +26,27 @@ export function DashboardSection() {
   const [dragTile, setDragTile] = useState<number | null>(null);
   const [dragStep, setDragStep] = useState<number | null>(null);
   const [newStep, setNewStep] = useState('');
+  const notebooks = useStore(s => s.notebooks);
+  const docPages = notebooks.flatMap(nb => nb.categories.flatMap(c => c.pages.filter(p => p.type === 'doc').map(p => ({ id: p.id, title: p.title, where: `${nb.name} › ${c.name}` }))));
+  const pageTitle = (id: string) => docPages.find(p => p.id === id)?.title;
 
   const enabled = config.tiles;
   const disabledTiles = TILE_DEFS.filter(t => !enabled.includes(t.id));
   const missingBuiltins = Object.keys(BUILTIN_STEPS).filter(k => !config.agendaSteps.some(s => s.builtin === k));
 
+  function addChecklistStep(pageId: string) {
+    const title = pageTitle(pageId);
+    if (!title || config.agendaSteps.some(s => s.docPageId === pageId)) return;
+    setDashboardConfig({ agendaSteps: [...config.agendaSteps, { id: nextId('ag'), label: title, docPageId: pageId }] });
+  }
   function addCustomStep() {
     const label = newStep.trim();
     if (!label) return;
-    setDashboardConfig({ agendaSteps: [...config.agendaSteps, { id: nextId('ag'), label }] });
+    // A pasted checklist link (#docs/<id>, from the page's ⧉ button) or a page id
+    // becomes a checklist step; anything else is a manual check-off.
+    const link = /#docs\/([^/?\s]+)/.exec(label)?.[1] ?? (pageTitle(label) ? label : null);
+    if (link) addChecklistStep(link);
+    else setDashboardConfig({ agendaSteps: [...config.agendaSteps, { id: nextId('ag'), label }] });
     setNewStep('');
   }
 
@@ -96,7 +108,7 @@ export function DashboardSection() {
       {/* ── Agenda steps ── */}
       <div style={card}>
         <div style={title}>Daily agenda steps</div>
-        <div style={hint}>The pipeline the dashboard walks each day. Drag to reorder, × removes, add your own steps (they become manual check-offs, e.g. "lunch").</div>
+        <div style={hint}>The pipeline the dashboard walks each day. Drag to reorder, × removes. Add your own steps (manual check-offs, e.g. "lunch") or a Docs checklist page — its to-dos must all be ticked today (ticks reset at midnight).</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
           {config.agendaSteps.map((step, i) => (
             <div key={step.id} draggable
@@ -106,7 +118,7 @@ export function DashboardSection() {
               onDragEnd={() => setDragStep(null)}
               style={{ ...row, opacity: dragStep === i ? 0.45 : 1, cursor: 'grab' }}>
               <span style={{ color: 'var(--t-muted)', fontSize: 12 }}>⠿</span>
-              <span style={{ fontSize: 14 }}>{step.builtin ? BUILTIN_STEPS[step.builtin].icon : '•'}</span>
+              <span style={{ fontSize: 14 }}>{step.builtin ? BUILTIN_STEPS[step.builtin].icon : step.docPageId ? '☑' : '•'}</span>
               {step.builtin ? (
                 <span style={{ fontWeight: 600, flex: 1 }}>{step.label}</span>
               ) : (
@@ -114,7 +126,13 @@ export function DashboardSection() {
                   onChange={e => setDashboardConfig({ agendaSteps: config.agendaSteps.map(s => s.id === step.id ? { ...s, label: e.target.value } : s) })}
                   style={{ flex: 1, fontSize: 13, fontWeight: 600, border: 'none', outline: 'none', background: 'transparent', color: 'var(--t-txt)' }} />
               )}
-              <span style={{ fontSize: 10.5, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{step.builtin ? 'auto' : 'manual'}</span>
+              {step.docPageId && (
+                <span onClick={() => { window.location.hash = `docs/${step.docPageId}`; }} title={pageTitle(step.docPageId) ? 'Open the page' : 'This page was deleted'}
+                  style={{ fontSize: 11.5, color: pageTitle(step.docPageId) ? 'var(--t-acc)' : 'var(--t-urgent)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  {pageTitle(step.docPageId) ? '≡ page' : 'page deleted'}
+                </span>
+              )}
+              <span style={{ fontSize: 10.5, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{step.builtin ? 'auto' : step.docPageId ? 'checklist' : 'manual'}</span>
               <span onClick={() => setDashboardConfig({ agendaSteps: config.agendaSteps.filter(s => s.id !== step.id) })}
                 title="Remove step" style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 15, lineHeight: 1 }}>×</span>
             </div>
@@ -123,12 +141,18 @@ export function DashboardSection() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <input value={newStep} onChange={e => setNewStep(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') addCustomStep(); }}
-            placeholder="Add a custom step (e.g. lunch)…"
+            placeholder="Add a custom step, or paste a checklist page link…"
             style={{ fontSize: 13, padding: '7px 11px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', width: 240 }} />
           <button onClick={addCustomStep} disabled={!newStep.trim()}
             style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 12.5, fontWeight: 600, padding: '7px 12px', borderRadius: 7, cursor: 'pointer', opacity: newStep.trim() ? 1 : 0.5 }}>
             + Add
           </button>
+          <select value="" onChange={e => { if (e.target.value) addChecklistStep(e.target.value); }}
+            title="Add a Docs page with to-dos as a daily checklist step"
+            style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 10px', borderRadius: 7, border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', cursor: 'pointer' }}>
+            <option value="">+ ☑ Checklist page…</option>
+            {docPages.filter(p => !config.agendaSteps.some(s => s.docPageId === p.id)).map(p => <option key={p.id} value={p.id}>{p.title} — {p.where}</option>)}
+          </select>
           {missingBuiltins.map(k => (
             <button key={k}
               onClick={() => setDashboardConfig({ agendaSteps: [...config.agendaSteps, { id: k, builtin: k as AgendaStep['builtin'], label: BUILTIN_STEPS[k].label }] })}

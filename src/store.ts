@@ -200,6 +200,7 @@ interface AppState {
   setWalkthrough: (stepId: string | null) => void;
   setTableFilterPreset: (preset: string | null) => void;
   toggleAgendaCheck: (stepId: string) => void;
+  setAgendaChecks: (ids: string[], on: boolean) => void;
   setSprintOrder: (keys: string[]) => void;
   setReviewOrder: (ids: string[]) => void;
   beginReview: (taskIds: string[], initialReviewedAt: Record<string, number>) => void;
@@ -977,6 +978,16 @@ export const useStore = create<AppState>()(
           const cur = s.agendaChecks.date === today ? s.agendaChecks.ids : [];
           const ids = cur.includes(stepId) ? cur.filter(x => x !== stepId) : [...cur, stepId];
           return { agendaChecks: { date: today, ids } };
+        });
+      },
+      // Quiet like toggleAgendaCheck — checklist-page ticks are daily meta.
+      setAgendaChecks: (ids, on) => {
+        slog('agenda:check', { stepId: ids.join(','), on });
+        const today = new Date().toISOString().slice(0, 10);
+        set(s => {
+          const cur = s.agendaChecks.date === today ? s.agendaChecks.ids : [];
+          const next = on ? Array.from(new Set([...cur, ...ids])) : cur.filter(x => !ids.includes(x));
+          return { agendaChecks: { date: today, ids: next } };
         });
       },
 

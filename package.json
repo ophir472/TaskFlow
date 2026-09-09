@@ -9,7 +9,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "check:archive": "node --experimental-strip-types --no-warnings scripts/check-archive-fold.ts"
+    "check:archive": "node --experimental-strip-types --no-warnings scripts/check-archive-fold.ts",
+    "check:docs": "node --experimental-strip-types --no-warnings scripts/check-doc-blocks.ts"
   },
   "dependencies": {
     "date-fns": "^4.4.0",

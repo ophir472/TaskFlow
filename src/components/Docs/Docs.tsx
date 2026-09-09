@@ -2,6 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
 import type { DocNotebook, DocCategory, DocPage } from '../../types';
 import { useLogMount } from '../../useLogMount';
+import { DocView } from './DocView';
+import { DocEditor } from './DocEditor';
+import { TaskModal } from '../TaskModal/TaskModal';
+import { CornerBanner } from '../Common/CornerBanner';
+import { LinkIcon } from '../Common/LinkIcon';
+import { leafCheckKeys, dailyCheckId } from '../../docBlocks';
+import { todayKey } from '../../agenda';
+import { nextId } from '../../engine';
 
 // ── helpers ─────────────────────────────────────────────────────
 
@@ -18,92 +26,6 @@ function findPage(notebooks: DocNotebook[], pageId: string): { nb: DocNotebook; 
     }
   }
   return null;
-}
-
-// Minimal inline formatting: **bold**, `code`, bare URLs become links.
-function renderInline(text: string): React.ReactNode[] {
-  const out: React.ReactNode[] = [];
-  const re = /(\*\*[^*]+\*\*|`[^`]+`|https?:\/\/[^\s]+)/g;
-  let lastIdx = 0;
-  let m: RegExpExecArray | null;
-  let k = 0;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > lastIdx) out.push(text.slice(lastIdx, m.index));
-    const tok = m[0];
-    if (tok.startsWith('**')) out.push(<b key={k++}>{tok.slice(2, -2)}</b>);
-    else if (tok.startsWith('`')) out.push(<code key={k++} style={{ background: 'var(--t-surf3)', padding: '1px 5px', borderRadius: 4, fontSize: '0.92em' }}>{tok.slice(1, -1)}</code>);
-    else out.push(<a key={k++} href={tok} target="_blank" rel="noreferrer" style={{ color: 'var(--t-acc)' }}>{tok}</a>);
-    lastIdx = m.index + tok.length;
-  }
-  if (lastIdx < text.length) out.push(text.slice(lastIdx));
-  return out;
-}
-
-// ── doc preview (markdown-lite, headings fold, checkboxes toggle) ──
-
-function DocPreview({ content, onToggleLine }: { content: string; onToggleLine: (lineIdx: number) => void }) {
-  const [folded, setFolded] = useState<Set<number>>(new Set());
-  const lines = content.split('\n');
-
-  // Folding a heading hides everything until the next heading of the same or
-  // higher level.
-  const hidden = new Set<number>();
-  folded.forEach(idx => {
-    const m = /^(#{1,3})\s/.exec(lines[idx] ?? '');
-    if (!m) return;
-    const level = m[1].length;
-    for (let j = idx + 1; j < lines.length; j++) {
-      const hm = /^(#{1,3})\s/.exec(lines[j]);
-      if (hm && hm[1].length <= level) break;
-      hidden.add(j);
-    }
-  });
-
-  const chev = (on: boolean): React.CSSProperties => ({ display: 'inline-block', width: 14, cursor: 'pointer', color: 'var(--t-muted)', fontSize: 11, transform: on ? 'none' : 'rotate(90deg)', transition: 'transform 0.15s', userSelect: 'none' });
-
-  return (
-    <div style={{ fontSize: 14, lineHeight: 1.65, color: 'var(--t-txt)' }}>
-      {lines.map((line, i) => {
-        if (hidden.has(i)) return null;
-        const h = /^(#{1,3})\s+(.*)$/.exec(line);
-        if (h) {
-          const level = h[1].length;
-          const sizes = [19, 16.5, 14.5];
-          return (
-            <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 2, fontSize: sizes[level - 1], fontWeight: 700, margin: `${level === 1 ? 14 : 10}px 0 4px`, letterSpacing: '-0.01em' }}>
-              <span style={chev(folded.has(i))} title={folded.has(i) ? 'Expand' : 'Collapse'}
-                onClick={() => setFolded(prev => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n; })}>▸</span>
-              <span>{renderInline(h[2])}</span>
-            </div>
-          );
-        }
-        const cb = /^(\s*)- \[([ x])\]\s?(.*)$/.exec(line);
-        if (cb) {
-          const checked = cb[2] === 'x';
-          return (
-            <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 7, paddingLeft: 14 + cb[1].length * 8 }}>
-              <span onClick={() => onToggleLine(i)} style={{ cursor: 'pointer', color: checked ? 'oklch(0.5 0.13 150)' : 'var(--t-muted)', fontSize: 14, userSelect: 'none' }}>
-                {checked ? '☑' : '☐'}
-              </span>
-              <span style={{ textDecoration: checked ? 'line-through' : 'none', color: checked ? 'var(--t-muted)' : 'var(--t-txt)' }}>{renderInline(cb[3])}</span>
-            </div>
-          );
-        }
-        const bullet = /^(\s*)-\s+(.*)$/.exec(line);
-        if (bullet) {
-          return <div key={i} style={{ display: 'flex', gap: 7, paddingLeft: 14 + bullet[1].length * 8 }}><span style={{ color: 'var(--t-muted)' }}>•</span><span>{renderInline(bullet[2])}</span></div>;
-        }
-        const num = /^(\s*)(\d+)\.\s+(.*)$/.exec(line);
-        if (num) {
-          return <div key={i} style={{ display: 'flex', gap: 7, paddingLeft: 14 + num[1].length * 8 }}><span style={{ color: 'var(--t-muted)', minWidth: 16 }}>{num[2]}.</span><span>{renderInline(num[3])}</span></div>;
-        }
-        if (/^---+\s*$/.test(line)) return <hr key={i} style={{ border: 'none', borderTop: '1px solid var(--t-brd)', margin: '10px 0' }} />;
-        if (line.trim() === '') return <div key={i} style={{ height: 10 }} />;
-        return <div key={i} style={{ paddingLeft: 14 }}>{renderInline(line)}</div>;
-      })}
-      {content.trim() === '' && <div style={{ color: 'var(--t-muted)', fontSize: 13, paddingLeft: 14 }}>Nothing here yet — write on the left.</div>}
-    </div>
-  );
 }
 
 // ── links board preview ("NAME: URL" lines → clickable squares) ──
@@ -275,6 +197,33 @@ export function Docs() {
     setDocPageContent(page.id, next);
   }
 
+  // Checklist-as-agenda-step: when this page is a step, its to-dos are a
+  // daily template — ticks live in today's agenda checks (reset at midnight),
+  // not in the text. Same state the Home popup and the walkthrough use.
+  const agendaSteps = useStore(s => s.dashboardConfig.agendaSteps);
+  const setDashboardConfig = useStore(s => s.setDashboardConfig);
+  const agendaChecks = useStore(s => s.agendaChecks);
+  const setAgendaChecks = useStore(s => s.setAgendaChecks);
+  const agendaStep = page ? agendaSteps.find(st => st.docPageId === page.id) ?? null : null;
+  const isDaily = !!agendaStep && page?.type === 'doc';
+  const dailyKeys = isDaily ? leafCheckKeys(draft) : [];
+  const todayIds = new Set(agendaChecks.date === todayKey() ? agendaChecks.ids : []);
+  const dailyChecked = new Set(page ? dailyKeys.filter(k => todayIds.has(dailyCheckId(page.id, k))) : []);
+  const toggleAgenda = () => {
+    if (!page) return;
+    if (agendaStep) setDashboardConfig({ agendaSteps: agendaSteps.filter(st => st.id !== agendaStep.id) });
+    else setDashboardConfig({ agendaSteps: [...agendaSteps, { id: nextId('ag'), label: page.title, docPageId: page.id }] });
+  };
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<number | undefined>(undefined);
+  const copyLink = () => {
+    if (!page) return;
+    navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#docs/${page.id}`);
+    setNotice('Link to this page copied'); window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 2200);
+  };
+  const [taskId, setTaskId] = useState<string | null>(null);
+
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [reviewsOpen, setReviewsOpen] = useState(false);
   const [selSummaryId, setSelSummaryId] = useState<string | null>(null);
@@ -422,16 +371,33 @@ export function Docs() {
           </div>
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
               <input
                 value={page.title}
                 onChange={e => renameDocPage(page.id, e.target.value)}
-                style={{ flex: 1, minWidth: 0, fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em', border: 'none', outline: 'none', background: 'transparent', color: 'var(--t-txt)', padding: 0 }} />
+                style={{ flex: 1, minWidth: 0, fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em', border: 'none', outline: 'none', background: 'transparent', color: 'var(--t-txt)' }} />
               {page.type === 'links' && (
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', textTransform: 'uppercase', letterSpacing: '0.06em', flexShrink: 0 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
                   Links board
                 </span>
               )}
+              {isDaily && (
+                <span title="This page is a daily-agenda step: ticks here are today's ticks and reset at midnight; the text keeps the template"
+                  style={{ fontSize: 11, fontWeight: 700, padding: '4px 9px', borderRadius: 20, background: 'var(--t-amber-bg)', color: 'var(--t-amber)', whiteSpace: 'nowrap' }}>
+                  ☑ Daily checklist · {dailyChecked.size}/{dailyKeys.length} today
+                </span>
+              )}
+              {page.type === 'doc' && (
+                <button onClick={toggleAgenda}
+                  title={agendaStep ? 'Remove this checklist from the daily agenda' : 'Add this page as a daily-agenda step: every to-do on it must be ticked each day'}
+                  style={{ height: 30, border: '1px solid ' + (agendaStep ? 'var(--t-success)' : 'var(--t-brd)'), background: agendaStep ? 'var(--t-success-bg)' : 'var(--t-surf)', color: agendaStep ? 'var(--t-success)' : 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '0 10px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  {agendaStep ? '✓ In daily agenda' : '☑ Add to daily agenda'}
+                </button>
+              )}
+              <button onClick={copyLink} title="Copy link"
+                style={{ height: 30, width: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', borderRadius: 8, cursor: 'pointer', flexShrink: 0 }}>
+                <LinkIcon size={17} />
+              </button>
               <div style={{ display: 'flex', gap: 2, background: 'var(--t-surf2)', border: '1px solid var(--t-brd)', borderRadius: 8, padding: 2, flexShrink: 0 }}>
                 <button style={modeBtn(mode === 'edit')} onClick={() => setMode('edit')} title="Editor only">✎</button>
                 <button style={modeBtn(mode === 'split')} onClick={() => setMode('split')} title="Editor + preview">⿲</button>
@@ -441,25 +407,32 @@ export function Docs() {
 
             <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 14 }}>
               {mode !== 'view' && (
-                <textarea
+                <DocEditor
                   value={draft}
-                  onChange={e => changeDraft(e.target.value)}
+                  onChange={changeDraft}
                   placeholder={page.type === 'links'
                     ? 'One link per line:\nGoogle: google.com\nTeam wiki: https://confluence/…\n# lines starting with # are ignored'
-                    : '# Heading (foldable)\n## Sub-heading\n- bullet\n- [ ] checkbox\n**bold**, `code`, https://links…\n---'}
-                  style={{ flex: 1, minWidth: 0, fontSize: 13.5, lineHeight: 1.6, padding: '12px 14px', borderRadius: 10, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)', boxSizing: 'border-box', resize: 'none', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', outline: 'none' }} />
+                    : 'Type / for blocks — to-do, headings, toggle, callout, table…\n[[ links a page or task · **bold** `code` ~~strike~~\n- [ ] a to-do (Tab nests it)'}
+                  style={{ flex: 1, minWidth: 0, fontSize: 13.5, lineHeight: 1.6, padding: '12px 14px', borderRadius: 10, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', resize: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
               )}
               {mode !== 'edit' && (
                 <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '12px 14px', borderRadius: 10, border: '1px solid var(--t-brd)', background: 'var(--t-surf)' }}>
                   {page.type === 'links'
                     ? <LinksPreview content={draft} />
-                    : <DocPreview content={draft} onToggleLine={toggleLine} />}
+                    : <DocView content={draft}
+                        dailyChecked={isDaily ? dailyChecked : undefined}
+                        onToggleLine={toggleLine}
+                        onToggleKeys={(keys, on) => setAgendaChecks(keys.map(k => dailyCheckId(page.id, k)), on)}
+                        onOpenPage={openPage}
+                        onOpenTask={setTaskId} />}
                 </div>
               )}
             </div>
           </>
         )}
       </div>
+      <CornerBanner text={notice} />
+      {taskId && <TaskModal taskId={taskId} onClose={() => setTaskId(null)} urlDriven={false} />}
     </div>
   );
 }

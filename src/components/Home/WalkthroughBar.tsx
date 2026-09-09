@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useStore } from '../../store';
-import { dashCounts, stepDone, BUILTIN_STEPS, todayKey } from '../../agenda';
+import { dashCounts, stepDone, BUILTIN_STEPS, todayKey, docPageContentLookup } from '../../agenda';
 
 // Walkthrough mode — the approved store-driven design: a small floating bar
 // that NAVIGATES between the app's screens, one agenda step at a time, and
@@ -18,6 +18,8 @@ export function WalkthroughBar() {
   const customSystems = useStore(s => s.customSystems);
   const agendaChecks = useStore(s => s.agendaChecks);
   const toggleAgendaCheck = useStore(s => s.toggleAgendaCheck);
+  const notebooks = useStore(s => s.notebooks);
+  const pageContent = useMemo(() => docPageContentLookup(notebooks), [notebooks]);
 
   const counts = useMemo(
     () => dashCounts(items, sprintToggles, sprintOrder, reviewSession, customSystems),
@@ -28,7 +30,7 @@ export function WalkthroughBar() {
 
   const idx = steps.findIndex(s => s.id === walkthrough?.stepId);
   const step = idx >= 0 ? steps[idx] : null;
-  const done = step ? stepDone(step, counts, todayChecks) : false;
+  const done = step ? stepDone(step, counts, todayChecks, pageContent) : false;
 
   const navigatedFor = useRef<string | null>(null);
 
@@ -42,6 +44,7 @@ export function WalkthroughBar() {
       const first = counts.todayTasks[0];
       window.location.hash = first ? `play/${first.id}` : 'feed';
     } else if (step.builtin) window.location.hash = BUILTIN_STEPS[step.builtin].hash;
+    else if (step.docPageId) window.location.hash = `checklist/${step.docPageId}`;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
@@ -64,16 +67,22 @@ export function WalkthroughBar() {
 
   return (
     <div style={{ position: 'fixed', right: 20, bottom: 64, zIndex: 640, display: 'flex', alignItems: 'center', gap: 12, background: 'var(--t-txt)', color: 'var(--t-bg)', borderRadius: 14, padding: '12px 16px', boxShadow: '0 10px 32px rgba(0,0,0,0.35)', maxWidth: 420 }}>
-      <span style={{ fontSize: 18, flexShrink: 0 }}>{done ? '✓' : (step.builtin ? BUILTIN_STEPS[step.builtin].icon : '•')}</span>
+      <span style={{ fontSize: 18, flexShrink: 0 }}>{done ? '✓' : (step.builtin ? BUILTIN_STEPS[step.builtin].icon : step.docPageId ? '☑' : '•')}</span>
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700 }}>
           Walkthrough {idx + 1}/{steps.length}: {step.label}
         </div>
         <div style={{ fontSize: 11.5, opacity: 0.75, lineHeight: 1.4 }}>
-          {done ? 'Done — moving on…' : step.builtin ? BUILTIN_STEPS[step.builtin].hint : 'Manual step — mark it done to continue.'}
+          {done ? 'Done — moving on…' : step.builtin ? BUILTIN_STEPS[step.builtin].hint : step.docPageId ? 'Checklist — tick every box to continue.' : 'Manual step — mark it done to continue.'}
         </div>
       </div>
-      {!step.builtin && !done && (
+      {step.docPageId && !done && (
+        <button onClick={() => { window.location.hash = `checklist/${step.docPageId}`; }}
+          style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', flexShrink: 0 }}>
+          ☑ Open checklist
+        </button>
+      )}
+      {!step.builtin && !step.docPageId && !done && (
         <button onClick={() => toggleAgendaCheck(step.id)}
           style={{ border: 'none', background: 'var(--t-success)', color: 'white', fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', flexShrink: 0 }}>
           ✓ Done
