@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../../store';
 import { dashCounts, TILE_DEFS, BUILTIN_STEPS, stepDone, todayKey, docPageContentLookup } from '../../agenda';
 import { buildQueue } from '../../engine';
+import { AgendaPipeline } from './AgendaPipeline';
 import type { Task } from '../../types';
 
 // Dashboard versions — a registry so designs can coexist and Settings can
@@ -28,6 +29,7 @@ function HomeV1() {
   const agendaChecks = useStore(s => s.agendaChecks);
   const toggleAgendaCheck = useStore(s => s.toggleAgendaCheck);
   const setWalkthrough = useStore(s => s.setWalkthrough);
+  const walkthrough = useStore(s => s.walkthrough);
   const notebooks = useStore(s => s.notebooks);
   const pageContent = useMemo(() => docPageContentLookup(notebooks), [notebooks]);
   const setTableFilterPreset = useStore(s => s.setTableFilterPreset);
@@ -166,24 +168,10 @@ function HomeV1() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: 56, alignItems: 'start' }}>
       <div>
-      {/* Daily agenda pipeline */}
+      {/* Daily agenda — CI-pipeline style (Jenkins / Harness): stage nodes,
+          SUCCESS / RUNNING / QUEUED, flowing connector into the running stage */}
       <div style={sectionTitle}>Daily agenda</div>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 0, flexWrap: 'wrap', marginBottom: 54 }}>
-        {steps.map(({ step, done }, i) => (
-          <div key={step.id} style={{ display: 'flex', alignItems: 'flex-start' }}>
-            {i > 0 && <div style={{ width: 48, height: 2, background: done || steps[i - 1].done ? 'var(--t-success)' : 'var(--t-brd)', marginTop: 25, flexShrink: 0 }} />}
-            <div
-              onClick={() => goStep(step)}
-              title={step.builtin ? BUILTIN_STEPS[step.builtin].hint : step.docPageId ? 'Checklist — open it and tick every box (ticks reset at midnight)' : 'Custom step — click to check it off (resets at midnight)'}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, cursor: 'pointer', width: 110 }}>
-              <div style={{ width: 52, height: 52, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19, fontWeight: 700, background: done ? 'var(--t-success)' : 'var(--t-surf)', color: done ? 'white' : 'var(--t-txt2)', border: done ? 'none' : '2px solid var(--t-brd)' }}>
-                {done ? '✓' : (step.builtin ? BUILTIN_STEPS[step.builtin].icon : step.docPageId ? '☑' : '•')}
-              </div>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: done ? 'var(--t-success)' : 'var(--t-txt2)', textAlign: 'center', lineHeight: 1.3 }}>{step.label}</div>
-            </div>
-          </div>
-        ))}
-      </div>
+      <AgendaPipeline steps={steps} counts={counts} todayChecks={todayChecks} pageContent={pageContent} walking={!!walkthrough} onGo={goStep} />
 
       </div>
       <div>
