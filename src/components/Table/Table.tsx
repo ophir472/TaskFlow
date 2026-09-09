@@ -688,7 +688,7 @@ export function Table() {
               Score:     { code: '≥',  color: 'oklch(0.55 0.12 85)',  desc: 'minimum score' },
             };
             return (
-              <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 6px)', zIndex: 60, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 8, boxShadow: '0 12px 36px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', left: 0, width: '200%', top: 'calc(100% + 6px)', zIndex: 60, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 8, boxShadow: '0 12px 36px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', fontSize: 11, color: 'var(--t-muted)', background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd2)' }}>
                   <span style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Suggestions</span>
                   <span>{visibleOptions.length}</span>
