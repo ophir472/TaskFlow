@@ -936,39 +936,78 @@ export function Table() {
         </div>
       )}
 
-      {/* Gantt view — sequential bars sized by remaining estimates */}
+      {/* Gantt view — professional-timeline style: a clock-time scale with
+          gridlines, a "now" marker, one bar per task carrying its NAME and
+          duration, a darker progress fill for the share of steps already
+          done, and the label spilling to the right when the bar is too short. */}
       {viewMode === 'gantt' && (() => {
         const gRows = (rows.filter(it => it.kind === 'task' && !it.archived) as Task[]).map(t2 => {
           const mins = t2.subtasks.filter(su => !su.done).reduce((n, su) => n + (parseEstimate(su.estimate) || 0), 0)
             || parseEstimate(t2.estimate) || 60;
-          return { t: t2, mins };
+          const steps = t2.subtasks.length;
+          const progress = steps ? t2.subtasks.filter(su => su.done).length / steps : 0;
+          return { t: t2, mins, progress };
         });
-        const total = gRows.reduce((n, r) => n + r.mins, 0) || 1;
+        const total = Math.max(gRows.reduce((n, r) => n + r.mins, 0), 60);
+        // Time scale from now: hourly ticks (half-hourly when the span is short)
+        const tickMins = total <= 180 ? 30 : total <= 720 ? 60 : 120;
+        const ticks: number[] = [];
+        for (let m = 0; m <= total; m += tickMins) ticks.push(m);
+        const now = Date.now();
+        const clock = (offsetMins: number) => {
+          const d = new Date(now + offsetMins * 60_000);
+          return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        };
+        const LABEL_MIN_PCT = 14; // below this the name sits beside the bar
         let acc = 0;
         return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {gRows.length === 0 && <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>Nothing matches the filters.</div>}
-            {gRows.map(({ t: t2, mins }) => {
-              const left = (acc / total) * 100;
-              const width = Math.max((mins / total) * 100, 3);
-              acc += mins;
-              return (
-                <div key={t2.id} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span onClick={() => openTask(t2.id)} title="Open"
-                    style={{ width: 220, flexShrink: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--t-txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>
-                    {t2.title}
-                  </span>
-                  <div style={{ flex: 1, height: 26, background: 'var(--t-surf2)', borderRadius: 6, position: 'relative', overflow: 'hidden' }}>
-                    <div onClick={() => openTask(t2.id)} title={`~${formatMinutes(mins)} remaining`}
-                      style={{ position: 'absolute', left: `${left}%`, width: `${width}%`, top: 3, bottom: 3, background: t2.forToday ? 'var(--t-amber)' : 'var(--t-acc)', opacity: 0.85, borderRadius: 5, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 10.5, fontWeight: 700, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                      {formatMinutes(mins)}
-                    </div>
-                  </div>
+          <div style={{ background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, overflow: 'hidden' }}>
+            {/* scale */}
+            <div style={{ position: 'relative', height: 30, borderBottom: '1px solid var(--t-brd)', background: 'var(--t-surf2)' }}>
+              {ticks.map(m => (
+                <div key={m} style={{ position: 'absolute', left: `${(m / total) * 100}%`, top: 0, bottom: 0, borderLeft: '1px solid var(--t-brd2)' }}>
+                  <span style={{ position: 'absolute', left: 5, top: 7, fontSize: 11, fontWeight: 600, color: 'var(--t-muted)', whiteSpace: 'nowrap' }}>{m === 0 ? 'now' : clock(m)}</span>
                 </div>
-              );
-            })}
-            <div style={{ fontSize: 11.5, color: 'var(--t-muted)', marginTop: 4 }}>
-              Sequential by current order · bar length = remaining estimate (subtasks first, task estimate fallback, 1h default) · total ~{formatMinutes(total)}
+              ))}
+            </div>
+            {/* rows */}
+            <div style={{ position: 'relative' }}>
+              {/* gridlines */}
+              {ticks.map(m => <div key={m} style={{ position: 'absolute', left: `${(m / total) * 100}%`, top: 0, bottom: 0, borderLeft: '1px solid var(--t-brd2)', pointerEvents: 'none' }} />)}
+              {/* now marker */}
+              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, borderLeft: '2px solid var(--t-urgent)', pointerEvents: 'none' }} />
+              {gRows.length === 0 && <div style={{ padding: 18, fontSize: 13, color: 'var(--t-muted)' }}>Nothing matches the filters.</div>}
+              {gRows.map(({ t: t2, mins, progress }, i) => {
+                const left = (acc / total) * 100;
+                const widthPct = (mins / total) * 100;
+                acc += mins;
+                const accent = t2.forToday ? 'var(--t-amber)' : t2.type === 'urgent' ? 'var(--t-urgent)' : 'var(--t-acc)';
+                const inside = widthPct >= LABEL_MIN_PCT;
+                return (
+                  <div key={t2.id} style={{ position: 'relative', height: 40, borderBottom: '1px solid var(--t-brd2)', background: i % 2 ? 'transparent' : 'color-mix(in oklab, var(--t-surf2) 50%, transparent)' }}>
+                    <div onClick={() => openTask(t2.id)} title={`${t2.title} · ~${formatMinutes(mins)} remaining · ${Math.round(progress * 100)}% of steps done`}
+                      style={{ position: 'absolute', left: `${left}%`, width: `${Math.max(widthPct, 0.8)}%`, top: 7, height: 26, borderRadius: 6, cursor: 'pointer', background: `color-mix(in oklab, ${accent} 78%, white)`, boxShadow: '0 1px 2px rgba(0,0,0,0.15)', overflow: 'hidden' }}>
+                      {/* progress fill */}
+                      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${progress * 100}%`, background: accent }} />
+                      {inside && (
+                        <span style={{ position: 'absolute', left: 8, right: 8, top: 0, bottom: 0, display: 'flex', alignItems: 'center', gap: 8, color: 'white', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textShadow: '0 1px 1px rgba(0,0,0,0.25)' }}>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t2.title}</span>
+                          <span style={{ marginLeft: 'auto', fontWeight: 600, opacity: 0.9, flexShrink: 0 }}>{formatMinutes(mins)}</span>
+                        </span>
+                      )}
+                    </div>
+                    {!inside && (
+                      <span onClick={() => openTask(t2.id)}
+                        style={{ position: 'absolute', left: `calc(${left + Math.max(widthPct, 0.8)}% + 8px)`, top: 0, height: 40, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'var(--t-txt)', whiteSpace: 'nowrap', cursor: 'pointer', maxWidth: '40%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {t2.title} <span style={{ fontWeight: 600, color: 'var(--t-muted)' }}>{formatMinutes(mins)}</span>
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ padding: '8px 14px', fontSize: 11.5, color: 'var(--t-muted)', background: 'var(--t-surf2)', borderTop: '1px solid var(--t-brd)' }}>
+              Sequential from now in current order · bar = remaining estimate (subtasks, then task estimate, 1h default) · darker fill = steps done · total ~{formatMinutes(total)}
             </div>
           </div>
         );
