@@ -166,14 +166,13 @@ function HomeV1() {
         })}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: 56, alignItems: 'start' }}>
-      <div>
       {/* Daily agenda — CI-pipeline style (Jenkins / Harness): stage nodes,
-          SUCCESS / RUNNING / QUEUED, flowing connector into the running stage */}
+          SUCCESS / RUNNING / QUEUED, flowing connector into the running stage.
+          Full width — the stages stretch to fill the page. */}
       <div style={sectionTitle}>Daily agenda</div>
       <AgendaPipeline steps={steps} counts={counts} todayChecks={todayChecks} pageContent={pageContent} walking={!!walkthrough} onGo={goStep} />
 
-      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: 56, alignItems: 'start' }}>
       <div>
       {/* Activation: plan first, then today's list in work order */}
       {!planned ? (

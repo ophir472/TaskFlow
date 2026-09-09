@@ -53,7 +53,7 @@ export function AgendaPipeline({ steps, counts, todayChecks, pageContent, walkin
   const colorOf = (s: Status) => (s === 'success' ? GREEN : s === 'running' ? BLUE : GREY);
 
   return (
-    <div style={{ background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 16, padding: '14px 18px 18px', marginBottom: 54 }}>
+    <div style={{ background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 16, padding: '16px 22px 22px', marginBottom: 54, width: '100%', boxSizing: 'border-box' }}>
       {/* header strip — build-style summary + segmented progress */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
         <span style={{ width: 10, height: 10, borderRadius: '50%', background: allDone ? GREEN : BLUE, boxShadow: allDone ? 'none' : `0 0 0 4px color-mix(in oklab, ${BLUE} 20%, transparent)`, animation: !allDone && walking ? 'agendaPulse 1.6s ease-in-out infinite' : 'none' }} />
@@ -78,10 +78,10 @@ export function AgendaPipeline({ steps, counts, todayChecks, pageContent, walkin
           const col = colorOf(st);
           const prevDone = i > 0 && steps[i - 1].done;
           return (
-            <div key={step.id} style={{ display: 'flex', alignItems: 'stretch', flexShrink: 0 }}>
+            <div key={step.id} style={{ display: 'flex', alignItems: 'stretch', flex: '1 1 0', minWidth: 0 }}>
               {/* connector — solid green behind success, flowing into the running stage, dashed grey ahead */}
               {i > 0 && (
-                <div style={{ width: 44, display: 'flex', alignItems: 'center' }}>
+                <div style={{ width: 'clamp(28px, 4vw, 64px)', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
                   <div style={{
                     width: '100%', height: 3, borderRadius: 2,
                     background: st === 'running' && prevDone
@@ -96,7 +96,7 @@ export function AgendaPipeline({ steps, counts, todayChecks, pageContent, walkin
               {/* stage node */}
               <div onClick={() => onGo(step)} title={hint(step)}
                 style={{
-                  width: 148, boxSizing: 'border-box', padding: '12px 12px 10px', borderRadius: 12, cursor: 'pointer', position: 'relative',
+                  flex: 1, minWidth: 150, boxSizing: 'border-box', padding: '14px 14px 12px', borderRadius: 12, cursor: 'pointer', position: 'relative',
                   background: st === 'running' ? `color-mix(in oklab, ${BLUE} 6%, var(--t-surf))` : st === 'success' ? `color-mix(in oklab, ${GREEN} 5%, var(--t-surf))` : 'var(--t-surf2)',
                   border: `1.5px solid ${st === 'queued' ? 'var(--t-brd)' : col}`,
                   boxShadow: st === 'running' ? `0 0 0 4px color-mix(in oklab, ${BLUE} 14%, transparent)` : 'none',
@@ -106,22 +106,22 @@ export function AgendaPipeline({ steps, counts, todayChecks, pageContent, walkin
                 onMouseLeave={e => { e.currentTarget.style.transform = 'none'; }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {/* status badge: ✓ / spinning ring / hollow */}
-                  <div style={{ position: 'relative', width: 34, height: 34, flexShrink: 0 }}>
+                  <div style={{ position: 'relative', width: 38, height: 38, flexShrink: 0 }}>
                     {st === 'running' && (
                       <div style={{ position: 'absolute', inset: -3, borderRadius: '50%', border: `2.5px solid color-mix(in oklab, ${BLUE} 25%, transparent)`, borderTopColor: BLUE, animation: 'spin 1.1s linear infinite' }} />
                     )}
-                    <div style={{ width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, background: st === 'success' ? GREEN : st === 'running' ? 'var(--t-surf)' : 'var(--t-surf)', color: st === 'success' ? 'white' : st === 'running' ? BLUE : 'var(--t-muted)', border: st === 'success' ? 'none' : `1.5px solid ${st === 'running' ? 'transparent' : 'var(--t-brd)'}` }}>
+                    <div style={{ width: 38, height: 38, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 700, background: st === 'success' ? GREEN : st === 'running' ? 'var(--t-surf)' : 'var(--t-surf)', color: st === 'success' ? 'white' : st === 'running' ? BLUE : 'var(--t-muted)', border: st === 'success' ? 'none' : `1.5px solid ${st === 'running' ? 'transparent' : 'var(--t-brd)'}` }}>
                       {st === 'success' ? '✓' : icon(step)}
                     </div>
                   </div>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: st === 'queued' ? 'var(--t-txt2)' : 'var(--t-txt)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{step.label}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: st === 'queued' ? 'var(--t-txt2)' : 'var(--t-txt)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{step.label}</div>
                     <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: st === 'success' ? GREEN : st === 'running' ? BLUE : 'var(--t-muted)' }}>
                       {st === 'success' ? 'success' : st === 'running' ? (walking ? 'running' : 'next') : 'queued'}
                     </div>
                   </div>
                 </div>
-                <div style={{ marginTop: 9, fontSize: 11.5, color: m.warn && st !== 'success' ? 'var(--t-amber)' : 'var(--t-muted)', fontWeight: m.warn && st !== 'success' ? 600 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ marginTop: 10, fontSize: 12.5, color: m.warn && st !== 'success' ? 'var(--t-amber)' : 'var(--t-muted)', fontWeight: m.warn && st !== 'success' ? 600 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {m.text}
                 </div>
                 <div style={{ position: 'absolute', right: 8, top: 8, fontSize: 10, color: 'var(--t-muted)' }}>#{i + 1}</div>
