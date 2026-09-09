@@ -672,7 +672,7 @@ export function Table() {
               }
             }}
             placeholder="Search or filter…"
-            style={{ width: '100%', fontSize: 13, padding: '6px 26px 6px 26px', borderRadius: 7, border: '1px solid ' + (search || searchOpen ? 'var(--t-acc)' : 'var(--t-brd)'), background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', boxSizing: 'border-box' }} />
+            style={{ width: '100%', height: 32, fontSize: 13, padding: '0 26px', borderRadius: 8, border: '1px solid ' + (search || searchOpen ? 'var(--t-acc)' : 'var(--t-brd)'), background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', boxSizing: 'border-box' }} />
           {search ? (
             <span onClick={() => { setSearch(''); searchRef.current?.focus(); }} title="Clear"
               style={{ position: 'absolute', right: 8, fontSize: 13, color: 'var(--t-muted)', cursor: 'pointer', lineHeight: 1 }}>×</span>
@@ -745,23 +745,23 @@ export function Table() {
         <button
           onClick={() => { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
           title="Copy a link to this exact search / filter set"
-          style={{ marginLeft: 8, flexShrink: 0, minWidth: 92, textAlign: 'center', border: '1px solid var(--t-brd)', background: copied ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: copied ? 'var(--t-acc-dk)' : 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '6px 10px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          style={{ flexShrink: 0, height: 32, minWidth: 96, textAlign: 'center', border: '1px solid var(--t-brd)', background: copied ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: copied ? 'var(--t-acc-dk)' : 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '0 10px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap' }}>
           {copied ? '✓ Copied' : '⧉ Copy link'}
         </button>
         {/* Views + column picker — one fixed header line with the title and search;
             anything that comes and goes (filter pills, selection, reset) lives in the
             bar below the header so this line never reflows */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', alignItems: 'center', flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'nowrap', alignItems: 'center', flex: 1, minWidth: 0 }}>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           <button onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has('forToday')) n.delete('forToday'); else n.add('forToday'); return n; })}
             title="Show only tasks marked for today"
-            style={{ fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid ' + (quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-brd)'), background: quickFilters.has('forToday') ? 'var(--t-amber-bg)' : 'var(--t-surf)', color: quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-txt2)' }}>
+            style={{ height: 32, fontSize: 12.5, fontWeight: 600, padding: '0 12px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid ' + (quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-brd)'), background: quickFilters.has('forToday') ? 'var(--t-amber-bg)' : 'var(--t-surf)', color: quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-txt2)' }}>
             ◷ Today
           </button>
           {/* Group by — requester / project (table view). Active button shows ▾;
               clicking it again lists the existing values to filter on. */}
           <div ref={groupMenuRef} style={{ position: 'relative' }}>
-            <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'stretch', height: 32, border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
               {([['', groupBy ? 'Filtered by' : 'Not filtered'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => (
                 <button key={k || 'none'}
                   onClick={() => {
@@ -769,7 +769,7 @@ export function Table() {
                     setGroupBy(k); setCollapsedGroups(new Set()); setGroupMenu(false); if (k) setViewMode('table');
                   }}
                   title={k ? (groupBy === k ? `Pick a ${k} to filter on` : `Group rows by ${k}`) : (groupBy ? 'Clear the grouping' : 'No grouping')}
-                  style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k && k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : (!k && groupBy) ? 'var(--t-txt2)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, minWidth: k ? undefined : 92, whiteSpace: 'nowrap' }}>
+                  style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k && k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : (!k && groupBy) ? 'var(--t-txt2)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '0 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, minWidth: k ? undefined : 92, whiteSpace: 'nowrap' }}>
                   {label}{groupBy === k && k ? <span style={{ fontSize: 10, transform: groupMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span> : null}{!k && groupBy ? <span title="Clear the grouping" style={{ fontSize: 13, lineHeight: 1, color: 'var(--t-muted)' }}>×</span> : null}
                 </button>
               ))}
@@ -800,27 +800,25 @@ export function Table() {
             })()}
           </div>
           {/* View switcher — table · cards · pipeline · gantt */}
-          <div style={{ display: 'flex', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'stretch', height: 32, border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
             {([['table', '☰', 'Table'], ['cards', '▦', 'Cards'], ['pipeline', '⇉', 'Pipeline (by status)'], ['gantt', '𝄜', 'Gantt (by estimates)']] as const).map(([mode, icon, tip]) => (
               <button key={mode} onClick={() => setViewMode(mode)} title={tip}
-                style={{ border: 'none', borderLeft: mode !== 'table' ? '1px solid var(--t-brd)' : 'none', background: viewMode === mode ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: viewMode === mode ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 13, fontWeight: 700, padding: '6px 11px', cursor: 'pointer' }}>
+                style={{ border: 'none', borderLeft: mode !== 'table' ? '1px solid var(--t-brd)' : 'none', background: viewMode === mode ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: viewMode === mode ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 13, fontWeight: 700, padding: '0 11px', cursor: 'pointer' }}>
                 {icon}
               </button>
             ))}
           </div>
           <button onClick={() => setDailyOpen(true)}
             title="Daily — today's work, pick what you're doing (also: d)"
-            style={{ border: 'none', background: 'oklch(0.6 0.14 150)', color: 'white', fontSize: 12.5, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            style={{ height: 32, border: 'none', background: 'oklch(0.6 0.14 150)', color: 'white', fontSize: 12.5, fontWeight: 700, padding: '0 14px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
             <span style={{ fontSize: 10 }}>▶</span> Daily
           </button>
-        </div>
-
         <div style={{ position: 'relative' }} ref={colPickerRef}>
           <button onClick={() => setColPickerOpen(o => !o)}
             title="Columns — choose which to show"
-            style={{ ...ghostBtn, fontSize: 15, padding: '4px 8px' }}
+            style={{ height: 32, width: 36, fontSize: 15, padding: 0, borderRadius: 8, border: '1px solid var(--t-brd)', background: colPickerOpen ? 'var(--t-surf2)' : 'var(--t-surf)', cursor: 'pointer' }}
             onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+            onMouseLeave={e => (e.currentTarget.style.background = colPickerOpen ? 'var(--t-surf2)' : 'var(--t-surf)')}>
             🔧
           </button>
           {colPickerOpen && (
@@ -835,6 +833,7 @@ export function Table() {
               ))}
             </div>
           )}
+        </div>
         </div>
       </div>
         </>,
