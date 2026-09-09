@@ -650,7 +650,7 @@ export function Table() {
         <>
         {/* Search + filter picker — title/requester/project/Jira/ITSM/notes text
             search; focused & empty = every filter option; typing narrows both */}
-        <div ref={searchWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: 'min(420px, 100%)' }}>
+        <div ref={searchWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: 300, flexShrink: 0 }}>
           <span style={{ position: 'absolute', left: 9, fontSize: 13, color: 'var(--t-muted)', pointerEvents: 'none' }}>⌕</span>
           <input ref={searchRef} value={search}
             onChange={e => { setSearch(e.target.value); setSearchHi(-1); setSearchOpen(true); }}
@@ -743,13 +743,8 @@ export function Table() {
           style={{ marginLeft: 8, border: '1px solid var(--t-brd)', background: copied ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: copied ? 'var(--t-acc-dk)' : 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '6px 10px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap' }}>
           {copied ? '✓ Copied' : '⧉ Copy link'}
         </button>
-
-        </>,
-        headerSlot,
-      )}
-
-      {/* Filters + column picker */}
-      <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* Filters + views + column picker — same line as the title and search */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', flex: 1, minWidth: 0 }}>
         {/* Active filter pills */}
         {(() => {
           const QF_LABELS: Record<string, string> = { createdToday: 'Created today', updatedToday: 'Updated today', forToday: 'Today scope', untagged: 'Untagged', mail: '✉ Mail', nojira: 'No Jira yet' };
@@ -912,6 +907,9 @@ export function Table() {
           )}
         </div>
       </div>
+        </>,
+        headerSlot,
+      )}
 
       {/* Pipeline view — filtered tasks by status, board-style */}
       {viewMode === 'pipeline' && (
