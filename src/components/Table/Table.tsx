@@ -693,10 +693,10 @@ export function Table() {
           </button>
           {/* Group by — requester / project (table view) */}
           <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--t-muted)', padding: '0 8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Group</span>
-            {([['', 'None'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label]) => (
+            {([['', 'None'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => (
               <button key={k || 'none'} onClick={() => { setGroupBy(k); setCollapsedGroups(new Set()); if (k) setViewMode('table'); }}
-                style={{ border: 'none', borderLeft: '1px solid var(--t-brd)', background: groupBy === k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer' }}>
+                title={k ? `Group rows by ${k}` : 'No grouping'}
+                style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer' }}>
                 {label}
               </button>
             ))}
