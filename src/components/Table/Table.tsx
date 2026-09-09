@@ -602,11 +602,14 @@ export function Table() {
                 else setSearchOpen(false); // plain text search — rows already filter live
               }
             }}
-            placeholder="Search or filter…  /"
+            placeholder="Search or filter…"
             style={{ width: '100%', fontSize: 13, padding: '6px 26px 6px 26px', borderRadius: 7, border: '1px solid ' + (search || searchOpen ? 'var(--t-acc)' : 'var(--t-brd)'), background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', boxSizing: 'border-box' }} />
-          {search && (
+          {search ? (
             <span onClick={() => { setSearch(''); searchRef.current?.focus(); }} title="Clear"
               style={{ position: 'absolute', right: 8, fontSize: 13, color: 'var(--t-muted)', cursor: 'pointer', lineHeight: 1 }}>×</span>
+          ) : !searchOpen && (
+            <kbd title="Press / to jump here"
+              style={{ position: 'absolute', right: 7, fontSize: 11, fontWeight: 700, fontFamily: 'inherit', lineHeight: 1, padding: '3px 7px', borderRadius: 5, border: '1px solid var(--t-brd)', borderBottomWidth: 2, background: 'var(--t-surf2)', color: 'var(--t-muted)', pointerEvents: 'none' }}>/</kbd>
           )}
           {searchOpen && (visibleOptions.length > 0 || !search.trim()) && (
             <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 6px)', zIndex: 60, maxHeight: 420, overflowY: 'auto', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 10px 32px rgba(0,0,0,0.18)', padding: '4px 0' }}>
