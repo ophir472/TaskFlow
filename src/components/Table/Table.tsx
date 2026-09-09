@@ -1,4 +1,5 @@
 import { Fragment, useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
@@ -112,6 +113,9 @@ export function Table() {
   const [aiTaskId, setAiTaskId] = useState<string | null>(null);
   const [dailyOpen, setDailyOpen] = useState(false);
   const [search, setSearch] = useState('');
+  // The search box lives in the page header (right of the title) via a portal.
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => { setHeaderSlot(document.getElementById('view-header-slot')); }, []);
   const [groupBy, setGroupBy] = useState<'' | 'requester' | 'project'>('');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
@@ -534,22 +538,24 @@ export function Table() {
   return (
     <>
     <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', overflowX: 'hidden' }}>
-      {/* Search row */}
-      <div style={{ display: 'flex', alignItems: 'center' }}>
+      {headerSlot && createPortal(
+        <>
         {/* Search — title, requester, project, Jira, ITSM, notes, description */}
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
           <span style={{ position: 'absolute', left: 9, fontSize: 13, color: 'var(--t-muted)', pointerEvents: 'none' }}>⌕</span>
           <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
             onKeyDown={e => { if (e.key === 'Escape') { setSearch(''); (e.target as HTMLInputElement).blur(); } }}
             placeholder="Search tasks…  /"
-            style={{ width: 'min(480px, 100%)', fontSize: 13, padding: '6px 26px 6px 26px', borderRadius: 7, border: '1px solid ' + (search ? 'var(--t-acc)' : 'var(--t-brd)'), background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
+            style={{ width: 'min(420px, 100%)', fontSize: 13, padding: '6px 26px 6px 26px', borderRadius: 7, border: '1px solid ' + (search ? 'var(--t-acc)' : 'var(--t-brd)'), background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
           {search && (
             <span onClick={() => { setSearch(''); searchRef.current?.focus(); }} title="Clear"
               style={{ position: 'absolute', right: 8, fontSize: 13, color: 'var(--t-muted)', cursor: 'pointer', lineHeight: 1 }}>×</span>
           )}
         </div>
 
-      </div>
+        </>,
+        headerSlot,
+      )}
 
       {/* Filters + column picker */}
       <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>

@@ -683,8 +683,10 @@ export default function App() {
         transition: 'margin-left 0.15s ease',
       }}>
         {view !== 'feed' && (
-          <div style={{ padding: '22px 36px 8px' }}>
+          <div style={{ padding: '22px 36px 8px', display: 'flex', alignItems: 'center', gap: 18 }}>
             <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--t-txt)' }}>{VIEW_TITLES[view]}</div>
+            {/* Views portal header-level controls here (e.g. the Table's search box) */}
+            <div id="view-header-slot" style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }} />
           </div>
         )}
 
