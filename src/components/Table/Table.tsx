@@ -655,7 +655,7 @@ export function Table() {
         <>
         {/* Search + filter picker — title/requester/project/Jira/ITSM/notes text
             search; focused & empty = every filter option; typing narrows both */}
-        <div ref={searchWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: 300, flexShrink: 0 }}>
+        <div ref={searchWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: '0 1 300px', minWidth: 160 }}>
           <span style={{ position: 'absolute', left: 9, fontSize: 13, color: 'var(--t-muted)', pointerEvents: 'none' }}>⌕</span>
           <input ref={searchRef} value={search}
             onChange={e => { setSearch(e.target.value); setSearchHi(-1); setSearchOpen(true); }}
@@ -745,11 +745,112 @@ export function Table() {
         <button
           onClick={() => { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
           title="Copy a link to this exact search / filter set"
-          style={{ marginLeft: 8, border: '1px solid var(--t-brd)', background: copied ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: copied ? 'var(--t-acc-dk)' : 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '6px 10px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          style={{ marginLeft: 8, flexShrink: 0, minWidth: 92, textAlign: 'center', border: '1px solid var(--t-brd)', background: copied ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: copied ? 'var(--t-acc-dk)' : 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '6px 10px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap' }}>
           {copied ? '✓ Copied' : '⧉ Copy link'}
         </button>
-        {/* Filters + views + column picker — same line as the title and search */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', flex: 1, minWidth: 0 }}>
+        {/* Views + column picker — one fixed header line with the title and search;
+            anything that comes and goes (filter pills, selection, reset) lives in the
+            bar below the header so this line never reflows */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', alignItems: 'center', flex: 1, minWidth: 0 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has('forToday')) n.delete('forToday'); else n.add('forToday'); return n; })}
+            title="Show only tasks marked for today"
+            style={{ fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid ' + (quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-brd)'), background: quickFilters.has('forToday') ? 'var(--t-amber-bg)' : 'var(--t-surf)', color: quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-txt2)' }}>
+            ◷ Today
+          </button>
+          {/* Group by — requester / project (table view). Active button shows ▾;
+              clicking it again lists the existing values to filter on. */}
+          <div ref={groupMenuRef} style={{ position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
+              {([['', groupBy ? 'Filtered by' : 'Not filtered'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => (
+                <button key={k || 'none'}
+                  onClick={() => {
+                    if (groupBy === k && k) { setGroupMenu(m => !m); setGroupMenuHi(0); return; }
+                    setGroupBy(k); setCollapsedGroups(new Set()); setGroupMenu(false); if (k) setViewMode('table');
+                  }}
+                  title={k ? (groupBy === k ? `Pick a ${k} to filter on` : `Group rows by ${k}`) : (groupBy ? 'Clear the grouping' : 'No grouping')}
+                  style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k && k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : (!k && groupBy) ? 'var(--t-txt2)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, minWidth: k ? undefined : 92, whiteSpace: 'nowrap' }}>
+                  {label}{groupBy === k && k ? <span style={{ fontSize: 10, transform: groupMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span> : null}{!k && groupBy ? <span title="Clear the grouping" style={{ fontSize: 13, lineHeight: 1, color: 'var(--t-muted)' }}>×</span> : null}
+                </button>
+              ))}
+            </div>
+            {groupMenu && groupBy && (() => {
+              const known = groupBy === 'requester' ? requesters : projects;
+              const values = Array.from(new Set([...known, ...Array.from(groupCounts.keys()).filter(k => k !== '—')]));
+              const pick = (v: string) => { if (groupBy === 'requester') setReqFilter(v); else setProjFilter(v); setGroupMenu(false); };
+              return (
+                <div tabIndex={-1} autoFocus
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') { e.stopPropagation(); setGroupMenu(false); }
+                    else if (e.key === 'ArrowDown') { e.preventDefault(); setGroupMenuHi(h => (h + 1) % Math.max(values.length, 1)); }
+                    else if (e.key === 'ArrowUp') { e.preventDefault(); setGroupMenuHi(h => (h - 1 + values.length) % Math.max(values.length, 1)); }
+                    else if (e.key === 'Enter' && values[groupMenuHi]) { e.preventDefault(); pick(values[groupMenuHi]); }
+                  }}
+                  style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 40, minWidth: 220, maxHeight: 320, overflowY: 'auto', outline: 'none', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 10px 32px rgba(0,0,0,0.18)', padding: '4px 0' }}>
+                  {values.length === 0 && <div style={{ padding: '8px 14px', fontSize: 12.5, color: 'var(--t-muted)' }}>No {groupBy}s yet.</div>}
+                  {values.map((v, i) => (
+                    <div key={v} onClick={() => pick(v)} onMouseEnter={() => setGroupMenuHi(i)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--t-txt2)', background: groupMenuHi === i ? 'var(--t-surf2)' : 'transparent' }}>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>
+                      <span style={{ fontSize: 11, color: 'var(--t-muted)' }}>{groupCounts.get(v) ?? 0}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+          {/* View switcher — table · cards · pipeline · gantt */}
+          <div style={{ display: 'flex', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
+            {([['table', '☰', 'Table'], ['cards', '▦', 'Cards'], ['pipeline', '⇉', 'Pipeline (by status)'], ['gantt', '𝄜', 'Gantt (by estimates)']] as const).map(([mode, icon, tip]) => (
+              <button key={mode} onClick={() => setViewMode(mode)} title={tip}
+                style={{ border: 'none', borderLeft: mode !== 'table' ? '1px solid var(--t-brd)' : 'none', background: viewMode === mode ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: viewMode === mode ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 13, fontWeight: 700, padding: '6px 11px', cursor: 'pointer' }}>
+                {icon}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setDailyOpen(true)}
+            title="Daily — today's work, pick what you're doing (also: d)"
+            style={{ border: 'none', background: 'oklch(0.6 0.14 150)', color: 'white', fontSize: 12.5, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 10 }}>▶</span> Daily
+          </button>
+        </div>
+
+        <div style={{ position: 'relative' }} ref={colPickerRef}>
+          <button onClick={() => setColPickerOpen(o => !o)}
+            title="Columns — choose which to show"
+            style={{ ...ghostBtn, fontSize: 15, padding: '4px 8px' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+            🔧
+          </button>
+          {colPickerOpen && (
+            <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: '8px 0', zIndex: 30, minWidth: 180 }}>
+              {allCols.map(col => (
+                <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', cursor: col.key === 'title' ? 'default' : 'pointer', fontSize: 13.5, color: 'var(--t-txt)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'var(--t-surf)')}>
+                  <input type="checkbox" checked={visibleCols.has(col.key)} onChange={() => toggleCol(col.key)} disabled={col.key === 'title'} style={{ cursor: col.key === 'title' ? 'default' : 'pointer' }} />
+                  {col.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+        </>,
+        headerSlot,
+      )}
+
+      {/* Filter bar — between the header and the table: active filter pills
+          (from the search box, ⌕ cells, the ▾ pickers — all the same string),
+          manual-order reset and the selection actions. Only renders when it
+          has something to show, so the header line above stays fixed. */}
+      {(() => {
+        const hasPills = !!(workTypeFilter || statusFilter || reqFilter || projFilter || tagFilter || typeFilter || minScore || [...quickFilters].some(k => k !== 'forToday'));
+        const hasManual = items.some(it => it.kind === 'task' && (it as Task).manuallyMoved);
+        if (!hasPills && !hasManual && selCount === 0) return null;
+        return (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', padding: '8px 12px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 10 }}>
         {/* Active filter pills */}
         {(() => {
           const QF_LABELS: Record<string, string> = { createdToday: 'Created today', updatedToday: 'Updated today', forToday: 'Today scope', untagged: 'Untagged', mail: '✉ Mail', nojira: 'No Jira yet' };
@@ -827,94 +928,9 @@ export function Table() {
           </>
         )}
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has('forToday')) n.delete('forToday'); else n.add('forToday'); return n; })}
-            title="Show only tasks marked for today"
-            style={{ fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap', border: '1px solid ' + (quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-brd)'), background: quickFilters.has('forToday') ? 'var(--t-amber-bg)' : 'var(--t-surf)', color: quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-txt2)' }}>
-            ◷ Today
-          </button>
-          {/* Group by — requester / project (table view). Active button shows ▾;
-              clicking it again lists the existing values to filter on. */}
-          <div ref={groupMenuRef} style={{ position: 'relative' }}>
-            <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
-              {([['', groupBy ? 'Filtered by' : 'Not filtered'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => (
-                <button key={k || 'none'}
-                  onClick={() => {
-                    if (groupBy === k && k) { setGroupMenu(m => !m); setGroupMenuHi(0); return; }
-                    setGroupBy(k); setCollapsedGroups(new Set()); setGroupMenu(false); if (k) setViewMode('table');
-                  }}
-                  title={k ? (groupBy === k ? `Pick a ${k} to filter on` : `Group rows by ${k}`) : (groupBy ? 'Clear the grouping' : 'No grouping')}
-                  style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k && k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : (!k && groupBy) ? 'var(--t-txt2)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  {label}{groupBy === k && k ? <span style={{ fontSize: 10, transform: groupMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span> : null}{!k && groupBy ? <span title="Clear the grouping" style={{ fontSize: 13, lineHeight: 1, color: 'var(--t-muted)' }}>×</span> : null}
-                </button>
-              ))}
-            </div>
-            {groupMenu && groupBy && (() => {
-              const known = groupBy === 'requester' ? requesters : projects;
-              const values = Array.from(new Set([...known, ...Array.from(groupCounts.keys()).filter(k => k !== '—')]));
-              const pick = (v: string) => { if (groupBy === 'requester') setReqFilter(v); else setProjFilter(v); setGroupMenu(false); };
-              return (
-                <div tabIndex={-1} autoFocus
-                  onKeyDown={e => {
-                    if (e.key === 'Escape') { e.stopPropagation(); setGroupMenu(false); }
-                    else if (e.key === 'ArrowDown') { e.preventDefault(); setGroupMenuHi(h => (h + 1) % Math.max(values.length, 1)); }
-                    else if (e.key === 'ArrowUp') { e.preventDefault(); setGroupMenuHi(h => (h - 1 + values.length) % Math.max(values.length, 1)); }
-                    else if (e.key === 'Enter' && values[groupMenuHi]) { e.preventDefault(); pick(values[groupMenuHi]); }
-                  }}
-                  style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 40, minWidth: 220, maxHeight: 320, overflowY: 'auto', outline: 'none', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 10px 32px rgba(0,0,0,0.18)', padding: '4px 0' }}>
-                  {values.length === 0 && <div style={{ padding: '8px 14px', fontSize: 12.5, color: 'var(--t-muted)' }}>No {groupBy}s yet.</div>}
-                  {values.map((v, i) => (
-                    <div key={v} onClick={() => pick(v)} onMouseEnter={() => setGroupMenuHi(i)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--t-txt2)', background: groupMenuHi === i ? 'var(--t-surf2)' : 'transparent' }}>
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>
-                      <span style={{ fontSize: 11, color: 'var(--t-muted)' }}>{groupCounts.get(v) ?? 0}</span>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
           </div>
-          {/* View switcher — table · cards · pipeline · gantt */}
-          <div style={{ display: 'flex', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
-            {([['table', '☰', 'Table'], ['cards', '▦', 'Cards'], ['pipeline', '⇉', 'Pipeline (by status)'], ['gantt', '𝄜', 'Gantt (by estimates)']] as const).map(([mode, icon, tip]) => (
-              <button key={mode} onClick={() => setViewMode(mode)} title={tip}
-                style={{ border: 'none', borderLeft: mode !== 'table' ? '1px solid var(--t-brd)' : 'none', background: viewMode === mode ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: viewMode === mode ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 13, fontWeight: 700, padding: '6px 11px', cursor: 'pointer' }}>
-                {icon}
-              </button>
-            ))}
-          </div>
-          <button onClick={() => setDailyOpen(true)}
-            title="Daily — today's work, pick what you're doing (also: d)"
-            style={{ border: 'none', background: 'oklch(0.6 0.14 150)', color: 'white', fontSize: 12.5, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-            <span style={{ fontSize: 10 }}>▶</span> Daily
-          </button>
-        </div>
-
-        <div style={{ position: 'relative' }} ref={colPickerRef}>
-          <button onClick={() => setColPickerOpen(o => !o)}
-            title="Columns — choose which to show"
-            style={{ ...ghostBtn, fontSize: 15, padding: '4px 8px' }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-            🔧
-          </button>
-          {colPickerOpen && (
-            <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: '8px 0', zIndex: 30, minWidth: 180 }}>
-              {allCols.map(col => (
-                <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', cursor: col.key === 'title' ? 'default' : 'pointer', fontSize: 13.5, color: 'var(--t-txt)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'var(--t-surf)')}>
-                  <input type="checkbox" checked={visibleCols.has(col.key)} onChange={() => toggleCol(col.key)} disabled={col.key === 'title'} style={{ cursor: col.key === 'title' ? 'default' : 'pointer' }} />
-                  {col.label}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-        </>,
-        headerSlot,
-      )}
+        );
+      })()}
 
       {/* Pipeline view — filtered tasks by status, board-style */}
       {viewMode === 'pipeline' && (

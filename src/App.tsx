@@ -683,10 +683,12 @@ export default function App() {
         transition: 'margin-left 0.15s ease',
       }}>
         {view !== 'feed' && (
-          <div style={{ padding: '22px 36px 8px', display: 'flex', alignItems: 'center', gap: 18 }}>
-            <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--t-txt)' }}>{VIEW_TITLES[view]}</div>
+          // Fixed-height, single-line header: the title plus whatever the view
+          // portals in (the Table's search + view controls). Never wraps.
+          <div style={{ padding: '22px 36px 8px', display: 'flex', alignItems: 'center', gap: 18, minHeight: 66, flexShrink: 0 }}>
+            <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.01em', color: 'var(--t-txt)', whiteSpace: 'nowrap', flexShrink: 0 }}>{VIEW_TITLES[view]}</div>
             {/* Views portal header-level controls here (e.g. the Table's search box) */}
-            <div id="view-header-slot" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, flex: 1, minWidth: 0 }} />
+            <div id="view-header-slot" style={{ display: 'flex', alignItems: 'center', flexWrap: 'nowrap', gap: 10, flex: 1, minWidth: 0 }} />
           </div>
         )}
 
