@@ -753,8 +753,8 @@ export function Table() {
           })()}
         </div>
         <button
-          onClick={() => { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-          title="Copy a link to this exact search / filter set"
+          onClick={() => { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 2200); }}
+          title="Copy link"
           style={{ flexShrink: 0, height: 32, width: 36, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: '1px solid ' + (copied ? 'var(--t-acc)' : 'var(--t-brd)'), background: copied ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: copied ? 'var(--t-acc-dk)' : 'var(--t-txt2)', borderRadius: 8, cursor: 'pointer' }}>
           {copied ? <span style={{ fontSize: 14, fontWeight: 700 }}>✓</span> : <LinkIcon />}
         </button>
@@ -944,6 +944,13 @@ export function Table() {
           </div>
         );
       })()}
+
+      {/* Copy-link confirmation — small banner, bottom-right */}
+      {copied && (
+        <div role="status" style={{ position: 'fixed', right: 20, bottom: 20, zIndex: 80, display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 9, background: 'var(--t-surf)', color: 'var(--t-txt)', border: '1px solid var(--t-brd)', boxShadow: '0 6px 20px rgba(0,0,0,0.18)', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>
+          <span style={{ color: 'var(--t-success, oklch(0.5 0.14 150))', fontWeight: 800 }}>✓</span> Link to current view copied
+        </div>
+      )}
 
       {/* Pipeline view — filtered tasks by status, board-style */}
       {viewMode === 'pipeline' && (
