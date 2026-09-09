@@ -20,6 +20,20 @@ const PROMOTION_GOAL = 3;
 // changes the URL, which would flip this flag mid-session).
 const IS_PREVIEW_MODE = typeof window !== 'undefined' && window.location.hash.startsWith('#preview/');
 
+// Status ⇄ archive stay linked for tasks, no matter where the status was
+// changed (popup, table/archive inline edit, kanban drag, updateTask):
+//   done ⇒ archived (lands in the Archive table)
+//   archived + any active status ⇒ un-archived (leaves the Archive table)
+//   in_progress ⇒ also marked Today (today ⇄ in-progress pairing)
+function linkStatus(prev: Task, merged: Task, nextStatus: Task['status'] | undefined): Task {
+  if (nextStatus === undefined) return merged;
+  let out = merged;
+  if (nextStatus === 'done') out = { ...out, archived: true };
+  else if (nextStatus !== 'archived' && prev.archived) out = { ...out, archived: false };
+  if (nextStatus === 'in_progress' && !prev.forToday) out = { ...out, forToday: true };
+  return out;
+}
+
 // Followup refs: a stored record by id, or a ticket row by key (its shadow
 // record is created on first touch so progress/notes/done have a home).
 export type FollowupRef = { id: string } | { ticketKey: string; title: string };
@@ -291,18 +305,7 @@ export const useStore = create<AppState>()(
           items: s.items.map(it => {
             if (it.id !== id) return it;
             let merged = { ...it, ...patch, updatedAt: Date.now() } as Item;
-            // Status ⇄ archive stay linked for tasks, no matter where the
-            // status was changed (modal dropdown, table inline edit, kanban
-            // drag): Done ⇒ archived (shows up in the Archive table);
-            // archived + moved to an active status ⇒ un-archived.
-            const nextStatus = (patch as Partial<Task>).status;
-            if (it.kind === 'task' && nextStatus !== undefined) {
-              if (nextStatus === 'done') merged = { ...merged, archived: true } as Item;
-              else if (nextStatus !== 'archived' && it.archived) merged = { ...merged, archived: false } as Item;
-              // Today ⇄ in-progress pairing (the other direction lives in
-              // setForToday): moving a task INTO in-progress marks it Today.
-              if (nextStatus === 'in_progress' && !(it as Task).forToday) merged = { ...merged, forToday: true } as Item;
-            }
+            if (it.kind === 'task') merged = linkStatus(it, merged as Task, (patch as Partial<Task>).status);
             // Stamp notesChangedAt on real notes edits so consumers (review's
             // update-summary prefill) can detect changes from store data alone.
             const nextNotes = (patch as Partial<Task>).notes;
@@ -323,7 +326,7 @@ export const useStore = create<AppState>()(
       updateTask: (id, patch) => {
         slog('task:update', { id, fields: Object.keys(patch), patch });
         set(s => ({
-          items: s.items.map(it => it.id === id && it.kind === 'task' ? { ...it, ...patch, updatedAt: Date.now() } : it),
+          items: s.items.map(it => it.id === id && it.kind === 'task' ? linkStatus(it, { ...it, ...patch, updatedAt: Date.now() }, patch.status) : it),
           history: pushHistory(s.history, { ts: Date.now(), type: 'updateTask', id })
         }));
       },
