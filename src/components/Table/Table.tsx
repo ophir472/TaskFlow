@@ -882,8 +882,8 @@ export function Table() {
         {/* Views + column picker — one fixed header line with the title and search;
             anything that comes and goes (filter pills, selection, reset) lives in the
             bar below the header so this line never reflows */}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'nowrap', alignItems: 'center', flex: 1, minWidth: 0 }}>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', gap: '8px 10px', flexWrap: 'wrap', alignItems: 'center', flex: 1, minWidth: 0 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {/* Scope + grouping in one segmented control: ◷ Today (today-only
               scope toggle) · Not filtered / Requester / Project (grouping; the
               active one shows ▾ and lists the existing values to filter on). */}
