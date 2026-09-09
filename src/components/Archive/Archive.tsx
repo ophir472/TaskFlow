@@ -3,6 +3,7 @@ import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { MailEntryPopup } from '../Mail/MailEntryPopup';
+import { CornerBanner } from '../Common/CornerBanner';
 import { scoreItem } from '../../engine';
 import { formatSchedule } from '../../scheduleEngine';
 import type { Item, Task, Reminder } from '../../types';
@@ -79,6 +80,8 @@ export function Archive() {
   const deleteItem = useStore(s => s.deleteItem);
 
   const [reqFilter, setReqFilter] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<number | undefined>(undefined);
   const [projFilter, setProjFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -247,9 +250,12 @@ export function Archive() {
 
   function bulkRestore() {
     const ids = [...selected].filter(id => rows.some(r => r.id === id));
-    if (!ids.length || !confirm(`Restore ${ids.length} item${ids.length > 1 ? 's' : ''}?`)) return;
+    if (!ids.length) return;
     ids.forEach(id => unarchiveItem(id));
     setSelected(new Set());
+    setNotice(`${ids.length} item${ids.length > 1 ? 's' : ''} restored`);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 6000);
   }
 
   function bulkDelete() {
@@ -354,6 +360,7 @@ export function Archive() {
 
   return (
     <>
+    <CornerBanner text={notice} action={notice ? { label: 'Open table', onClick: () => { window.location.hash = '#table'; } } : null} />
     <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', overflowX: 'hidden' }}>
       {archived.length === 0 ? (
         <div style={{ paddingTop: 60, textAlign: 'center', color: 'var(--t-muted)', fontSize: 15 }}>No archived items yet.</div>

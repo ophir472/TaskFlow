@@ -1,6 +1,7 @@
 import { Fragment, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { parseQuery, setField, setIs } from '../../tableQuery';
+import { CornerBanner } from '../Common/CornerBanner';
+import { parseQuery, setField, setIs, stripText } from '../../tableQuery';
 import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
@@ -62,6 +63,11 @@ const LinkIcon = () => (
     <path d="M13.6 10.4a2.6 2.6 0 0 1 0 3.7l-2.4 2.4a2.6 2.6 0 0 1-3.7-3.7l1.3-1.3" />
   </svg>
 );
+
+type ViewMode = 'table' | 'cards' | 'pipeline' | 'gantt';
+const VIEW_MODES: ViewMode[] = ['table', 'cards', 'pipeline', 'gantt'];
+const isViewMode = (v: unknown): v is ViewMode => VIEW_MODES.includes(v as ViewMode);
+const PAGE_SIZES = [10, 25, 50, 100];
 
 const ghostBtn: React.CSSProperties = {
   fontSize: 13, padding: '5px 10px', borderRadius: 6, border: 'none',
@@ -145,6 +151,14 @@ export function Table() {
   });
   const [searchOpen, setSearchOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Bottom-right confirmation for actions that need no dialog (there is a way back).
+  const [notice, setNotice] = useState<{ text: string; action?: { label: string; onClick: () => void } } | null>(null);
+  const noticeTimer = useRef<number | undefined>(undefined);
+  const showNotice = (text: string, action?: { label: string; onClick: () => void }) => {
+    setNotice({ text, action });
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), action ? 6000 : 2200);
+  };
   // Gantt: live bar resize (duration) — {id, mins} while the handle is held.
   const [ganttResize, setGanttResize] = useState<{ id: string; mins: number } | null>(null);
   const ganttDrag = useRef<{ id: string; startX: number; startMins: number; pxPerMin: number } | null>(null);
@@ -152,28 +166,6 @@ export function Table() {
   const updateSubtask = useStore(s => s.updateSubtask);
   // Mirror the query into the URL (replaceState — not a history entry per
   // keystroke) and read it back when the hash changes underneath us.
-  useEffect(() => {
-    if (!window.location.hash.startsWith('#table')) return;
-    const params = new URLSearchParams();
-    if (search.trim()) params.set('q', search.trim());
-    if (groupBy) params.set('group', groupBy);
-    const qs = params.toString();
-    const next = qs ? `#table?${qs}` : '#table';
-    if (window.location.hash !== next && /^#table(\?|$)/.test(window.location.hash)) history.replaceState(null, '', next);
-  }, [search, groupBy]);
-  useEffect(() => {
-    const onHash = () => {
-      const m = /^#table\?(.*)$/.exec(window.location.hash);
-      if (!m) return;
-      const p = new URLSearchParams(m[1]);
-      const q = p.get('q') ?? '';
-      const g = (p.get('group') ?? '') as '' | 'requester' | 'project';
-      setSearch(cur => (cur.trim() === q.trim() ? cur : q));
-      setGroupBy(cur => (cur === g ? cur : g));
-    };
-    window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
-  }, []);
   const [searchHi, setSearchHi] = useState(-1);
   const searchWrapRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -198,9 +190,54 @@ export function Table() {
     return () => document.removeEventListener('mousedown', onDown);
   }, [groupMenu]);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [pageSize, setPageSize] = useState(10);
+  // Remembered per view: URL (`#table?view=…&size=…`) wins so a copied link
+  // reproduces the exact view; otherwise the last-used values on this browser.
+  const [pageSize, setPageSize] = useState(() => {
+    const m = /^#table\?(.*)$/.exec(window.location.hash);
+    const fromUrl = Number(m && new URLSearchParams(m[1]).get('size'));
+    if (PAGE_SIZES.includes(fromUrl)) return fromUrl;
+    try { const v = Number(localStorage.getItem('taskflow-table-size')); if (PAGE_SIZES.includes(v)) return v; } catch { /* ignore */ }
+    return 10;
+  });
   const [page, setPage] = useState(0);
-  const [viewMode, setViewMode] = useState<'table' | 'cards' | 'pipeline' | 'gantt'>('table');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const m = /^#table\?(.*)$/.exec(window.location.hash);
+    const fromUrl = m && new URLSearchParams(m[1]).get('view');
+    if (isViewMode(fromUrl)) return fromUrl;
+    try { const v = localStorage.getItem('taskflow-table-view'); if (isViewMode(v)) return v; } catch { /* ignore */ }
+    return 'table';
+  });
+  useEffect(() => { try { localStorage.setItem('taskflow-table-view', viewMode); localStorage.setItem('taskflow-table-size', String(pageSize)); } catch { /* ignore */ } }, [viewMode, pageSize]);
+  // Mirror the query, grouping, view and page size into the URL (replaceState —
+  // not a history entry per keystroke) and read them back when the hash
+  // changes underneath us.
+  useEffect(() => {
+    if (!window.location.hash.startsWith('#table')) return;
+    const params = new URLSearchParams();
+    if (search.trim()) params.set('q', search.trim());
+    if (groupBy) params.set('group', groupBy);
+    if (viewMode !== 'table') params.set('view', viewMode);
+    if (pageSize !== 10) params.set('size', String(pageSize));
+    const qs = params.toString();
+    const next = qs ? `#table?${qs}` : '#table';
+    if (window.location.hash !== next && /^#table(\?|$)/.test(window.location.hash)) history.replaceState(null, '', next);
+  }, [search, groupBy, viewMode, pageSize]);
+  useEffect(() => {
+    const onHash = () => {
+      const m = /^#table\?(.*)$/.exec(window.location.hash);
+      if (!m) return;
+      const p = new URLSearchParams(m[1]);
+      const q = p.get('q') ?? '';
+      const g = (p.get('group') ?? '') as '' | 'requester' | 'project';
+      const v = p.get('view'); const sz = Number(p.get('size'));
+      setSearch(cur => (cur.trim() === q.trim() ? cur : q));
+      setGroupBy(cur => (cur === g ? cur : g));
+      if (isViewMode(v)) setViewMode(v);
+      if (PAGE_SIZES.includes(sz)) setPageSize(sz);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
   // A dashboard tile can hand over a filter (e.g. "No Jira yet") — apply it
   // as a normal on-screen pill so it's visible and removable.
   const tableFilterPreset = useStore(s => s.tableFilterPreset);
@@ -584,9 +621,10 @@ export function Table() {
 
   function bulkArchive() {
     const ids = [...selected].filter(id => rows.some(r => r.id === id));
-    if (!ids.length || !confirm(`Archive ${ids.length} item${ids.length > 1 ? 's' : ''}?`)) return;
+    if (!ids.length) return;
     ids.forEach(id => archiveItem(id));
     setSelected(new Set());
+    showNotice(`${ids.length} item${ids.length > 1 ? 's' : ''} archived`, { label: 'Open archive', onClick: () => { window.location.hash = '#archive'; } });
   }
 
   function bulkDelete() {
@@ -657,6 +695,60 @@ export function Table() {
     setSearchHi(-1); setSearchOpen(false);
     searchRef.current?.focus();
   }
+
+  // Active filters as pills — shown in the filter bar and repeated in the
+  // empty state so "nothing matches" always comes with the way out.
+  const QF_LABELS: Record<string, string> = { createdToday: 'Created today', updatedToday: 'Updated today', forToday: 'Today scope', untagged: 'Untagged', mail: '✉ Mail', nojira: 'No Jira yet' };
+  const KIND_LABELS: Record<string, string> = { planned: 'Planned', urgent: 'Urgent', quick: 'Quick help', untyped: 'Untyped' };
+  const pills: { label: string; clear: () => void }[] = [];
+  if (workTypeFilter) pills.push({ label: `Kind: ${KIND_LABELS[workTypeFilter] ?? workTypeFilter}`, clear: () => setWorkTypeFilter('') });
+  if (statusFilter) pills.push({ label: `Status: ${statusFilter.replace('_', ' ')}`, clear: () => setStatusFilter('') });
+  if (reqFilter) pills.push({ label: `Requester: ${reqFilter}`, clear: () => setReqFilter('') });
+  if (projFilter) pills.push({ label: `Project: ${projFilter}`, clear: () => setProjFilter('') });
+  if (tagFilter) pills.push({ label: `Tag: ${tagFilter === 'noTag' ? 'none' : tagFilter}`, clear: () => setTagFilter('') });
+  if (typeFilter) pills.push({ label: `Item: ${typeFilter}`, clear: () => setTypeFilter('') });
+  if (minScore) pills.push({ label: `Score ≥ ${minScore}`, clear: () => setMinScore('') });
+  for (const k of quickFilters) if (k !== 'forToday') pills.push({ label: QF_LABELS[k] ?? k, clear: () => setQuickFilters(prev => { const n = new Set(prev); n.delete(k); return n; }) });
+  const clearAllFilters = () => { setTypeFilter(''); setWorkTypeFilter(''); setReqFilter(''); setProjFilter(''); setStatusFilter(''); setTagFilter(''); setMinScore(''); setQuickFilters(prev => new Set([...prev].filter(x => x === 'forToday'))); };
+  const todayScope = quickFilters.has('forToday');
+  const freeText = parsed.text;
+  // Empty state: says WHY nothing shows (text, pills, Today scope) and offers
+  // one-click ways out. Shared by the table, cards and gantt views.
+  const emptyState = (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '36px 14px', textAlign: 'center' }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--t-txt2)' }}>
+        {freeText || pills.length || todayScope ? 'Nothing matches' : 'No items yet'}
+      </div>
+      {(freeText || pills.length > 0 || todayScope) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 6 }}>
+          {freeText && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 7, background: 'var(--t-surf2)', color: 'var(--t-txt2)', border: '1px solid var(--t-brd)', whiteSpace: 'nowrap' }}>
+              “{freeText}”
+              <span onClick={() => setSearch(prev => stripText(prev))} title="Clear the text" style={{ cursor: 'pointer', fontSize: 13, lineHeight: 1, opacity: 0.7 }}>×</span>
+            </span>
+          )}
+          {pills.map(p => (
+            <span key={p.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 7, background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', border: '1px solid color-mix(in oklab, var(--t-acc) 30%, transparent)', whiteSpace: 'nowrap' }}>
+              {p.label}
+              <span onClick={p.clear} title="Remove this filter" style={{ cursor: 'pointer', fontSize: 13, lineHeight: 1, opacity: 0.7 }}>×</span>
+            </span>
+          ))}
+          {todayScope && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 7, background: 'var(--t-amber-bg)', color: 'var(--t-amber)', border: '1px solid var(--t-amber)', whiteSpace: 'nowrap' }}>
+              ◷ Today scope — only tasks marked for today
+              <span onClick={() => setQuickFilters(prev => { const n = new Set(prev); n.delete('forToday'); return n; })} title="Show all tasks" style={{ cursor: 'pointer', fontSize: 13, lineHeight: 1, opacity: 0.7 }}>×</span>
+            </span>
+          )}
+        </div>
+      )}
+      {(freeText || pills.length > 0 || todayScope) && (
+        <button onClick={() => { setSearch(''); clearAllFilters(); setQuickFilters(new Set()); }}
+          style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 12.5, fontWeight: 600, padding: '6px 14px', borderRadius: 8, cursor: 'pointer' }}>
+          Show everything
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -753,7 +845,7 @@ export function Table() {
           })()}
         </div>
         <button
-          onClick={() => { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 2200); }}
+          onClick={() => { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 2200); showNotice('Link to current view copied'); }}
           title="Copy link"
           style={{ flexShrink: 0, height: 32, width: 36, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: '1px solid ' + (copied ? 'var(--t-acc)' : 'var(--t-brd)'), background: copied ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: copied ? 'var(--t-acc-dk)' : 'var(--t-txt2)', borderRadius: 8, cursor: 'pointer' }}>
           {copied ? <span style={{ fontSize: 14, fontWeight: 700 }}>✓</span> : <LinkIcon />}
@@ -869,40 +961,22 @@ export function Table() {
           and the selection actions. Only renders when it
           has something to show, so the header line above stays fixed. */}
       {(() => {
-        const hasPills = !!(workTypeFilter || statusFilter || reqFilter || projFilter || tagFilter || typeFilter || minScore || [...quickFilters].some(k => k !== 'forToday'));
-        if (!hasPills && selCount === 0) return null;
+        if (pills.length === 0 && selCount === 0) return null;
         return (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', padding: '8px 12px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 10 }}>
         {/* Active filter pills */}
-        {(() => {
-          const QF_LABELS: Record<string, string> = { createdToday: 'Created today', updatedToday: 'Updated today', forToday: 'Today scope', untagged: 'Untagged', mail: '✉ Mail', nojira: 'No Jira yet' };
-          const KIND_LABELS: Record<string, string> = { planned: 'Planned', urgent: 'Urgent', quick: 'Quick help', untyped: 'Untyped' };
-          const pills: { label: string; clear: () => void }[] = [];
-          if (workTypeFilter) pills.push({ label: `Kind: ${KIND_LABELS[workTypeFilter] ?? workTypeFilter}`, clear: () => setWorkTypeFilter('') });
-          if (statusFilter) pills.push({ label: `Status: ${statusFilter.replace('_', ' ')}`, clear: () => setStatusFilter('') });
-          if (reqFilter) pills.push({ label: `Requester: ${reqFilter}`, clear: () => setReqFilter('') });
-          if (projFilter) pills.push({ label: `Project: ${projFilter}`, clear: () => setProjFilter('') });
-          if (tagFilter) pills.push({ label: `Tag: ${tagFilter === 'noTag' ? 'none' : tagFilter}`, clear: () => setTagFilter('') });
-          if (typeFilter) pills.push({ label: `Item: ${typeFilter}`, clear: () => setTypeFilter('') });
-          if (minScore) pills.push({ label: `Score ≥ ${minScore}`, clear: () => setMinScore('') });
-          for (const k of quickFilters) if (k !== 'forToday') pills.push({ label: QF_LABELS[k] ?? k, clear: () => setQuickFilters(prev => { const n = new Set(prev); n.delete(k); return n; }) });
-          return (
-            <>
-              {pills.map(p => (
-                <span key={p.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 7, background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', border: '1px solid color-mix(in oklab, var(--t-acc) 30%, transparent)', whiteSpace: 'nowrap' }}>
-                  {p.label}
-                  <span onClick={p.clear} style={{ cursor: 'pointer', fontSize: 13, lineHeight: 1, opacity: 0.7 }}>×</span>
-                </span>
-              ))}
-              {pills.length > 1 && (
-                <button onClick={() => { setTypeFilter(''); setWorkTypeFilter(''); setReqFilter(''); setProjFilter(''); setStatusFilter(''); setTagFilter(''); setMinScore(''); setQuickFilters(prev => new Set([...prev].filter(x => x === 'forToday'))); }}
-                  style={{ border: 'none', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, cursor: 'pointer', padding: '4px 6px' }}>
-                  Clear all
-                </button>
-              )}
-            </>
-          );
-        })()}
+        {pills.map(p => (
+          <span key={p.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 7, background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', border: '1px solid color-mix(in oklab, var(--t-acc) 30%, transparent)', whiteSpace: 'nowrap' }}>
+            {p.label}
+            <span onClick={p.clear} style={{ cursor: 'pointer', fontSize: 13, lineHeight: 1, opacity: 0.7 }}>×</span>
+          </span>
+        ))}
+        {pills.length > 1 && (
+          <button onClick={clearAllFilters}
+            style={{ border: 'none', background: 'transparent', color: 'var(--t-muted)', fontSize: 12, cursor: 'pointer', padding: '4px 6px' }}>
+            Clear all
+          </button>
+        )}
 
 
         {selCount > 0 && (
@@ -946,12 +1020,7 @@ export function Table() {
         );
       })()}
 
-      {/* Copy-link confirmation — small banner, bottom-right */}
-      {copied && (
-        <div role="status" style={{ position: 'fixed', right: 20, bottom: 20, zIndex: 80, display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 9, background: 'var(--t-surf)', color: 'var(--t-txt)', border: '1px solid var(--t-brd)', boxShadow: '0 6px 20px rgba(0,0,0,0.18)', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>
-          <span style={{ color: 'var(--t-success, oklch(0.5 0.14 150))', fontWeight: 800 }}>✓</span> Link to current view copied
-        </div>
-      )}
+      <CornerBanner text={notice?.text ?? null} action={notice?.action} />
 
       {/* Pipeline view — filtered tasks by status, board-style */}
       {viewMode === 'pipeline' && (
@@ -1050,7 +1119,7 @@ export function Table() {
               {ticks.map(m => <div key={m} style={{ position: 'absolute', left: `${(m / total) * 100}%`, top: 0, bottom: 0, borderLeft: '1px solid var(--t-brd2)', pointerEvents: 'none' }} />)}
               {/* now marker */}
               <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, borderLeft: '2px solid var(--t-urgent)', pointerEvents: 'none' }} />
-              {gRows.length === 0 && <div style={{ padding: 18, fontSize: 13, color: 'var(--t-muted)' }}>Nothing matches the filters.</div>}
+              {gRows.length === 0 && emptyState}
               {gRows.map(({ t: t2, mins, progress }, i) => {
                 const left = (acc / total) * 100;
                 const widthPct = (mins / total) * 100;
@@ -1147,7 +1216,7 @@ export function Table() {
               </div>
             );
           })}
-          {rows.length === 0 && <div style={{ fontSize: 13, color: 'var(--t-muted)' }}>Nothing matches the filters.</div>}
+          {rows.length === 0 && <div style={{ gridColumn: '1 / -1' }}>{emptyState}</div>}
         </div>
       )}
 
@@ -1426,7 +1495,7 @@ export function Table() {
           })}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={cols.length + 5} style={{ ...td, textAlign: 'center', color: 'var(--t-muted)', padding: '32px 14px' }}>No items match the filters</td>
+              <td colSpan={cols.length + 5} style={{ ...td, padding: 0 }}>{emptyState}</td>
             </tr>
           )}
           {/* Drop zone below last row — lets user drag to the very end */}
@@ -1464,7 +1533,7 @@ export function Table() {
           )}
           <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(0); }}
             style={{ fontSize: 12, padding: '3px 6px', borderRadius: 6, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)' }}>
-            {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n} / page</option>)}
+            {PAGE_SIZES.map(n => <option key={n} value={n}>{n} / page</option>)}
           </select>
         </div>
       )}

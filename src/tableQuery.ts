@@ -71,3 +71,10 @@ export function setIs(q: string, keys: Set<string>): string {
   const toks = [...keys].map(k => IS_TOKEN[k]).filter(Boolean).map(t => `is:${t}`);
   return [rest, ...toks].filter(Boolean).join(' ');
 }
+
+/** Drop the free-text words, keep every `field:value` qualifier as typed. */
+export function stripText(q: string): string {
+  const keep: string[] = [];
+  for (const m of q.matchAll(TOKEN)) if (m[1]) keep.push(m[0]);
+  return keep.join(' ');
+}
