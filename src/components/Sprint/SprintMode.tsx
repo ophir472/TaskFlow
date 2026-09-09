@@ -23,7 +23,7 @@ const isActiveTask = (it: Item): it is Task =>
 export const sprintTargetKey = (t: SprintTarget): string =>
   t.kind === 'subtask' ? `sub:${t.taskId}:${t.subId}` : `${t.kind}:${t.taskId}`;
 
-const DEFAULT_TOGGLES: SprintTypeToggles = { quickTask: true, quickSubtask: true, mail: true };
+const DEFAULT_TOGGLES: SprintTypeToggles = { quickTask: true, quickSubtask: true, mail: true, todayOnly: true };
 
 // The pool, in walk order: mail entries first, then quick tasks and quick
 // subtasks TOGETHER, oldest first (each by its own createdAt). The Settings
@@ -35,7 +35,9 @@ export function buildSprintPool(
   toggles: SprintTypeToggles = DEFAULT_TOGGLES,
   order: string[] = [],
 ): SprintTarget[] {
-  const work = items.filter((it): it is Task => isActiveTask(it) && it.type !== 'mail');
+  // Today-only (default): quick work joins the pool only from cards marked Today.
+  const todayOnly = toggles.todayOnly ?? true;
+  const work = items.filter((it): it is Task => isActiveTask(it) && it.type !== 'mail' && (!todayOnly || it.forToday));
   const mail: { t: SprintTarget; at: number }[] = [];
   const aged: { t: SprintTarget; at: number }[] = [];
   if (toggles.mail) for (const it of items) if (it.kind === 'task' && it.type === 'mail' && !it.archived) mail.push({ t: { kind: 'mail', taskId: it.id }, at: it.createdAt });

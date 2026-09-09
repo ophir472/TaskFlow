@@ -18,6 +18,7 @@ const TOGGLE_DEFS: { key: keyof SprintTypeToggles; label: string }[] = [
   { key: 'mail', label: 'Mail' },
   { key: 'quickTask', label: 'Quick tasks' },
   { key: 'quickSubtask', label: 'Quick sub-tasks' },
+  { key: 'todayOnly', label: 'Today only' },
 ];
 
 interface Row {
@@ -42,7 +43,8 @@ function moveWithin<T>(list: T[], from: number, to: number): T[] {
 // opens the item as an overlay on top of Settings.
 export function SprintQueueSection() {
   const items = useStore(s => s.items);
-  const toggles = useStore(s => s.sprintTypeToggles);
+  const storedToggles = useStore(s => s.sprintTypeToggles);
+  const toggles = { todayOnly: true, ...storedToggles };   // missing todayOnly = on
   const sprintOrder = useStore(s => s.sprintOrder);
   const setSprintTypeToggle = useStore(s => s.setSprintTypeToggle);
   const setSprintOrder = useStore(s => s.setSprintOrder);
@@ -97,12 +99,12 @@ export function SprintQueueSection() {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: open ? 12 : 0 }}>
         <span style={{ fontSize: 13, color: 'var(--t-muted)' }}>
-          Pending mail first, then quick tasks &amp; sub-tasks, oldest first. In queue:
+          Pending mail first, then quick tasks &amp; sub-tasks (from Today cards only, unless you switch that off), oldest first. In queue:
         </span>
         {TOGGLE_DEFS.map(({ key, label }) => (
           <button key={key}
             onClick={e => { e.stopPropagation(); setSprintTypeToggle(key, !toggles[key]); }}
-            title={toggles[key] ? `${label} are in the sprint pool — click to exclude` : `${label} are excluded — click to include`}
+            title={key === 'todayOnly' ? ((toggles.todayOnly ?? true) ? 'Only quick work from cards marked Today enters the pool — click to include every card' : 'Quick work from every card enters the pool — click to limit it to Today cards') : toggles[key] ? `${label} are in the sprint pool — click to exclude` : `${label} are excluded — click to include`}
             style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
               border: toggles[key] ? `1px solid ${QUICK_BLUE}` : '1px solid var(--t-brd)',
               background: toggles[key] ? `color-mix(in oklab, ${QUICK_BLUE} 12%, var(--t-surf))` : 'var(--t-surf)',

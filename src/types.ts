@@ -114,6 +114,9 @@ export interface SprintTypeToggles {
   quickTask: boolean;
   quickSubtask: boolean;
   mail: boolean;
+  // Only quick tasks / sub-tasks whose card is marked Today (2026-09-10).
+  // Missing = true (the new default); mail entries are not affected.
+  todayOnly?: boolean;
 }
 
 export interface Subtask {

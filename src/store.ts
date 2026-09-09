@@ -304,7 +304,7 @@ export const useStore = create<AppState>()(
       tableColWidths: {},
       archiveColWidths: {},
       reviewSession: null,
-      sprintTypeToggles: { quickTask: true, quickSubtask: true, mail: true },
+      sprintTypeToggles: { quickTask: true, quickSubtask: true, mail: true, todayOnly: true },
       dashboardConfig: {
         version: 'v1',
         gamification: false,
