@@ -974,23 +974,51 @@ export function Table() {
         );
       })()}
 
-      {/* Card view of the SAME filtered rows */}
+      {/* Card view of the SAME filtered rows — roomy: title, description /
+          notes snippet, chips for kind · status · requester · project, step
+          progress, tickets */}
       {viewMode === 'cards' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 18 }}>
           {pagedRows.map(it => {
             const isT = it.kind === 'task';
             const tt = it as Task;
+            const accent = isT ? (tt.type === 'urgent' ? 'var(--t-urgent)' : tt.type === 'quick' ? 'var(--t-quick)' : tt.type === 'mail' ? 'var(--t-amber)' : 'var(--t-acc)') : 'var(--t-amber)';
+            const snippet = isT ? (tt.description?.trim() || tt.notes?.trim() || '') : '';
+            const steps = isT ? tt.subtasks : [];
+            const doneSteps = steps.filter(s => s.done).length;
+            const chip = (label: string, color = 'var(--t-txt2)', bg = 'var(--t-surf2)'): React.ReactNode => (
+              <span key={label} style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: bg, color, whiteSpace: 'nowrap' }}>{label}</span>
+            );
             return (
               <div key={it.id} onClick={() => openTask(it.id)}
                 title="Open"
-                style={{ background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderTop: `3px solid ${isT ? (tt.type === 'urgent' ? 'var(--t-urgent)' : tt.type === 'quick' ? 'var(--t-quick)' : tt.type === 'mail' ? 'var(--t-amber)' : 'var(--t-acc)') : 'var(--t-amber)'}`, borderRadius: 12, padding: '12px 14px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 88 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--t-txt)', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{it.title}</div>
-                <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--t-muted)', flexWrap: 'wrap' }}>
-                  {isT && <span style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{tt.type === 'mail' ? '✉ mail' : (tt.type ?? 'untyped')}</span>}
-                  {isT && <span>{tt.status.replace('_', ' ')}</span>}
-                  {isT && tt.requester && <span>{tt.requester}</span>}
-                  {isT && tt.jiraLink && <span>{tt.jiraLink}</span>}
-                  {isT && tt.forToday && <span style={{ color: 'var(--t-amber)', fontWeight: 700 }}>◷ today</span>}
+                style={{ background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderTop: `3px solid ${accent}`, borderRadius: 14, padding: '16px 18px 14px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 12, minHeight: 150, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <div style={{ flex: 1, fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{it.title}</div>
+                  {isT && tt.forToday && <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--t-amber)', background: 'var(--t-amber-bg)', padding: '3px 8px', borderRadius: 999, flexShrink: 0 }}>◷ today</span>}
+                </div>
+                {snippet && (
+                  <div style={{ fontSize: 13, color: 'var(--t-txt2)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-line' }}>{snippet}</div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  {isT && chip(tt.type === 'mail' ? '✉ mail' : (tt.type ? { planned: 'Planned', urgent: 'Urgent', quick: 'Quick help' }[tt.type] : 'Untyped'), accent, `color-mix(in oklab, ${accent} 12%, var(--t-surf))`)}
+                  {isT && chip(tt.status === 'todo' ? 'To do' : tt.status.replace('_', ' '))}
+                  {isT && tt.requester && chip(`👤 ${tt.requester}`)}
+                  {isT && tt.project && chip(`▣ ${tt.project}`)}
+                  {!isT && chip('Reminder', 'var(--t-amber)', 'var(--t-amber-bg)')}
+                </div>
+                <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, color: 'var(--t-muted)', flexWrap: 'wrap' }}>
+                  {steps.length > 0 && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 64, height: 5, borderRadius: 999, background: 'var(--t-surf3)', overflow: 'hidden', display: 'inline-block' }}>
+                        <span style={{ display: 'block', width: `${(doneSteps / steps.length) * 100}%`, height: '100%', background: 'var(--t-success)' }} />
+                      </span>
+                      {doneSteps}/{steps.length} steps
+                    </span>
+                  )}
+                  {isT && tt.jiraLink && <span style={{ fontWeight: 600 }}>{tt.jiraLink}</span>}
+                  {isT && tt.itsmTicket && <span style={{ fontWeight: 600 }}>{tt.itsmTicket}</span>}
+                  <span style={{ marginLeft: 'auto' }}>{new Date(it.updatedAt).toLocaleDateString()}</span>
                 </div>
               </div>
             );
