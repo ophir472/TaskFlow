@@ -611,25 +611,52 @@ export function Table() {
             <kbd title="Press / to jump here"
               style={{ position: 'absolute', right: 7, fontSize: 11, fontWeight: 700, fontFamily: 'inherit', lineHeight: 1, padding: '3px 7px', borderRadius: 5, border: '1px solid var(--t-brd)', borderBottomWidth: 2, background: 'var(--t-surf2)', color: 'var(--t-muted)', pointerEvents: 'none' }}>/</kbd>
           )}
-          {searchOpen && (visibleOptions.length > 0 || !search.trim()) && (
-            <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 6px)', zIndex: 60, maxHeight: 420, overflowY: 'auto', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 10px 32px rgba(0,0,0,0.18)', padding: '4px 0' }}>
-              {visibleOptions.map((o, i) => {
-                const first = i === 0 || visibleOptions[i - 1].group !== o.group;
-                return (
-                  <Fragment key={`${o.group}:${o.label}`}>
-                    {first && <div style={{ padding: '7px 14px 3px', fontSize: 10.5, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{o.group}</div>}
-                    <div onMouseDown={e => e.preventDefault()} onClick={() => applyOption(o)} onMouseEnter={() => setSearchHi(i)}
-                      style={{ padding: '6px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--t-txt2)', background: searchHi === i ? 'var(--t-surf2)' : 'transparent', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {o.label}
-                    </div>
-                  </Fragment>
-                );
-              })}
-              <div style={{ padding: '7px 14px', fontSize: 11, color: 'var(--t-muted)', borderTop: '1px solid var(--t-brd2)', marginTop: 4 }}>
-                {search.trim() ? 'Text also filters the rows live · ↑↓ pick an option · ↵ apply · esc' : 'Type to search, or pick a filter · ↑↓ · ↵ · esc'}
+          {searchOpen && (visibleOptions.length > 0 || !search.trim()) && (() => {
+            // Kibana-style suggestions: type badge · `field: value` · description
+            const BADGE: Record<string, { code: string; color: string; desc: string }> = {
+              Kind:      { code: 'K',  color: 'oklch(0.55 0.15 264)', desc: 'kind of work' },
+              Status:    { code: 'S',  color: 'oklch(0.55 0.14 150)', desc: 'workflow status' },
+              Quick:     { code: '⚡', color: 'oklch(0.6 0.15 60)',   desc: 'quick filter' },
+              Tag:       { code: 'T',  color: 'oklch(0.55 0.16 25)',  desc: 'priority tag' },
+              Requester: { code: 'R',  color: 'oklch(0.55 0.13 200)', desc: 'requested by' },
+              Project:   { code: 'P',  color: 'oklch(0.55 0.14 300)', desc: 'project' },
+              Item:      { code: 'I',  color: 'oklch(0.5 0.05 264)',  desc: 'item type' },
+              Score:     { code: '≥',  color: 'oklch(0.55 0.12 85)',  desc: 'minimum score' },
+            };
+            return (
+              <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 6px)', zIndex: 60, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 8, boxShadow: '0 12px 36px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', fontSize: 11, color: 'var(--t-muted)', background: 'var(--t-surf2)', borderBottom: '1px solid var(--t-brd2)' }}>
+                  <span style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Suggestions</span>
+                  <span>{visibleOptions.length}</span>
+                  <span style={{ marginLeft: 'auto' }}>{search.trim() ? 'text also filters the rows' : 'type to narrow'}</span>
+                </div>
+                <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+                  {visibleOptions.map((o, i) => {
+                    const b = BADGE[o.group] ?? { code: '•', color: 'var(--t-muted)', desc: o.group };
+                    const on = searchHi === i;
+                    return (
+                      <div key={`${o.group}:${o.label}`}
+                        onMouseDown={e => e.preventDefault()} onClick={() => applyOption(o)} onMouseEnter={() => setSearchHi(i)}
+                        style={{ display: 'grid', gridTemplateColumns: '22px 1fr auto', alignItems: 'center', gap: 10, padding: '6px 12px 6px 9px', cursor: 'pointer',
+                          background: on ? `color-mix(in oklab, ${b.color} 10%, var(--t-surf))` : 'transparent',
+                          boxShadow: on ? `inset 3px 0 0 ${b.color}` : 'none', borderBottom: '1px solid var(--t-brd2)' }}>
+                        <span style={{ width: 20, height: 20, borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 800, color: 'white', background: b.color }}>{b.code}</span>
+                        <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12.5, color: 'var(--t-txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ color: b.color }}>{o.group.toLowerCase()}</span><span style={{ color: 'var(--t-muted)' }}>: </span>{o.label}
+                        </span>
+                        <span style={{ fontSize: 11, color: 'var(--t-muted)', whiteSpace: 'nowrap' }}>{b.desc}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ display: 'flex', gap: 14, padding: '6px 12px', fontSize: 11, color: 'var(--t-muted)', background: 'var(--t-surf2)', borderTop: '1px solid var(--t-brd2)' }}>
+                  <span><kbd style={{ fontFamily: 'inherit' }}>↑↓</kbd> navigate</span>
+                  <span><kbd style={{ fontFamily: 'inherit' }}>↵</kbd> apply</span>
+                  <span><kbd style={{ fontFamily: 'inherit' }}>esc</kbd> close</span>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
         </>,
