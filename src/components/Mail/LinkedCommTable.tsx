@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
+import { channelOf, channelDef } from './ChannelToggle';
 import type { Task } from '../../types';
 import { buildMailEntry } from '../../mailEntry';
 
@@ -96,9 +97,9 @@ export function LinkedCommTable({ task }: Props) {
                 </span>
                 <span
                   onClick={() => { window.location.hash = `mail/preview/${m.id}`; }}
-                  title="Open in the communication assistant"
+                  title={`Open in the communication assistant (${channelDef(channelOf(m)).label})`}
                   style={{ cursor: 'pointer', fontSize: 12, textAlign: 'center', color: 'var(--t-acc)', userSelect: 'none' }}>
-                  ✉
+                  {channelDef(channelOf(m)).icon}
                 </span>
               </div>
             ))}

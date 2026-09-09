@@ -4,6 +4,7 @@ import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { buildMailEntry } from '../../mailEntry';
 import { MeetingMinutes } from './MeetingMinutes';
+import { ChannelToggle, ChannelIcon, channelOf, channelDef, nextChannel, type Channel } from './ChannelToggle';
 import { MailEntryFields } from './MailEntryFields';
 
 interface Props {
@@ -62,6 +63,11 @@ export function MailAssistant({ onClose }: Props) {
       else if (e.key === 'Enter' && !typing) {
         const m = selRef.current >= 0 ? mailsRef.current[selRef.current] : undefined;
         if (m) { startAtRef.current = m.id; window.location.hash = 'mail/preview'; }
+      } else if ((e.key === 't' || e.code === 'KeyT') && !typing) {
+        e.preventDefault();
+        const m = selRef.current >= 0 ? mailsRef.current[selRef.current] : undefined;
+        if (m) updateItem(m.id, { channel: nextChannel(channelOf(m)) });   // flip the highlighted entry
+        else pickChannel(nextChannel(captureChannelRef.current));            // or the capture default
       } else if ((e.key === 'p' || e.code === 'KeyP') && !typing) {
         e.preventDefault();
         if (mailsRef.current.length) window.location.hash = 'mail/preview';
@@ -73,6 +79,10 @@ export function MailAssistant({ onClose }: Props) {
 
   // ── capture ──
   const [text, setText] = useState('');
+  // Channel for NEW entries — remembered per browser (t toggles it).
+  const [captureChannel, setCaptureChannel] = useState<Channel>(() => { try { return localStorage.getItem('taskflow-mail-channel') === 'teams' ? 'teams' : 'outlook'; } catch { return 'outlook'; } });
+  const captureChannelRef = useRef(captureChannel); captureChannelRef.current = captureChannel;
+  const pickChannel = (c: Channel) => { setCaptureChannel(c); try { localStorage.setItem('taskflow-mail-channel', c); } catch { /* ignore */ } };
   const inputRef = useRef<HTMLInputElement>(null);
   function openEntry(id: string) {
     startAtRef.current = id;
@@ -81,7 +91,7 @@ export function MailAssistant({ onClose }: Props) {
   function commit(openAfter = false) {
     const v = text.trim();
     if (!v) return;
-    const entry = buildMailEntry(v);
+    const entry = buildMailEntry(v, undefined, captureChannel);
     createItem(entry);
     setText('');
     if (openAfter) openEntry(entry.id);
@@ -164,8 +174,9 @@ export function MailAssistant({ onClose }: Props) {
                   if (!text.trim() && sel >= 0 && mails[sel]) { openEntry(mails[sel].id); return; }
                   commit(e.shiftKey);
                 }}
-                placeholder="Mail subject / Teams chat to respond to…"
+                placeholder={captureChannel === 'teams' ? 'Teams chat / channel message to respond to…' : 'Mail subject to respond to…'}
                 style={{ ...inp, flex: 1 }} />
+              <ChannelToggle value={captureChannel} onChange={pickChannel} />
               <button onClick={() => commit()} disabled={!text.trim()}
                 style={{ ...accBtn, opacity: text.trim() ? 1 : 0.5, cursor: text.trim() ? 'pointer' : 'not-allowed', flexShrink: 0 }}>
                 Add
@@ -180,7 +191,7 @@ export function MailAssistant({ onClose }: Props) {
                     onMouseEnter={() => setSel(i)}
                     title="Open this entry"
                     style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 7, background: i === sel ? 'var(--t-acc-bg)' : 'var(--t-surf2)', border: i === sel ? '1px solid var(--t-acc)' : '1px solid var(--t-brd2)', fontSize: 13, color: 'var(--t-txt)', cursor: 'pointer' }}>
-                    <span style={{ fontSize: 11, color: 'var(--t-muted)', flexShrink: 0 }}>✉</span>
+                    <ChannelIcon channel={channelOf(m)} onClick={() => updateItem(m.id, { channel: nextChannel(channelOf(m)) })} title={`${channelDef(channelOf(m)).label} — click (or t) to switch`} />
                     <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {m.title}
                       {m.linkedTaskId && (() => {
@@ -208,7 +219,7 @@ export function MailAssistant({ onClose }: Props) {
                 Preview ({mails.length})
               </button>
               <span style={{ fontSize: 11.5, color: 'var(--t-muted)' }}>
-                p = preview · ↑↓ navigate · Enter opens · Shift+Enter adds & opens
+                p = preview · ↑↓ navigate · Enter opens · Shift+Enter adds & opens · t = Outlook ⇄ Teams
               </span>
             </div>
           </>
@@ -217,13 +228,13 @@ export function MailAssistant({ onClose }: Props) {
         {stage === 'preview' && !doneStepping && current && (
           <>
             <div style={{ fontSize: 12, color: 'var(--t-muted)', marginBottom: 12 }}>
-              Entry {idx + 1} of {stepIds.length}
+              Entry {idx + 1} of {stepIds.length} · {channelDef(channelOf(current)).icon} {channelDef(channelOf(current)).label}
             </div>
             <MailEntryFields entry={current} />
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button onClick={markSent}
                 style={{ ...accBtn, background: 'oklch(0.6 0.14 150)' }}>
-                ✓ Mail sent — archive
+                ✓ {channelOf(current) === 'teams' ? 'Message' : 'Mail'} sent — archive
               </button>
               <button onClick={skip} style={ghostBtn}>Continue (skip) →</button>
               <button onClick={() => { window.location.hash = 'mail'; }} style={{ ...ghostBtn, marginLeft: 'auto' }}>Back</button>

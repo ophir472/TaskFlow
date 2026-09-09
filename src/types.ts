@@ -380,6 +380,9 @@ export interface Task {
   type?: 'mail' | 'quick' | 'planned' | 'urgent';
   whatIWantToSay?: string;
   mailToSend?: string;
+  // Mail entries only (2026-09-10): where it goes — Outlook email or a Teams
+  // message. Missing = 'outlook' (backward compatible).
+  channel?: 'outlook' | 'teams';
   // Mail entries only: the task this communication belongs to. The card's
   // "To send" table is a view of entries linked to it — one entity, two views.
   linkedTaskId?: string;

@@ -368,7 +368,7 @@ export function Play({ taskId, onClose }: Props) {
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button onClick={() => { updateItem(mailEntry.id, { status: 'done' }); closeMailSub(); }}
                 style={{ border: 'none', background: 'oklch(0.6 0.14 150)', color: 'white', fontSize: 13.5, fontWeight: 600, padding: '9px 16px', borderRadius: 8, cursor: 'pointer' }}>
-                ✓ Mail sent — archive
+                ✓ Sent — archive
               </button>
               <button onClick={closeMailSub}
                 style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 13, fontWeight: 600, padding: '9px 14px', borderRadius: 8, cursor: 'pointer' }}>

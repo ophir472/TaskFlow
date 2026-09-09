@@ -86,6 +86,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       { keys: ['Enter'], what: 'Add the typed entry' },
       { keys: ['Shift', 'Enter'], what: 'Add the entry and open it' },
       { keys: ['p'], what: 'Start the preview walkthrough' },
+      { keys: ['t'], what: 'Outlook ⇄ Teams — flips the highlighted entry, or the channel new entries get' },
       { keys: ['↑', '↓'], what: 'Move the highlight through entries' },
       { keys: ['Enter'], what: 'Open the highlighted entry (when the input is empty)' },
     ],

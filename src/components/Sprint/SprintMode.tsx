@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useStore } from '../../store';
+import { ChannelToggle, channelOf, sendLabel } from '../Mail/ChannelToggle';
 import type { Item, Task, SprintTypeToggles } from '../../types';
 import { QUICK_BLUE } from '../Common/QuickToActSection';
 import { buildMailEntry } from '../../mailEntry';
@@ -103,11 +104,11 @@ export function resolveSprintTarget(target: SprintTarget, items: Item[]): Resolv
       const linked = task.linkedTaskId ? items.find(i => i.id === task.linkedTaskId) : null;
       return {
         title: task.title,
-        kindLabel: 'Mail to send',
+        kindLabel: sendLabel(channelOf(task)),
         context: [
           { label: 'Linked card', value: linked?.title ?? '—' },
           { label: 'What I want to say', value: (task.whatIWantToSay ?? '').trim() || '—' },
-          { label: 'Mail to send', value: (task.mailToSend ?? '').trim() || '—' },
+          { label: sendLabel(channelOf(task)), value: (task.mailToSend ?? '').trim() || '—' },
         ],
       };
     }
@@ -402,13 +403,17 @@ export function SprintMode({ onClose }: Props) {
             {target?.kind === 'mail' && curTask && (
               <div style={{ width: 'min(680px, 90vw)', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
+                  <div style={dLbl}>Channel</div>
+                  <ChannelToggle dark value={channelOf(curTask)} onChange={c => updateItem(curTask.id, { channel: c })} />
+                </div>
+                <div>
                   <div style={dLbl}>What I want to say</div>
                   <textarea value={curTask.whatIWantToSay ?? ''} onChange={e => updateItem(curTask.id, { whatIWantToSay: e.target.value })}
                     rows={3} placeholder="Rough notes — the gist of the answer…"
                     style={{ ...darkInp, resize: 'vertical', fontFamily: 'inherit' }} />
                 </div>
                 <div>
-                  <div style={dLbl}>Mail to send</div>
+                  <div style={dLbl}>{sendLabel(channelOf(curTask))}</div>
                   <textarea value={curTask.mailToSend ?? ''} onChange={e => updateItem(curTask.id, { mailToSend: e.target.value })}
                     rows={5} placeholder="The actual draft…"
                     style={{ ...darkInp, resize: 'vertical', fontFamily: 'inherit' }} />
@@ -449,7 +454,7 @@ export function SprintMode({ onClose }: Props) {
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button onClick={() => { updateItem(mailEntry.id, { status: 'done' }); history.back(); }}
                 style={{ border: 'none', background: 'oklch(0.6 0.14 150)', color: 'white', fontSize: 13.5, fontWeight: 600, padding: '9px 16px', borderRadius: 8, cursor: 'pointer' }}>
-                ✓ Mail sent — archive
+                ✓ Sent — archive
               </button>
               <button onClick={() => history.back()}
                 style={{ border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 13, fontWeight: 600, padding: '9px 14px', borderRadius: 8, cursor: 'pointer' }}>

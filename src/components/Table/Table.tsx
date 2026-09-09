@@ -31,7 +31,7 @@ interface ColDef {
 
 const STD_COLS: ColDef[] = [
   { key: 'title', label: 'Title', defaultOn: true, getValue: it => it.title },
-  { key: 'type', label: 'Item', defaultOn: false, getValue: it => it.kind !== 'task' ? 'Reminder' : (it as Task).type === 'mail' ? '✉ Mail' : 'Task' },
+  { key: 'type', label: 'Item', defaultOn: false, getValue: it => it.kind !== 'task' ? 'Reminder' : (it as Task).type === 'mail' ? ((it as Task).channel === 'teams' ? '💬 Teams' : '✉ Mail') : 'Task' },
   { key: 'kind', label: 'Kind', defaultOn: true, getValue: it => {
     if (it.kind !== 'task') return '';
     const wt = (it as Task).type;

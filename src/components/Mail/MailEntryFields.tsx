@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { nextId } from '../../engine';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
+import { ChannelToggle, channelOf, sendLabel } from './ChannelToggle';
 
 interface Props {
   entry: Task;
@@ -51,6 +52,12 @@ export function MailEntryFields({ entry }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div>
+          <div style={lbl}>Channel</div>
+          <ChannelToggle value={channelOf(entry)} onChange={c => updateItem(entry.id, { channel: c })} />
+        </div>
+      </div>
       <div>
         <div style={lbl}>Subject</div>
         <input value={entry.title} onChange={e => updateItem(entry.id, { title: e.target.value })} style={inp} />
@@ -116,7 +123,7 @@ export function MailEntryFields({ entry }: Props) {
           style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }} />
       </div>
       <div>
-        <div style={lbl}>Mail to send</div>
+        <div style={lbl}>{sendLabel(channelOf(entry))}</div>
         <textarea value={entry.mailToSend ?? ''} onChange={e => updateItem(entry.id, { mailToSend: e.target.value })}
           rows={6} placeholder="The actual draft…"
           style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }} />
