@@ -1,5 +1,6 @@
 import { Fragment, useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { parseQuery, setField, setIs } from '../../tableQuery';
 import { useStore } from '../../store';
 import { useLogMount } from '../../useLogMount';
 import { TaskModal } from '../TaskModal/TaskModal';
@@ -87,14 +88,26 @@ export function Table() {
   const tableColWidthsStore = useStore(s => s.tableColWidths);
   const setTableColWidths = useStore(s => s.setTableColWidths);
 
-  const [reqFilter, setReqFilter] = useState('');
-  const [projFilter, setProjFilter] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
-  const [workTypeFilter, setWorkTypeFilter] = useState('');
-  const [tagFilter, setTagFilter] = useState('');
-  const [minScore, setMinScore] = useState('');
-  const [quickFilters, setQuickFilters] = useState<Set<string>>(new Set());
-  const [statusFilter, setStatusFilter] = useState('');
+  // ── Filters ARE the search string (Kibana-style query). Every "filter"
+  // below is derived from it, and every setter rewrites it — so pills, the
+  // search box and the URL (#table?q=…) can never disagree. ──
+  const [search, setSearch] = useState(() => {
+    const m = /^#table\?(.*)$/.exec(window.location.hash);
+    return m ? (new URLSearchParams(m[1]).get('q') ?? '') : '';
+  });
+  const parsed = parseQuery(search, { requesters, projects });
+  const reqFilter = parsed.requester, projFilter = parsed.project, typeFilter = parsed.item, workTypeFilter = parsed.kind;
+  const tagFilter = parsed.tag, minScore = parsed.score, quickFilters = parsed.is, statusFilter = parsed.status;
+  const setQualifier = (field: string, v: string | null) => setSearch(prev => setField(prev, field, v));
+  const setReqFilter = (v: string) => setQualifier('requester', v || null);
+  const setProjFilter = (v: string) => setQualifier('project', v || null);
+  const setTypeFilter = (v: string) => setQualifier('item', v || null);
+  const setWorkTypeFilter = (v: string) => setQualifier('kind', v || null);
+  const setTagFilter = (v: string) => setQualifier('tag', v || null);
+  const setStatusFilter = (v: string) => setQualifier('status', v || null);
+  const setMinScore = (v: string) => setQualifier('score', v.trim() || null);
+  const setQuickFilters = (upd: Set<string> | ((prev: Set<string>) => Set<string>)) =>
+    setSearch(prev => setIs(prev, typeof upd === 'function' ? upd(new Set(parseQuery(prev, { requesters, projects }).is)) : upd));
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
@@ -112,12 +125,40 @@ export function Table() {
   const [mailPopupId, setMailPopupId] = useState<string | null>(null);
   const [aiTaskId, setAiTaskId] = useState<string | null>(null);
   const [dailyOpen, setDailyOpen] = useState(false);
-  const [search, setSearch] = useState('');
   // The search box doubles as the filter picker: focused + empty shows EVERY
   // filter option; typing narrows both the rows (free text) and the options
   // (e.g. "wait" → Status: Waiting). Enter on a highlighted option applies it
   // as a pill and clears the text.
+  const [groupBy, setGroupBy] = useState<'' | 'requester' | 'project'>(() => {
+    const m = /^#table\?(.*)$/.exec(window.location.hash);
+    return ((m && new URLSearchParams(m[1]).get('group')) ?? '') as '' | 'requester' | 'project';
+  });
   const [searchOpen, setSearchOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  // Mirror the query into the URL (replaceState — not a history entry per
+  // keystroke) and read it back when the hash changes underneath us.
+  useEffect(() => {
+    if (!window.location.hash.startsWith('#table')) return;
+    const params = new URLSearchParams();
+    if (search.trim()) params.set('q', search.trim());
+    if (groupBy) params.set('group', groupBy);
+    const qs = params.toString();
+    const next = qs ? `#table?${qs}` : '#table';
+    if (window.location.hash !== next && /^#table(\?|$)/.test(window.location.hash)) history.replaceState(null, '', next);
+  }, [search, groupBy]);
+  useEffect(() => {
+    const onHash = () => {
+      const m = /^#table\?(.*)$/.exec(window.location.hash);
+      if (!m) return;
+      const p = new URLSearchParams(m[1]);
+      const q = p.get('q') ?? '';
+      const g = (p.get('group') ?? '') as '' | 'requester' | 'project';
+      setSearch(cur => (cur.trim() === q.trim() ? cur : q));
+      setGroupBy(cur => (cur === g ? cur : g));
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
   const [searchHi, setSearchHi] = useState(-1);
   const searchWrapRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -129,7 +170,6 @@ export function Table() {
   // The search box lives in the page header (right of the title) via a portal.
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   useEffect(() => { setHeaderSlot(document.getElementById('view-header-slot')); }, []);
-  const [groupBy, setGroupBy] = useState<'' | 'requester' | 'project'>('');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   // Second click on the active grouping button opens a picker of the
   // existing requesters / projects (with counts); picking one filters on it.
@@ -273,8 +313,8 @@ export function Table() {
     if (it.archived) return false;
     // "Get back to" notes live only in the ▣ Hub and search — never the table.
     if (it.kind === 'getback') return false;
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
+    if (parsed.text) {
+      const q = parsed.text.toLowerCase();
       const t = it as Task;
       const hay = [it.title, t.requester, t.project, t.jiraLink, t.itsmTicket, t.notes, t.description]
         .filter((v): v is string => typeof v === 'string');
@@ -578,19 +618,29 @@ export function Table() {
   // Free text without a field searches across all values ("wait" → Status:
   // Waiting) as well as filtering the rows live.
   const FIELDS = Array.from(new Set(FILTER_OPTIONS.map(o => o.group)));
-  const rawQ = search.trim().toLowerCase();
+  // Suggest for the token being typed (after the last space); earlier
+  // tokens stay untouched.
+  const lastSpace = search.lastIndexOf(' ');
+  const head = lastSpace >= 0 ? search.slice(0, lastSpace + 1) : '';
+  const tok = search.slice(lastSpace + 1);
+  const rawQ = tok.toLowerCase();
   const colon = rawQ.indexOf(':');
   const fieldTyped = colon >= 0 ? FIELDS.find(f => f.toLowerCase() === rawQ.slice(0, colon).trim()) : undefined;
-  const valueQ = colon >= 0 ? rawQ.slice(colon + 1).trim() : rawQ;
+  const valueQ = colon >= 0 ? rawQ.slice(colon + 1).trim().replace(/^"|"$/g, '') : rawQ;
   type Opt = { group: string; label: string; apply: () => void; isField?: boolean };
   const visibleOptions: Opt[] = !rawQ
-    ? FIELDS.map(f => ({ group: f, label: `${f.toLowerCase()}:`, isField: true, apply: () => { setSearch(`${f.toLowerCase()}:`); setSearchHi(-1); setSearchOpen(true); searchRef.current?.focus(); } }))
+    ? FIELDS.map(f => ({ group: f, label: `${f.toLowerCase()}:`, isField: true, apply: () => { setSearch(`${head}${f.toLowerCase()}:`); setSearchHi(-1); setSearchOpen(true); searchRef.current?.focus(); } }))
     : fieldTyped
       ? FILTER_OPTIONS.filter(o => o.group === fieldTyped && (!valueQ || o.label.toLowerCase().includes(valueQ)))
       : FILTER_OPTIONS.filter(o => `${o.group} ${o.label}`.toLowerCase().includes(rawQ.replace(/:/g, ' ')));
   function applyOption(o: Opt) {
     if (o.isField) { o.apply(); return; }
-    o.apply(); setSearch(''); setSearchHi(-1); setSearchOpen(false);
+    // Drop the half-typed token, then let the option's setter write the
+    // canonical `field:value` — the string stays in the box.
+    setSearch(head.trim());
+    o.apply();
+    setSearchHi(-1); setSearchOpen(false);
+    searchRef.current?.focus();
   }
 
   return (
@@ -625,7 +675,7 @@ export function Table() {
             <kbd title="Press / to jump here"
               style={{ position: 'absolute', right: 7, fontSize: 11, fontWeight: 700, fontFamily: 'inherit', lineHeight: 1, padding: '3px 7px', borderRadius: 5, border: '1px solid var(--t-brd)', borderBottomWidth: 2, background: 'var(--t-surf2)', color: 'var(--t-muted)', pointerEvents: 'none' }}>/</kbd>
           )}
-          {searchOpen && (visibleOptions.length > 0 || !search.trim()) && (() => {
+          {searchOpen && (visibleOptions.length > 0 || !rawQ) && (() => {
             // Kibana-style suggestions: type badge · `field: value` · description
             const BADGE: Record<string, { code: string; color: string; desc: string }> = {
               Kind:      { code: 'K',  color: 'oklch(0.55 0.15 264)', desc: 'kind of work' },
@@ -675,6 +725,12 @@ export function Table() {
             );
           })()}
         </div>
+        <button
+          onClick={() => { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+          title="Copy a link to this exact search / filter set"
+          style={{ marginLeft: 8, border: '1px solid var(--t-brd)', background: copied ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: copied ? 'var(--t-acc-dk)' : 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '6px 10px', borderRadius: 7, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          {copied ? '✓ Copied' : '⧉ Copy link'}
+        </button>
 
         </>,
         headerSlot,

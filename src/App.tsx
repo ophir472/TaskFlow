@@ -364,7 +364,7 @@ export default function App() {
   // whatever view is active (defaults to feed on a cold load).
   useEffect(() => {
     function syncFromHash() {
-      const seg = window.location.hash.slice(1).split('/')[0];
+      const seg = window.location.hash.slice(1).split('/')[0].split('?')[0];
       if (VALID_VIEWS.includes(seg as View)) setView(seg as View);
       else if (!window.location.hash) setView('feed');
       setReviewOpen(seg === 'review');
@@ -393,7 +393,7 @@ export default function App() {
   const viewUrlSynced = useRef(false);
   useEffect(() => {
     if (!viewUrlSynced.current) { viewUrlSynced.current = true; return; }
-    const currentSeg = window.location.hash.slice(1).split('/')[0];
+    const currentSeg = window.location.hash.slice(1).split('/')[0].split('?')[0];
     if (currentSeg === 'review' || currentSeg === 'sncreate' || currentSeg === 'mail' || currentSeg === 'sprint' || currentSeg === 'plan' || currentSeg === 'play') return;
     if (currentSeg !== view) window.location.hash = view;
   }, [view]);
@@ -569,7 +569,7 @@ export default function App() {
         if (e.key === 'm' || e.code === 'KeyM') {
           // Play and Sprint own 'm' (communication linked to the open item).
           {
-            const seg = window.location.hash.slice(1).split('/')[0];
+            const seg = window.location.hash.slice(1).split('/')[0].split('?')[0];
             if (seg === 'play' || seg === 'sprint') return;
           }
           e.preventDefault();
