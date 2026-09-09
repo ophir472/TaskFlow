@@ -138,6 +138,7 @@ export function Table() {
   // Gantt: live bar resize (duration) — {id, mins} while the handle is held.
   const [ganttResize, setGanttResize] = useState<{ id: string; mins: number } | null>(null);
   const ganttDrag = useRef<{ id: string; startX: number; startMins: number; pxPerMin: number } | null>(null);
+  const ganttJustResized = useRef(false); // swallow the click that follows a resize
   const updateSubtask = useStore(s => s.updateSubtask);
   // Mirror the query into the URL (replaceState — not a history entry per
   // keystroke) and read it back when the hash changes underneath us.
@@ -990,6 +991,7 @@ export function Table() {
             if (!d) return;
             const next = Math.max(15, Math.round((d.startMins + (ev.clientX - d.startX) / d.pxPerMin) / 15) * 15);
             setGanttResize(null);
+            ganttJustResized.current = true; setTimeout(() => { ganttJustResized.current = false; }, 0);
             if (next !== d.startMins) commitResize(t2, next);
           };
           window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
@@ -1027,7 +1029,7 @@ export function Table() {
                     onDragEnd={() => { setDragId(null); setDragOverId(null); }}
                     data-gantt-row
                     style={{ position: 'relative', height: 40, borderBottom: '1px solid var(--t-brd2)', background: i % 2 ? 'transparent' : 'color-mix(in oklab, var(--t-surf2) 50%, transparent)', opacity: dragId === t2.id ? 0.4 : 1, borderTop: dragOverId === t2.id && dragId !== t2.id ? '2px solid var(--t-acc)' : undefined, cursor: 'grab' }}>
-                    <div onClick={() => openTask(t2.id)} title={`${t2.title} · ~${formatMinutes(mins)} remaining · ${Math.round(progress * 100)}% of steps done · drag to reorder · drag the right edge to change the time`}
+                    <div onClick={() => { if (!ganttJustResized.current) openTask(t2.id); }} title={`${t2.title} · ~${formatMinutes(mins)} remaining · ${Math.round(progress * 100)}% of steps done · drag to reorder · drag the right edge to change the time`}
                       style={{ position: 'absolute', left: `${left}%`, width: `${Math.max(widthPct, 0.8)}%`, top: 7, height: 26, borderRadius: 6, cursor: 'pointer', background: `color-mix(in oklab, ${accent} 78%, white)`, boxShadow: ganttResize?.id === t2.id ? `0 0 0 2px ${accent}` : '0 1px 2px rgba(0,0,0,0.15)', overflow: 'hidden' }}>
                       {/* progress fill */}
                       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${progress * 100}%`, background: accent }} />
