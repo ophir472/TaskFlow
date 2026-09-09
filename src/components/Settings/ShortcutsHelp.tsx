@@ -33,6 +33,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       { keys: ['↑', '↓'], what: 'Move row focus' },
       { keys: ['Enter'], what: 'Open the focused task' },
       { keys: ['d'], what: 'Open the Daily view (Table page only)' },
+      { keys: ['/'], what: 'Focus the search box (Esc clears it)' },
     ],
   },
   {

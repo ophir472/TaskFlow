@@ -111,6 +111,8 @@ export function Table() {
   const [mailPopupId, setMailPopupId] = useState<string | null>(null);
   const [aiTaskId, setAiTaskId] = useState<string | null>(null);
   const [dailyOpen, setDailyOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(0);
   const [viewMode, setViewMode] = useState<'table' | 'cards' | 'pipeline' | 'gantt'>('table');
@@ -126,7 +128,7 @@ export function Table() {
     setTableFilterPreset(null);
   }, [tableFilterPreset, setTableFilterPreset]);
 
-  useEffect(() => { setPage(0); }, [workTypeFilter, typeFilter, reqFilter, projFilter, statusFilter, tagFilter, minScore, quickFilters, viewMode]);
+  useEffect(() => { setPage(0); }, [workTypeFilter, typeFilter, reqFilter, projFilter, statusFilter, tagFilter, minScore, quickFilters, viewMode, search]);
 
   useEffect(() => {
     if (!filterMenu) return;
@@ -251,6 +253,13 @@ export function Table() {
     if (it.archived) return false;
     // "Get back to" notes live only in the ▣ Hub and search — never the table.
     if (it.kind === 'getback') return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      const t = it as Task;
+      const hay = [it.title, t.requester, t.project, t.jiraLink, t.itsmTicket, t.notes, t.description]
+        .filter((v): v is string => typeof v === 'string');
+      if (!hay.some(v => v.toLowerCase().includes(q))) return false;
+    }
     if (reqFilter && (it as Task).requester !== reqFilter) return false;
     if (projFilter && (it as Task).project !== projFilter) return false;
     if (typeFilter && it.kind !== typeFilter) return false;
@@ -370,6 +379,9 @@ export function Table() {
       } else if (e.key === 'Enter' && focusedIdxRef.current >= 0) {
         const item = rowsRef.current[focusedIdxRef.current];
         if (item) openTask(item.id);
+      } else if (e.key === '/' || e.code === 'Slash') {
+        e.preventDefault();
+        searchRef.current?.focus();
       } else if (e.key === 'd' || e.code === 'KeyD') {
         setDailyOpen(true);
       }
@@ -513,6 +525,19 @@ export function Table() {
     <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', overflowX: 'hidden' }}>
       {/* Filters + column picker */}
       <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* Search — title, requester, project, Jira, ITSM, notes, description */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <span style={{ position: 'absolute', left: 9, fontSize: 13, color: 'var(--t-muted)', pointerEvents: 'none' }}>⌕</span>
+          <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') { setSearch(''); (e.target as HTMLInputElement).blur(); } }}
+            placeholder="Search tasks…  /"
+            style={{ width: 220, fontSize: 12.5, padding: '6px 26px 6px 26px', borderRadius: 7, border: '1px solid ' + (search ? 'var(--t-acc)' : 'var(--t-brd)'), background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
+          {search && (
+            <span onClick={() => { setSearch(''); searchRef.current?.focus(); }} title="Clear"
+              style={{ position: 'absolute', right: 8, fontSize: 13, color: 'var(--t-muted)', cursor: 'pointer', lineHeight: 1 }}>×</span>
+          )}
+        </div>
+
         {/* + Filter — Linear-style: one button, a popover of fields, active
             filters render as removable pills. */}
         <div style={{ position: 'relative' }} ref={filterMenuRef}>
