@@ -429,10 +429,11 @@ export function Archive() {
 
             <div style={{ marginLeft: 'auto', position: 'relative' }} ref={colPickerRef}>
               <button onClick={() => setColPickerOpen(o => !o)}
-                style={ghostBtn}
+                title="Columns — choose which to show"
+                style={{ ...ghostBtn, fontSize: 15, padding: '4px 8px' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                Columns ▾
+                🔧
               </button>
               {colPickerOpen && (
                 <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.15)', padding: '8px 0', zIndex: 30, minWidth: 180 }}>
