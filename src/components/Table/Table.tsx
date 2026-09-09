@@ -534,21 +534,25 @@ export function Table() {
   return (
     <>
     <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', overflowX: 'hidden' }}>
-      {/* Filters + column picker */}
-      <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* Search row */}
+      <div style={{ display: 'flex', alignItems: 'center' }}>
         {/* Search — title, requester, project, Jira, ITSM, notes, description */}
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
           <span style={{ position: 'absolute', left: 9, fontSize: 13, color: 'var(--t-muted)', pointerEvents: 'none' }}>⌕</span>
           <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
             onKeyDown={e => { if (e.key === 'Escape') { setSearch(''); (e.target as HTMLInputElement).blur(); } }}
             placeholder="Search tasks…  /"
-            style={{ width: 220, fontSize: 12.5, padding: '6px 26px 6px 26px', borderRadius: 7, border: '1px solid ' + (search ? 'var(--t-acc)' : 'var(--t-brd)'), background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
+            style={{ width: 'min(480px, 100%)', fontSize: 13, padding: '6px 26px 6px 26px', borderRadius: 7, border: '1px solid ' + (search ? 'var(--t-acc)' : 'var(--t-brd)'), background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
           {search && (
             <span onClick={() => { setSearch(''); searchRef.current?.focus(); }} title="Clear"
               style={{ position: 'absolute', right: 8, fontSize: 13, color: 'var(--t-muted)', cursor: 'pointer', lineHeight: 1 }}>×</span>
           )}
         </div>
 
+      </div>
+
+      {/* Filters + column picker */}
+      <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
         {/* + Filter — Linear-style: one button, a popover of fields, active
             filters render as removable pills. */}
         <div style={{ position: 'relative' }} ref={filterMenuRef}>
