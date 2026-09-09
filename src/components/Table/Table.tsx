@@ -708,10 +708,22 @@ export function Table() {
                         <span style={{ width: 20, height: 20, borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontWeight: 800, color: 'white', background: b.color }}>{b.code}</span>
                         <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12.5, color: 'var(--t-txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {o.isField
-                            ? <><span style={{ color: b.color }}>{o.label}</span><span style={{ color: 'var(--t-muted)' }}> …</span></>
+                            ? <>
+                                <span style={{ color: b.color }}>{o.label}</span>
+                                {/* the field's values inline — click one to apply it directly */}
+                                <span style={{ marginLeft: 8, fontFamily: 'inherit', fontSize: 11.5, color: 'var(--t-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {FILTER_OPTIONS.filter(x => x.group === o.group).map((x, j) => (
+                                    <span key={x.label}>
+                                      {j > 0 && <span style={{ opacity: 0.5 }}> · </span>}
+                                      <span onClick={e => { e.stopPropagation(); setSearch(head.trim()); x.apply(); setSearchHi(-1); setSearchOpen(false); searchRef.current?.focus(); }}
+                                        style={{ cursor: 'pointer', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}>{x.label}</span>
+                                    </span>
+                                  ))}
+                                </span>
+                              </>
                             : <><span style={{ color: b.color }}>{o.group.toLowerCase()}</span><span style={{ color: 'var(--t-muted)' }}>: </span>{o.label}</>}
                         </span>
-                        <span style={{ fontSize: 11, color: 'var(--t-muted)', whiteSpace: 'nowrap' }}>{o.isField ? `${count} · ${b.desc}` : b.desc}</span>
+                        <span style={{ fontSize: 11, color: 'var(--t-muted)', whiteSpace: 'nowrap' }}>{o.isField ? `${count}` : b.desc}</span>
                       </div>
                     );
                   })}
