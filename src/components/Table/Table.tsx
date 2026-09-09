@@ -53,6 +53,16 @@ const STD_COLS: ColDef[] = [
 
 // ── Styles ──────────────────────────────────────────────────────
 
+// Chain-in-circle "link" glyph (the flaticon 10016986 shape, redrawn inline so
+// it needs no network and follows the button's text colour).
+const LinkIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <circle cx="12" cy="12" r="10.5" />
+    <path d="M10.4 13.6a2.6 2.6 0 0 1 0-3.7l2.4-2.4a2.6 2.6 0 0 1 3.7 3.7l-1.3 1.3" />
+    <path d="M13.6 10.4a2.6 2.6 0 0 1 0 3.7l-2.4 2.4a2.6 2.6 0 0 1-3.7-3.7l1.3-1.3" />
+  </svg>
+);
+
 const ghostBtn: React.CSSProperties = {
   fontSize: 13, padding: '5px 10px', borderRadius: 6, border: 'none',
   background: 'transparent', color: 'var(--t-muted)', cursor: 'pointer', fontWeight: 500,
@@ -745,9 +755,21 @@ export function Table() {
         <button
           onClick={() => { navigator.clipboard.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
           title="Copy a link to this exact search / filter set"
-          style={{ flexShrink: 0, height: 32, minWidth: 96, textAlign: 'center', border: '1px solid var(--t-brd)', background: copied ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: copied ? 'var(--t-acc-dk)' : 'var(--t-txt2)', fontSize: 12, fontWeight: 600, padding: '0 10px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-          {copied ? '✓ Copied' : '⧉ Copy link'}
+          style={{ flexShrink: 0, height: 32, width: 36, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: '1px solid ' + (copied ? 'var(--t-acc)' : 'var(--t-brd)'), background: copied ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: copied ? 'var(--t-acc-dk)' : 'var(--t-txt2)', borderRadius: 8, cursor: 'pointer' }}>
+          {copied ? <span style={{ fontSize: 14, fontWeight: 700 }}>✓</span> : <LinkIcon />}
         </button>
+        {/* Reset order — always in the header (fixed line); disabled until a
+            row was dragged out of the automatic order */}
+        {(() => {
+          const hasManual = items.some(it => it.kind === 'task' && (it as Task).manuallyMoved);
+          return (
+            <button onClick={resetManualOrder} disabled={!hasManual}
+              title={hasManual ? 'Put every dragged row back in the automatic order' : 'No row was dragged out of the automatic order'}
+              style={{ flexShrink: 0, height: 32, padding: '0 10px', border: '1px solid var(--t-brd)', borderRadius: 8, background: 'var(--t-surf)', color: hasManual ? 'var(--t-txt2)' : 'var(--t-muted)', opacity: hasManual ? 1 : 0.5, fontSize: 12, fontWeight: 600, cursor: hasManual ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
+              ↺ Reset order
+            </button>
+          );
+        })()}
         {/* Views + column picker — one fixed header line with the title and search;
             anything that comes and goes (filter pills, selection, reset) lives in the
             bar below the header so this line never reflows */}
@@ -841,13 +863,12 @@ export function Table() {
       )}
 
       {/* Filter bar — between the header and the table: active filter pills
-          (from the search box, ⌕ cells, the ▾ pickers — all the same string),
-          manual-order reset and the selection actions. Only renders when it
+          (from the search box, ⌕ cells, the ▾ pickers — all the same string)
+          and the selection actions. Only renders when it
           has something to show, so the header line above stays fixed. */}
       {(() => {
         const hasPills = !!(workTypeFilter || statusFilter || reqFilter || projFilter || tagFilter || typeFilter || minScore || [...quickFilters].some(k => k !== 'forToday'));
-        const hasManual = items.some(it => it.kind === 'task' && (it as Task).manuallyMoved);
-        if (!hasPills && !hasManual && selCount === 0) return null;
+        if (!hasPills && selCount === 0) return null;
         return (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', padding: '8px 12px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 10 }}>
         {/* Active filter pills */}
@@ -881,14 +902,6 @@ export function Table() {
           );
         })()}
 
-        {items.some(it => it.kind === 'task' && (it as Task).manuallyMoved) && (
-          <button onClick={resetManualOrder}
-            style={{ ...ghostBtn, fontSize: 12 }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-            ↺ Reset all to auto
-          </button>
-        )}
 
         {selCount > 0 && (
           <>
