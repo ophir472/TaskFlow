@@ -348,6 +348,28 @@ function ManagedList({ title, items, onAdd, onRemove }: { title: string; items: 
   );
 }
 
+// Bookmarks drawer settings — the favicon service is data (corporate
+// networks may block the default; empty = letter tiles only).
+function BookmarkSettingsCard() {
+  const config = useStore(s => s.bookmarkConfig);
+  const setBookmarkConfig = useStore(s => s.setBookmarkConfig);
+  const [draft, setDraft] = useState(config.faviconTemplate);
+  useEffect(() => { setDraft(config.faviconTemplate); }, [config.faviconTemplate]);
+  const cardSt: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20, marginBottom: 16 };
+  return (
+    <div style={cardSt}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 3 }}>🔖 Bookmarks</div>
+      <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: 12 }}>The bottom drawer (line with a bump, or <b>b</b>). Site icons come from this URL template — <code>{'{domain}'}</code> is replaced. Leave empty for letter tiles only (no external calls).</div>
+      <input value={draft} onChange={e => setDraft(e.target.value)}
+        onBlur={() => { if (draft.trim() !== config.faviconTemplate) setBookmarkConfig({ faviconTemplate: draft.trim() }); }}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        placeholder="https://www.google.com/s2/favicons?domain={domain}&sz=64"
+        style={{ width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }} />
+      <div style={{ fontSize: 12, color: 'var(--t-muted)', marginTop: 8 }}>Alternatives: <code>https://icons.duckduckgo.com/ip3/{'{domain}'}.ico</code> · <code>https://{'{domain}'}/favicon.ico</code></div>
+    </div>
+  );
+}
+
 const SETTINGS_TABS = [
   { id: 'general', label: 'General' },
   { id: 'dashboard', label: 'Dashboard' },
@@ -580,6 +602,8 @@ export function Settings() {
         </div>
       </div>
       )}
+
+      {tab === 'general' && <BookmarkSettingsCard />}
 
       {/* Backup & Version History */}
       {tab === 'backup' && (<>

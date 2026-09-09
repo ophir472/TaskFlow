@@ -752,7 +752,7 @@ const COALESCE_DATA_EVENTS = new Set([
     'followup:add', 'followup:update', 'followup:remove', 'followup:progress', 'followup:done',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
-    'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content',
+    'bookmark:add', 'bookmark:update', 'bookmark:remove', 'bookmark:restore', 'bookmark:move', 'bookmark:import', 'bookmark-folder:add', 'bookmark-folder:update', 'bookmark-folder:remove', 'bookmark-config:set', 'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content',
   'theme:set',
   // Per-card UI preferences that the user cares to preserve across versions.
   'card:resize',
@@ -865,7 +865,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'followup:add', 'followup:update', 'followup:remove', 'followup:progress', 'followup:done',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
-    'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
+    'bookmark:add', 'bookmark:update', 'bookmark:remove', 'bookmark:restore', 'bookmark:move', 'bookmark:import', 'bookmark-folder:add', 'bookmark-folder:update', 'bookmark-folder:remove', 'bookmark-config:set', 'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
     'card:resize',
     'responsibility:add', 'responsibility:update', 'responsibility:remove',
     'responsibility:toggle-active', 'responsibility:generate-tasks',
@@ -878,7 +878,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'restore:start', 'restore:complete', 'restore:failed', 'item:import',
     'snapshot-dir:configured',
     'review:mark-task', 'review:dismiss', 'review:begin', 'review:end', 'review:extend',
-    'itsm:sync', 'itsm:viewed', 'task:planned', 'agenda:check', 'walkthrough:set',
+    'itsm:sync', 'itsm:viewed', 'task:planned', 'agenda:check', 'walkthrough:set', 'bookmark:auto',
     'table-cols:set', 'archive-cols:set', 'table-widths:set', 'archive-widths:set',
     'ai:request', 'ai:response', 'ai:error',
   ]);
@@ -902,7 +902,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'followup:add', 'followup:update', 'followup:remove', 'followup:progress', 'followup:done',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
-    'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
+    'bookmark:add', 'bookmark:update', 'bookmark:remove', 'bookmark:restore', 'bookmark:move', 'bookmark:import', 'bookmark-folder:add', 'bookmark-folder:update', 'bookmark-folder:remove', 'bookmark-config:set', 'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
     'card:resize',
     'responsibility:add', 'responsibility:update', 'responsibility:remove',
     'responsibility:toggle-active', 'responsibility:generate-tasks',
@@ -1192,6 +1192,16 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
         s.otherChanges++;
         s.details.push({ action: 'edited docs page', title: d.title || '' });
         break;
+      case 'bookmark:add': s.otherChanges++; s.details.push({ action: 'added bookmark', title: d.title || d.url || '' }); break;
+      case 'bookmark:update': s.otherChanges++; s.details.push({ action: 'edited bookmark', title: d.title || '' }); break;
+      case 'bookmark:remove': s.otherChanges++; s.details.push({ action: `removed ${Array.isArray(d.ids) ? d.ids.length : 1} bookmark(s)`, title: (d.titles ?? []).slice(0, 3).join(', ') }); break;
+      case 'bookmark:restore': s.otherChanges++; s.details.push({ action: 'restored bookmark(s)', title: (d.titles ?? []).slice(0, 3).join(', ') }); break;
+      case 'bookmark:move': s.otherChanges++; s.details.push({ action: `moved ${Array.isArray(d.ids) ? d.ids.length : 1} bookmark(s)`, title: '' }); break;
+      case 'bookmark:import': s.otherChanges++; s.details.push({ action: `imported ${d.bookmarks ?? 0} bookmarks in ${d.folders ?? 0} folders`, title: '' }); break;
+      case 'bookmark-folder:add': s.otherChanges++; s.details.push({ action: 'added bookmark folder', title: d.name || '' }); break;
+      case 'bookmark-folder:update': s.otherChanges++; s.details.push({ action: 'renamed/moved bookmark folder', title: d.name || '' }); break;
+      case 'bookmark-folder:remove': s.otherChanges++; s.details.push({ action: 'removed bookmark folder', title: d.name || '' }); break;
+      case 'bookmark-config:set': s.otherChanges++; s.details.push({ action: 'changed bookmark settings', title: '' }); break;
       case 'itsm-config:set':
         s.otherChanges++;
         s.details.push({ action: 'updated ServiceNow config', title: d.host || '' });

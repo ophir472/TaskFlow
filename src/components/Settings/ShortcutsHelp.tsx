@@ -22,6 +22,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       { keys: ['r'], what: 'Start the Green Play review' },
       { keys: ['m'], what: 'Open the communication assistant' },
       { keys: ['s'], what: 'Start Sprint (war mode)' },
+      { keys: ['b'], what: 'Open the bookmarks drawer (the line with a bump at the bottom does the same)' },
       { keys: ['p'], what: "Open Plan — write today's steps (inside the mail assistant, p starts its preview instead)" },
       { keys: ['Shift', 'S'], what: 'Enter Play (focus mode) for the current card — Shift+P does the same' },
       { keys: ['Esc'], what: 'While typing: unfocus the field (shortcuts work again). Otherwise: close any popup / overlay' },
@@ -103,6 +104,17 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       { keys: ['↑', '↓'], what: 'Move between the options' },
       { keys: ['Enter', 'Space'], what: 'Toggle the highlighted tag / pick the kind' },
       { keys: ['Esc'], what: 'Close (the card unpins)' },
+    ],
+  },
+  {
+    title: 'Bookmarks drawer',
+    rows: [
+      { keys: ['/'], what: 'Focus the search (tag:x · folder:x · is:favorite / task / unsorted / dup · free text also matches the source task title)' },
+      { keys: ['↑', '↓'], what: 'Move · Enter opens the link in a new tab' },
+      { keys: ['e', 'f', 'n'], what: 'Edit · favorite · new bookmark (full form)' },
+      { keys: ['Space'], what: 'Select (then Move to / + Tag / ★ / Delete act on the selection)' },
+      { keys: ['⌫'], what: 'Delete — Undo in the corner banner' },
+      { keys: ['Esc'], what: 'Clear selection → close the drawer' },
     ],
   },
   {

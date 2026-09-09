@@ -251,6 +251,40 @@ export interface SnConfig {
 
 // ── Docs (notebook > category > page, OneNote-style) ────────────
 
+// ── Bookmarks (2026-09-10) — the bottom drawer. Chrome's model (nested
+// folders, title + URL) plus Raindrop-style tags, notes, favorites and an
+// Unsorted inbox (folderId null). Links typed on a task card are mirrored
+// here automatically (source = the task + field) tagged 'task' + keywords.
+export interface Bookmark {
+  id: string;
+  url: string;
+  title: string;
+  notes: string;
+  tags: string[];
+  folderId: string | null;      // null = Unsorted
+  favorite: boolean;
+  createdAt: number;
+  updatedAt: number;
+  source?: { taskId: string; field: string };
+  auto?: boolean;               // title/tags still machine-managed (never edited by hand)
+}
+
+export interface BookmarkFolder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  createdAt: number;
+}
+
+export interface BookmarkConfig {
+  // Favicon URL template — {domain} is replaced. Empty = letter tiles only.
+  faviconTemplate: string;
+  view: 'list' | 'grid' | 'cards';
+  sort: 'added' | 'title' | 'domain';
+}
+
+// 'links' pages were retired 2026-09-10 (migration v12 turned them into
+// bookmark folders); the value stays so old snapshots still type-check.
 export type DocPageType = 'doc' | 'links';
 
 export interface DocPage {

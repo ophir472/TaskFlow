@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField, Followup, GetBackTo } from './types';
+import type { Bookmark, BookmarkFolder, BookmarkConfig, Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField, Followup, GetBackTo } from './types';
 import { EMPTY_SN_CONFIG } from './servicenow';
 import { EMPTY_AI_CONFIG } from './ai';
 import { triggerIfDue, computeNextDueAt } from './responsibilities';
@@ -9,6 +9,8 @@ import { midnight, nextId } from './engine';
 
 // Fire-and-forget log helper. Dynamic import avoids circular dep at module init.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+import { upsertTaskLinks, taskLinks } from './bookmarks';
+
 function slog(event: string, data?: any): void {
   import('./snapshots').then(m => m.log(event, data)).catch(() => {});
 }
@@ -79,6 +81,10 @@ interface AppState {
   snConfig: SnConfig;
   aiConfig: AiConfig;
   notebooks: DocNotebook[];
+  // Bookmarks drawer (2026-09-10). folderId null = Unsorted.
+  bookmarks: Bookmark[];
+  bookmarkFolders: BookmarkFolder[];
+  bookmarkConfig: BookmarkConfig;
   taskOrder: string[];
   tableVisibleCols: string[] | null;
   archiveVisibleCols: string[] | null;
@@ -201,6 +207,16 @@ interface AppState {
   setTableFilterPreset: (preset: string | null) => void;
   toggleAgendaCheck: (stepId: string) => void;
   setAgendaChecks: (ids: string[], on: boolean) => void;
+  addBookmark: (input: { url: string; title?: string; notes?: string; tags?: string[]; folderId?: string | null; favorite?: boolean }) => string;
+  updateBookmark: (id: string, patch: Partial<Bookmark>) => void;
+  removeBookmarks: (ids: string[]) => void;
+  restoreBookmarks: (bookmarks: Bookmark[]) => void;
+  moveBookmarks: (ids: string[], folderId: string | null) => void;
+  addBookmarkFolder: (name: string, parentId: string | null) => string;
+  updateBookmarkFolder: (id: string, patch: Partial<BookmarkFolder>) => void;
+  removeBookmarkFolder: (id: string) => void;
+  importBookmarks: (folders: BookmarkFolder[], bookmarks: Bookmark[], intoFolderId: string | null) => void;
+  setBookmarkConfig: (patch: Partial<BookmarkConfig>) => void;
   setSprintOrder: (keys: string[]) => void;
   setReviewOrder: (ids: string[]) => void;
   beginReview: (taskIds: string[], initialReviewedAt: Record<string, number>) => void;
@@ -229,6 +245,27 @@ function pushHistory(history: ChangeRecord[], record: ChangeRecord): ChangeRecor
   return [...history, record].slice(-100);
 }
 
+export const DEFAULT_BOOKMARK_CONFIG: BookmarkConfig = {
+  faviconTemplate: 'https://www.google.com/s2/favicons?domain={domain}&sz=64',
+  view: 'list', sort: 'added',
+};
+
+// Links typed on a card are mirrored into the bookmarks drawer, tagged
+// 'task' + keywords from the card, so a fragment of the task title finds
+// them. Runs after the item mutators; QUIET (the item edit itself is the
+// versioned event) and a no-op unless a link field was touched.
+const LINK_FIELDS = ['generalLink', 'generalLinkLabel', 'extraGeneralLinks', 'extraGeneralLinkLabels', 'subtasks', 'title'];
+function mirrorTaskLinks(taskId: string, patch: Record<string, unknown>) {
+  if (!LINK_FIELDS.some(k => k in patch)) return;
+  const st = useStore.getState();
+  const t = st.items.find(it => it.id === taskId);
+  if (!t || t.kind !== 'task') return;
+  const next = upsertTaskLinks(st.bookmarks, t as Task);
+  if (!next) return;
+  slog('bookmark:auto', { taskId, links: taskLinks(t as Task).length });
+  useStore.setState({ bookmarks: next });
+}
+
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -255,6 +292,9 @@ export const useStore = create<AppState>()(
       snConfig: EMPTY_SN_CONFIG,
       aiConfig: EMPTY_AI_CONFIG,
       notebooks: [],
+      bookmarks: [],
+      bookmarkFolders: [],
+      bookmarkConfig: DEFAULT_BOOKMARK_CONFIG,
       taskOrder: [],
       tableVisibleCols: null,
       archiveVisibleCols: null,
@@ -322,6 +362,7 @@ export const useStore = create<AppState>()(
           }),
           history: pushHistory(s.history, { ts: Date.now(), type: 'update', id, patch: patch as Partial<Item> })
         }));
+        mirrorTaskLinks(id, patch as Record<string, unknown>);
       },
 
       updateTask: (id, patch) => {
@@ -330,6 +371,7 @@ export const useStore = create<AppState>()(
           items: s.items.map(it => it.id === id && it.kind === 'task' ? linkStatus(it, { ...it, ...patch, updatedAt: Date.now() }, patch.status) : it),
           history: pushHistory(s.history, { ts: Date.now(), type: 'updateTask', id })
         }));
+        mirrorTaskLinks(id, patch as Record<string, unknown>);
       },
 
       addFollowup: (taskId, title, notes = '') => {
@@ -396,6 +438,7 @@ export const useStore = create<AppState>()(
 
       updateSubtask: (parentId, subId, patch) => {
         slog('subtask:update', { parentId, subId, fields: Object.keys(patch), patch });
+        if ('generalLink' in patch) queueMicrotask(() => mirrorTaskLinks(parentId, { generalLink: true }));
         // Content edits stamp changedAt so review's update-Jira prefill can
         // list subtasks changed since the review baseline.
         const contentEdit = ['notes', 'blockers', 'checklist', 'title'].some(k => k in patch);
@@ -991,6 +1034,66 @@ export const useStore = create<AppState>()(
         });
       },
 
+      // ── Bookmarks ──
+      addBookmark: (input) => {
+        const id = nextId('bm'); const now = Date.now();
+        const b: Bookmark = { id, url: input.url.trim(), title: (input.title ?? '').trim() || input.url.trim(), notes: input.notes ?? '', tags: input.tags ?? [], folderId: input.folderId ?? null, favorite: !!input.favorite, createdAt: now, updatedAt: now };
+        slog('bookmark:add', { id, title: b.title, url: b.url });
+        set(s => ({ bookmarks: [...s.bookmarks, b] }));
+        return id;
+      },
+      updateBookmark: (id, patch) => {
+        const cur = get().bookmarks.find(b => b.id === id);
+        slog('bookmark:update', { id, title: cur?.title, fields: Object.keys(patch) });
+        // A hand edit of title/tags/notes ends machine management of them.
+        const manual = ['title', 'tags', 'notes'].some(k => k in patch);
+        set(s => ({ bookmarks: s.bookmarks.map(b => b.id === id ? { ...b, ...patch, ...(manual ? { auto: false } : {}), updatedAt: Date.now() } : b) }));
+      },
+      removeBookmarks: (ids) => {
+        const titles = get().bookmarks.filter(b => ids.includes(b.id)).map(b => b.title);
+        slog('bookmark:remove', { ids, titles });
+        set(s => ({ bookmarks: s.bookmarks.filter(b => !ids.includes(b.id)) }));
+      },
+      restoreBookmarks: (bookmarks) => {
+        slog('bookmark:restore', { ids: bookmarks.map(b => b.id), titles: bookmarks.map(b => b.title) });
+        set(s => ({ bookmarks: [...s.bookmarks.filter(b => !bookmarks.some(x => x.id === b.id)), ...bookmarks] }));
+      },
+      moveBookmarks: (ids, folderId) => {
+        slog('bookmark:move', { ids, folderId });
+        set(s => ({ bookmarks: s.bookmarks.map(b => ids.includes(b.id) ? { ...b, folderId, updatedAt: Date.now() } : b) }));
+      },
+      addBookmarkFolder: (name, parentId) => {
+        const id = nextId('bf');
+        slog('bookmark-folder:add', { id, name, parentId });
+        set(s => ({ bookmarkFolders: [...s.bookmarkFolders, { id, name: name.trim() || 'Folder', parentId, createdAt: Date.now() }] }));
+        return id;
+      },
+      updateBookmarkFolder: (id, patch) => {
+        slog('bookmark-folder:update', { id, fields: Object.keys(patch), name: patch.name });
+        set(s => ({ bookmarkFolders: s.bookmarkFolders.map(f => f.id === id ? { ...f, ...patch } : f) }));
+      },
+      // Removing a folder never deletes bookmarks: they (and sub-folders)
+      // move up to the parent (Unsorted at the top level).
+      removeBookmarkFolder: (id) => {
+        const f = get().bookmarkFolders.find(x => x.id === id);
+        slog('bookmark-folder:remove', { id, name: f?.name });
+        set(s => ({
+          bookmarkFolders: s.bookmarkFolders.filter(x => x.id !== id).map(x => x.parentId === id ? { ...x, parentId: f?.parentId ?? null } : x),
+          bookmarks: s.bookmarks.map(b => b.folderId === id ? { ...b, folderId: f?.parentId ?? null } : b),
+        }));
+      },
+      importBookmarks: (folders, bookmarks, intoFolderId) => {
+        slog('bookmark:import', { folders: folders.length, bookmarks: bookmarks.length, intoFolderId });
+        set(s => ({
+          bookmarkFolders: [...s.bookmarkFolders, ...folders.map(f => f.parentId === null ? { ...f, parentId: intoFolderId } : f)],
+          bookmarks: [...s.bookmarks, ...bookmarks.map(b => b.folderId === null ? { ...b, folderId: intoFolderId } : b)],
+        }));
+      },
+      setBookmarkConfig: (patch) => {
+        slog('bookmark-config:set', { keys: Object.keys(patch) });
+        set(s => ({ bookmarkConfig: { ...s.bookmarkConfig, ...patch } }));
+      },
+
       setSprintTypeToggle: (key, on) => {
         slog('sprint:toggle', { key, on });
         set(s => ({ sprintTypeToggles: { ...s.sprintTypeToggles, [key]: on } }));
@@ -1274,7 +1377,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'taskflow-store',
-      version: 11,
+      version: 12,
       storage: createJSONStorage(() => IS_PREVIEW_MODE ? sessionStorage : localStorage),
       skipHydration: IS_PREVIEW_MODE,
       // UI-only fields: kept in-memory per-tab, NOT persisted. Otherwise every
@@ -1389,6 +1492,38 @@ export const useStore = create<AppState>()(
               createdAt: it.createdAt ?? Date.now(), updatedAt: it.updatedAt ?? Date.now(), archived: false,
             };
           });
+        }
+        if (fromVersion < 12 && Array.isArray(persisted.notebooks)) {
+          // Links-board pages ("NAME: URL" lines) retired: each becomes a
+          // bookmark folder named after the page and the page is removed.
+          // Re-runnable on old snapshots (restore re-runs migrations).
+          const now = Date.now();
+          const folders: BookmarkFolder[] = Array.isArray(persisted.bookmarkFolders) ? [...persisted.bookmarkFolders] : [];
+          const bookmarks: Bookmark[] = Array.isArray(persisted.bookmarks) ? [...persisted.bookmarks] : [];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          persisted.notebooks = persisted.notebooks.map((nb: any) => ({
+            ...nb,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            categories: (nb.categories ?? []).map((c: any) => ({
+              ...c,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              pages: (c.pages ?? []).filter((p: any) => {
+                if (p?.type !== 'links') return true;
+                const fid = nextId('bf');
+                folders.push({ id: fid, name: p.title || 'Links', parentId: null, createdAt: p.createdAt ?? now });
+                String(p.content ?? '').split('\n').map((l: string) => l.trim()).filter((l: string) => l && !l.startsWith('#')).forEach((l: string) => {
+                  const ci = l.indexOf(':'); if (ci <= 0) return;
+                  const name = l.slice(0, ci).trim(); let url = l.slice(ci + 1).trim();
+                  if (!name || !url) return;
+                  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+                  bookmarks.push({ id: nextId('bm'), url, title: name, notes: '', tags: [], folderId: fid, favorite: false, createdAt: p.createdAt ?? now, updatedAt: now });
+                });
+                return false;
+              }),
+            })),
+          }));
+          persisted.bookmarkFolders = folders;
+          persisted.bookmarks = bookmarks;
         }
         if (fromVersion < 9 && persisted.dashboardConfig?.tiles && Array.isArray(persisted.dashboardConfig.tiles)
             && !persisted.dashboardConfig.tiles.includes('hub')) {

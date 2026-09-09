@@ -11,6 +11,7 @@ import { QuickHelp } from './components/QuickHelp/QuickHelp';
 import { Hub } from './components/Hub/Hub';
 import { Home } from './components/Home/Home';
 import { ChecklistPopup } from './components/Docs/ChecklistPopup';
+import { BookmarksDrawer, readBookmarksHash } from './components/Bookmarks/BookmarksDrawer';
 import { WalkthroughBar } from './components/Home/WalkthroughBar';
 import { Explore } from './components/Explore/Explore';
 import { Spotlight } from './components/Explore/Spotlight';
@@ -146,6 +147,8 @@ export default function App() {
   const [playTaskId, setPlayTaskId] = useState<string | null>(null);
   // Daily checklist popup (a Docs page as an agenda step) — #checklist/<pageId>
   const [checklistPageId, setChecklistPageId] = useState<string | null>(null);
+  // Bookmarks drawer — #bookmarks[/<scope>][?q=…], slides over any view
+  const [bookmarksOpen, setBookmarksOpen] = useState(() => readBookmarksHash().open);
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -385,6 +388,7 @@ export default function App() {
       setPlanOpen(seg === 'plan');
       setPlayTaskId(seg === 'play' ? (window.location.hash.slice(1).split('/')[1] ?? null) : null);
       setChecklistPageId(seg === 'checklist' ? (window.location.hash.slice(1).split('/')[1]?.split('?')[0] ?? null) : null);
+      setBookmarksOpen(seg === 'bookmarks');
       // Snapshot on every navigation. Async, non-blocking.
       writeSnapshot().then(written => {
         if (written) log('snapshot:navigate', { hash: window.location.hash });
@@ -406,7 +410,7 @@ export default function App() {
   useEffect(() => {
     if (!viewUrlSynced.current) { viewUrlSynced.current = true; return; }
     const currentSeg = window.location.hash.slice(1).split('/')[0].split('?')[0];
-    if (currentSeg === 'review' || currentSeg === 'sncreate' || currentSeg === 'mail' || currentSeg === 'sprint' || currentSeg === 'plan' || currentSeg === 'play' || currentSeg === 'checklist') return;
+    if (currentSeg === 'review' || currentSeg === 'sncreate' || currentSeg === 'mail' || currentSeg === 'sprint' || currentSeg === 'plan' || currentSeg === 'play' || currentSeg === 'checklist' || currentSeg === 'bookmarks') return;
     if (currentSeg !== view) window.location.hash = view;
   }, [view]);
 
@@ -602,6 +606,12 @@ export default function App() {
           if (window.location.hash.slice(1).split('/')[0] !== 'sprint') window.location.hash = 'sprint';
           return;
         }
+        // 'b' opens the bookmarks drawer.
+        if (e.key === 'b' || e.code === 'KeyB') {
+          e.preventDefault();
+          if (window.location.hash.slice(1).split('/')[0].split('?')[0] !== 'bookmarks') window.location.hash = 'bookmarks';
+          return;
+        }
         // 'r' opens Green Play review.
         if (e.key === 'r' || e.code === 'KeyR') {
           e.preventDefault();
@@ -731,6 +741,7 @@ export default function App() {
       {planOpen && <PlanPopup onClose={closePlan} />}
       {tourOpen && <Tour onClose={() => setTourOpen(false)} />}
       {checklistPageId && <ChecklistPopup pageId={checklistPageId} onClose={() => { if (window.location.hash.slice(1).split('/')[0] === 'checklist') history.back(); else setChecklistPageId(null); }} />}
+      <BookmarksDrawer open={bookmarksOpen} onClose={() => { if (window.location.hash.slice(1).split('/')[0].split('?')[0] === 'bookmarks') history.back(); else setBookmarksOpen(false); }} />
       <WalkthroughBar />
       {playTaskId && <Play taskId={playTaskId} onClose={closePlay} />}
       {spotlightOpen && <Spotlight onClose={() => setSpotlightOpen(false)} onToast={toastTimer} />}

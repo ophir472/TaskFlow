@@ -28,45 +28,6 @@ function findPage(notebooks: DocNotebook[], pageId: string): { nb: DocNotebook; 
   return null;
 }
 
-// ── links board preview ("NAME: URL" lines → clickable squares) ──
-
-function LinksPreview({ content }: { content: string }) {
-  const entries = content.split('\n')
-    .map(l => l.trim())
-    .filter(l => l && !l.startsWith('#'))
-    .map(l => {
-      const ci = l.indexOf(':');
-      if (ci <= 0) return null;
-      const name = l.slice(0, ci).trim();
-      let url = l.slice(ci + 1).trim();
-      if (!name || !url) return null;
-      if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
-      return { name, url };
-    })
-    .filter((e): e is { name: string; url: string } => e !== null);
-
-  if (entries.length === 0) {
-    return <div style={{ color: 'var(--t-muted)', fontSize: 13 }}>No links yet — one per line on the left: <b>Name: address</b></div>;
-  }
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-      {entries.map((e, i) => {
-        let domain = '';
-        try { domain = new URL(e.url).host.replace(/^www\./, ''); } catch { /* ignore */ }
-        return (
-          <div key={i} onClick={() => window.open(e.url, '_blank')} title={e.url}
-            style={{ width: 118, height: 86, boxSizing: 'border-box', padding: '12px 10px', borderRadius: 10, cursor: 'pointer', background: 'var(--t-surf2)', border: '1px solid var(--t-brd)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 6, textAlign: 'center', transition: 'border-color 0.12s, background 0.12s' }}
-            onMouseEnter={ev => { ev.currentTarget.style.borderColor = 'var(--t-acc)'; ev.currentTarget.style.background = 'var(--t-acc-bg)'; }}
-            onMouseLeave={ev => { ev.currentTarget.style.borderColor = 'var(--t-brd)'; ev.currentTarget.style.background = 'var(--t-surf2)'; }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t-txt)', lineHeight: 1.25, wordBreak: 'break-word' }}>{e.name}</div>
-            {domain && <div style={{ fontSize: 10.5, color: 'var(--t-muted)', wordBreak: 'break-all' }}>{domain} ↗</div>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── column building blocks ──────────────────────────────────────
 
 function ColumnAdd({ placeholder, onAdd }: { placeholder: string; onAdd: (name: string) => void }) {
@@ -372,7 +333,7 @@ export function Docs() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
             {cat.pages.map(p => (
               <div key={p.id} style={rowSt(page?.id === p.id)} onClick={() => openPage(p.id)}>
-                <span style={{ fontSize: 11, flexShrink: 0 }}>{p.type === 'links' ? '⊞' : '≡'}</span>
+                <span style={{ fontSize: 11, flexShrink: 0 }}>≡</span>
                 <RowName name={p.title} onRename={v => renameDocPage(p.id, v)} />
                 <span style={xSt} title="Delete page"
                   onClick={e => { e.stopPropagation(); if (confirm(`Delete page "${p.title}"?`)) removeDocPage(p.id); }}>×</span>
@@ -380,7 +341,6 @@ export function Docs() {
             ))}
           </div>
           <ColumnAdd placeholder="+ Page" onAdd={title => openPage(addDocPage(nb.id, cat.id, title, 'doc'))} />
-          <ColumnAdd placeholder="+ Links board" onAdd={title => openPage(addDocPage(nb.id, cat.id, title, 'links'))} />
         </div>
       )}
 
@@ -392,7 +352,7 @@ export function Docs() {
               ? <>Create a <b>notebook</b> on the left to get started.<br />Then a category, then pages — like OneNote.</>
               : !cat
                 ? <>Add a <b>category</b> to {nb ? <b>{nb.name}</b> : 'the notebook'}.</>
-                : <>Select or create a <b>page</b>.<br /><span style={{ fontSize: 12 }}>Pages hold notes (headings fold, checkboxes tick). A <b>links board</b> turns "Name: address" lines into clickable squares.</span></>}
+                : <>Select or create a <b>page</b>.<br /><span style={{ fontSize: 12 }}>Pages hold notes — type <b>/</b> for blocks, <b>[[</b> to link a page or task. Links live in the 🔖 bookmarks drawer (the line at the bottom).</span></>}
           </div>
         ) : (
           <>
@@ -401,11 +361,6 @@ export function Docs() {
                 value={page.title}
                 onChange={e => renameDocPage(page.id, e.target.value)}
                 style={{ flex: 1, minWidth: 0, fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em', border: 'none', outline: 'none', background: 'transparent', color: 'var(--t-txt)' }} />
-              {page.type === 'links' && (
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
-                  Links board
-                </span>
-              )}
               {isDaily && (
                 <span title="This page is a daily-agenda step: ticks here are today's ticks and reset at midnight; the text keeps the template"
                   style={{ fontSize: 11, fontWeight: 700, padding: '4px 9px', borderRadius: 20, background: 'var(--t-amber-bg)', color: 'var(--t-amber)', whiteSpace: 'nowrap' }}>
@@ -435,21 +390,17 @@ export function Docs() {
                 <DocEditor
                   value={draft}
                   onChange={changeDraft}
-                  placeholder={page.type === 'links'
-                    ? 'One link per line:\nGoogle: google.com\nTeam wiki: https://confluence/…\n# lines starting with # are ignored'
-                    : 'Type / for blocks — to-do, headings, toggle, callout, table…\n[[ links a page or task · **bold** `code` ~~strike~~\n- [ ] a to-do (Tab nests it)'}
+                  placeholder={'Type / for blocks — to-do, headings, toggle, callout, table…\n[[ links a page or task · **bold** `code` ~~strike~~\n- [ ] a to-do (Tab nests it)'}
                   style={{ flex: 1, minWidth: 0, fontSize: 13.5, lineHeight: 1.6, padding: '12px 14px', borderRadius: 10, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', resize: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
               )}
               {mode !== 'edit' && (
                 <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: '12px 14px', borderRadius: 10, border: '1px solid var(--t-brd)', background: 'var(--t-surf)' }}>
-                  {page.type === 'links'
-                    ? <LinksPreview content={draft} />
-                    : <DocView content={draft}
+                  <DocView content={draft}
                         dailyChecked={isDaily ? dailyChecked : undefined}
                         onToggleLine={toggleLine}
                         onToggleKeys={(keys, on) => setAgendaChecks(keys.map(k => dailyCheckId(page.id, k)), on)}
                         onOpenPage={openPage}
-                        onOpenTask={setTaskId} />}
+                        onOpenTask={setTaskId} />
                 </div>
               )}
             </div>

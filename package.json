@@ -10,7 +10,9 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "check:archive": "node --experimental-strip-types --no-warnings scripts/check-archive-fold.ts",
-    "check:docs": "node --experimental-strip-types --no-warnings scripts/check-doc-blocks.ts"
+    "check:docs": "node --experimental-strip-types --no-warnings scripts/check-doc-blocks.ts",
+    "check:bookmarks": "node --experimental-strip-types --no-warnings scripts/check-bookmarks.ts",
+    "check": "npm run -s check:archive && npm run -s check:docs && npm run -s check:bookmarks"
   },
   "dependencies": {
     "date-fns": "^4.4.0",
