@@ -1,4 +1,4 @@
-import { Fragment, useState, useRef, useEffect } from 'react';
+import { Fragment, useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { CornerBanner } from '../Common/CornerBanner';
 import { parseQuery, setField, setIs, stripText } from '../../tableQuery';
@@ -112,7 +112,7 @@ export function Table() {
     const m = /^#table\?(.*)$/.exec(window.location.hash);
     return m ? (new URLSearchParams(m[1]).get('q') ?? '') : '';
   });
-  const parsed = parseQuery(search, { requesters, projects });
+  const parsed = useMemo(() => parseQuery(search, { requesters, projects }), [search, requesters, projects]);
   const reqFilter = parsed.requester, projFilter = parsed.project, typeFilter = parsed.item, workTypeFilter = parsed.kind;
   const tagFilter = parsed.tag, minScore = parsed.score, quickFilters = parsed.is, statusFilter = parsed.status;
   const setQualifier = (field: string, v: string | null) => setSearch(prev => setField(prev, field, v));
@@ -249,7 +249,10 @@ export function Table() {
     setTableFilterPreset(null);
   }, [tableFilterPreset, setTableFilterPreset]);
 
-  useEffect(() => { setPage(0); }, [workTypeFilter, typeFilter, reqFilter, projFilter, statusFilter, tagFilter, minScore, quickFilters, viewMode, search]);
+  // Back to page 1 when the query (= every filter) or the view changes. Do NOT
+  // depend on the derived filter values: `quickFilters` is a Set rebuilt each
+  // render, which made this fire every render and pinned the page at 1.
+  useEffect(() => { setPage(0); }, [search, viewMode]);
 
   const colWidths = tableColWidthsStore;
   const [hoveredResize, setHoveredResize] = useState<string | null>(null);
@@ -893,13 +896,7 @@ export function Table() {
               active one shows ▾ and lists the existing values to filter on). */}
           <div ref={groupMenuRef} style={{ position: 'relative' }}>
             <div style={{ display: 'flex', alignItems: 'stretch', height: 32, border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
-              {([['', groupBy ? 'Filtered by' : 'Not filtered'], ['today', '◷ Today'], ['requester', 'Requester'], ['project', 'Project'], ['archived', '🗑 Archived']] as const).map(([k, label], i) => k === 'archived' ? (
-                <button key="archived" onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has('archived')) { n.delete('archived'); n.delete('closedToday'); } else n.add('archived'); return n; })}
-                  title={archivedView ? 'Back to active items' : 'Show archived items (the former Archive view)'}
-                  style={{ border: 'none', borderLeft: '1px solid var(--t-brd)', fontSize: 12, fontWeight: 700, padding: '0 10px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, background: archivedView ? 'var(--t-surf3)' : 'var(--t-surf)', color: archivedView ? 'var(--t-txt)' : 'var(--t-muted)' }}>
-                  {label}
-                </button>
-              ) : k === 'today' ? (
+              {([['', groupBy ? 'Filtered by' : 'Not filtered'], ['today', '◷ Today'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => k === 'today' ? (
                 <button key="today" onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has('forToday')) n.delete('forToday'); else n.add('forToday'); return n; })}
                   title="Show only tasks marked for today"
                   style={{ border: 'none', borderLeft: '1px solid var(--t-brd)', fontSize: 12, fontWeight: 700, padding: '0 10px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, background: quickFilters.has('forToday') ? 'var(--t-amber-bg)' : 'var(--t-surf)', color: quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-muted)' }}>
