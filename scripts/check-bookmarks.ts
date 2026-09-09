@@ -1,15 +1,17 @@
 // Bookmarks helpers checks (2026-09-10): URL normalisation, keywords, task
 // link mirroring, the search query, Chrome HTML export. Run: npm run check:bookmarks
-import { normalizeUrl, keywords, upsertTaskLinks, parseBookmarkQuery, matchesBookmark, duplicateKeys, toChromeHtml, folderPath, descendantFolderIds, isUrl } from '../src/bookmarks.ts';
+import { normalizeUrl, keywords, looksLikeLink, upsertTaskLinks, parseBookmarkQuery, matchesBookmark, duplicateKeys, toChromeHtml, folderPath, descendantFolderIds, isUrl } from '../src/bookmarks.ts';
 const eq = (name: string, a: unknown, b: unknown) => { const ok = JSON.stringify(a) === JSON.stringify(b); console.log((ok ? 'PASS ' : 'FAIL ') + name, ok ? '' : `\n   got ${JSON.stringify(a)}\n   want ${JSON.stringify(b)}`); if (!ok) process.exitCode = 1; };
 
 eq('isUrl', [isUrl('https://a.io/x'), isUrl('http://ex'), isUrl('notaurl'), isUrl('https://exa')], [true, false, false, false]);
 eq('normalizeUrl strips www/utm/hash/trailing slash', normalizeUrl('https://www.Example.com/a/b/?utm_source=x&id=2#frag'), 'example.com/a/b?id=2');
+eq('looksLikeLink accepts scheme-less / intranet links', ['wiki.corp/x', 'confluence/display/ABC', 'itsm:8080/nav', 'localhost:5173', 'www.a.io', 'just words', 'hello', 'Design doc'].map(looksLikeLink), [true, true, true, true, true, false, false, false]);
 eq('keywords', keywords('Fix the VPN login for Dana', 'Runbook'), ['fix', 'vpn', 'login', 'dana', 'runbook']);
 
-const task: any = { id: 't1', kind: 'task', title: 'Migrate billing DB', generalLink: 'https://wiki.corp/billing', generalLinkLabel: 'Design doc', extraGeneralLinks: ['https://jira.corp/BIL-12', 'not a url'], extraGeneralLinkLabels: ['', ''], project: 'Billing', requester: 'Dana', subtasks: [{ id: 's1', title: 'Dump schema', generalLink: 'https://gist.github.com/1' }] };
+const task: any = { id: 't1', kind: 'task', title: 'Migrate billing DB', generalLink: 'wiki.corp/billing', generalLinkLabel: 'Design doc', extraGeneralLinks: ['jira/browse/BIL-12', 'not a url'], extraGeneralLinkLabels: ['', ''], project: 'Billing', requester: 'Dana', subtasks: [{ id: 's1', title: 'Dump schema', generalLink: 'https://gist.github.com/1' }] };
 const b1 = upsertTaskLinks([], task, 1000)!;
 eq('mirrors 3 links (bad url skipped)', b1.map(b => b.source!.field), ['generalLink', 'extra:0', 'sub:s1']);
+eq('scheme-less links stored with https://', b1.map(b => b.url), ['https://wiki.corp/billing', 'https://jira/browse/BIL-12', 'https://gist.github.com/1']);
 eq('title = label / task title / subtask title', b1.map(b => b.title), ['Design doc', 'Migrate billing DB', 'Dump schema']);
 eq('tags: task + keywords', b1[0].tags, ['task', 'migrate', 'billing', 'design', 'doc', 'dana']);
 eq('no change → null', upsertTaskLinks(b1, task, 2000), null);

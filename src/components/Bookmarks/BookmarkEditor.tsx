@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import { backdropCloseProps } from '../../backdrop';
-import { folderPath, normTag, isUrl, withScheme } from '../../bookmarks';
+import { folderPath, normTag, looksLikeLink, withScheme } from '../../bookmarks';
 import type { Bookmark } from '../../types';
 
 // Edit one bookmark (or create: pass `draft` without id). Blur-commit fields
@@ -25,7 +25,7 @@ export function BookmarkEditor({ bookmark, initial, onClose }: Props) {
   const [favorite, setFavorite] = useState(bookmark?.favorite ?? initial?.favorite ?? false);
   const tagSuggestions = Array.from(new Set(allTags)).filter(t => !tags.split(',').map(normTag).includes(t)).slice(0, 12);
 
-  const valid = isUrl(withScheme(url));
+  const valid = looksLikeLink(url);
   function save() {
     if (!valid) return;
     const patch = { title: title.trim() || url.trim(), url: withScheme(url), notes, tags: tags.split(',').map(normTag).filter(Boolean), folderId, favorite };
@@ -54,7 +54,7 @@ export function BookmarkEditor({ bookmark, initial, onClose }: Props) {
             style={{ border: 'none', background: 'transparent', fontSize: 20, cursor: 'pointer', color: favorite ? 'var(--t-amber)' : 'var(--t-muted)' }}>{favorite ? '★' : '☆'}</button>
           <span onClick={onClose} title="Close (Esc)" style={{ cursor: 'pointer', color: 'var(--t-muted)', fontSize: 20, lineHeight: 1 }}>×</span>
         </div>
-        <div><label style={lbl}>URL</label><input autoFocus={!bookmark} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…" style={{ ...inp, borderColor: url && !valid ? 'var(--t-urgent)' : 'var(--t-brd)' }} /></div>
+        <div><label style={lbl}>URL</label><input autoFocus={!bookmark} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://… or wiki.corp/page or confluence/display/X" style={{ ...inp, borderColor: url && !valid ? 'var(--t-urgent)' : 'var(--t-brd)' }} /></div>
         <div><label style={lbl}>Title</label><input autoFocus={!!bookmark} value={title} onChange={e => setTitle(e.target.value)} placeholder="Page title" style={inp} /></div>
         <div>
           <label style={lbl}>Tags <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>— comma separated</span></label>

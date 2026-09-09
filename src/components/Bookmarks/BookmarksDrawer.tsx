@@ -4,7 +4,7 @@ import { useLogMount } from '../../useLogMount';
 import { BookmarkEditor } from './BookmarkEditor';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { CornerBanner } from '../Common/CornerBanner';
-import { parseBookmarkQuery, matchesBookmark, duplicateKeys, normalizeUrl, domainOf, faviconUrl, folderPath, descendantFolderIds, parseChromeHtml, toChromeHtml, isUrl, withScheme, normTag } from '../../bookmarks';
+import { parseBookmarkQuery, matchesBookmark, duplicateKeys, normalizeUrl, domainOf, faviconUrl, folderPath, descendantFolderIds, parseChromeHtml, toChromeHtml, looksLikeLink, withScheme, normTag } from '../../bookmarks';
 import type { Bookmark } from '../../types';
 
 // The bookmarks drawer — a line along the bottom of every screen with a bump
@@ -167,8 +167,8 @@ export function BookmarksDrawer({ open, onClose }: Props) {
     return has ? q.replace(new RegExp(`(^|\\s)${tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\s|$)`), ' ').replace(/\s{2,}/g, ' ').trim() : `${q} ${tok}`.trim();
   });
   async function quickAdd() {
+    if (!looksLikeLink(addUrl)) return;
     const url = withScheme(addUrl);
-    if (!isUrl(url)) return;
     setAdding(true);
     const title = await fetchTitle(url);
     setAdding(false);
@@ -340,8 +340,8 @@ export function BookmarksDrawer({ open, onClose }: Props) {
                   <input value={addUrl} onChange={e => setAddUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') quickAdd(); if (e.key === 'Escape') { e.stopPropagation(); setAddUrl(''); (e.target as HTMLInputElement).blur(); } }}
                     placeholder="Paste a URL and press Enter"
                     style={{ width: 230, height: 32, fontSize: 13, padding: '0 10px', borderRadius: 8, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', boxSizing: 'border-box' }} />
-                  <button onClick={quickAdd} disabled={!isUrl(withScheme(addUrl)) || adding} title="Add to the current folder (title fetched from the page when reachable)"
-                    style={{ height: 32, border: 'none', background: isUrl(withScheme(addUrl)) ? 'var(--t-acc)' : 'var(--t-surf3)', color: isUrl(withScheme(addUrl)) ? 'white' : 'var(--t-muted)', fontSize: 12.5, fontWeight: 700, padding: '0 12px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap' }}>{adding ? '…' : '+ Add'}</button>
+                  <button onClick={quickAdd} disabled={!looksLikeLink(addUrl) || adding} title="Add to the current folder (title fetched from the page when reachable)"
+                    style={{ height: 32, border: 'none', background: looksLikeLink(addUrl) ? 'var(--t-acc)' : 'var(--t-surf3)', color: looksLikeLink(addUrl) ? 'white' : 'var(--t-muted)', fontSize: 12.5, fontWeight: 700, padding: '0 12px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap' }}>{adding ? '…' : '+ Add'}</button>
                   <button onClick={() => setEditing({ b: null, initial: { folderId: currentFolderId } })} title="New bookmark with all fields (n)"
                     style={{ height: 32, width: 34, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt2)', fontSize: 14, borderRadius: 8, cursor: 'pointer' }}>✎</button>
                 </div>

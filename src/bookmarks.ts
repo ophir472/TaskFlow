@@ -6,7 +6,20 @@ import type { Bookmark, BookmarkFolder, Task } from './types';
 const nextId = (prefix: string) => prefix + Date.now() + Math.random().toString(36).slice(2, 6);
 
 export const isUrl = (v: string) => /^https?:\/\/[^\s/]+\.[^\s/]{2,}/i.test(v.trim());
-export const withScheme = (v: string) => (/^https?:\/\//i.test(v.trim()) ? v.trim() : `https://${v.trim()}`);
+export const withScheme = (v: string) => (/^[a-z][a-z0-9+.-]*:\/\//i.test(v.trim()) ? v.trim() : `https://${v.trim()}`);
+
+/** Anything a person would paste as a link — with or without a scheme or
+ *  www: `wiki.corp/x`, `confluence/display/ABC` (intranet host + path),
+ *  `itsm:8080`, `localhost:5173`. Never prose (no spaces). */
+export function looksLikeLink(v: string): boolean {
+  const s = v.trim();
+  if (!s || /\s/.test(s) || s.length < 3) return false;
+  if (/^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(s)) return true;              // scheme://…
+  if (/^[\w-]+(\.[\w-]+)+(:\d+)?(\/\S*)?$/i.test(s)) return true;       // dotted host[:port][/path]
+  if (/^[\w-]+(:\d+)?\/\S+$/i.test(s)) return true;                    // host/path (intranet)
+  if (/^(localhost|[\w-]+):\d+(\/\S*)?$/i.test(s)) return true;         // host:port
+  return false;
+}
 
 export function domainOf(url: string): string {
   try { return new URL(withScheme(url)).host.replace(/^www\./, ''); } catch { return ''; }
@@ -49,9 +62,9 @@ export interface TaskLink { field: string; url: string; label: string }
 
 export function taskLinks(t: Task): TaskLink[] {
   const out: TaskLink[] = [];
-  if (isUrl(t.generalLink ?? '')) out.push({ field: 'generalLink', url: t.generalLink.trim(), label: t.generalLinkLabel ?? '' });
-  (t.extraGeneralLinks ?? []).forEach((u, i) => { if (isUrl(u)) out.push({ field: `extra:${i}`, url: u.trim(), label: (t.extraGeneralLinkLabels ?? [])[i] ?? '' }); });
-  (t.subtasks ?? []).forEach(su => { if (isUrl(su.generalLink ?? '')) out.push({ field: `sub:${su.id}`, url: su.generalLink.trim(), label: su.title }); });
+  if (looksLikeLink(t.generalLink ?? '')) out.push({ field: 'generalLink', url: withScheme(t.generalLink), label: t.generalLinkLabel ?? '' });
+  (t.extraGeneralLinks ?? []).forEach((u, i) => { if (looksLikeLink(u ?? '')) out.push({ field: `extra:${i}`, url: withScheme(u), label: (t.extraGeneralLinkLabels ?? [])[i] ?? '' }); });
+  (t.subtasks ?? []).forEach(su => { if (looksLikeLink(su.generalLink ?? '')) out.push({ field: `sub:${su.id}`, url: withScheme(su.generalLink), label: su.title }); });
   return out;
 }
 
