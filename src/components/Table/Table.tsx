@@ -757,8 +757,6 @@ export function Table() {
           const pills: { label: string; clear: () => void }[] = [];
           if (workTypeFilter) pills.push({ label: `Kind: ${KIND_LABELS[workTypeFilter] ?? workTypeFilter}`, clear: () => setWorkTypeFilter('') });
           if (statusFilter) pills.push({ label: `Status: ${statusFilter.replace('_', ' ')}`, clear: () => setStatusFilter('') });
-          if (reqFilter) pills.push({ label: `Requester: ${reqFilter}`, clear: () => setReqFilter('') });
-          if (projFilter) pills.push({ label: `Project: ${projFilter}`, clear: () => setProjFilter('') });
           if (tagFilter) pills.push({ label: `Tag: ${tagFilter === 'noTag' ? 'none' : tagFilter}`, clear: () => setTagFilter('') });
           if (typeFilter) pills.push({ label: `Item: ${typeFilter}`, clear: () => setTypeFilter('') });
           if (minScore) pills.push({ label: `Score ≥ ${minScore}`, clear: () => setMinScore('') });
@@ -837,22 +835,23 @@ export function Table() {
               clicking it again lists the existing values to filter on. */}
           <div ref={groupMenuRef} style={{ position: 'relative' }}>
             <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
-              {([['', groupBy ? 'Filtered by' : 'Not filtered'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => (
+              {([['', (reqFilter || projFilter) ? `Filtered by ${reqFilter || projFilter}` : groupBy ? 'Filtered by' : 'Not filtered'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => (
                 <button key={k || 'none'}
                   onClick={() => {
                     if (groupBy === k && k) { setGroupMenu(m => !m); setGroupMenuHi(0); return; }
+                    if (!k && (reqFilter || projFilter)) { setReqFilter(''); setProjFilter(''); setGroupMenu(false); return; }
                     setGroupBy(k); setCollapsedGroups(new Set()); setGroupMenu(false); if (k) setViewMode('table');
                   }}
-                  title={k ? (groupBy === k ? `Pick a ${k} to filter on` : `Group rows by ${k}`) : (groupBy ? 'Clear the grouping' : 'No grouping')}
+                  title={k ? (groupBy === k ? `Pick a ${k} to filter on` : `Group rows by ${k}`) : ((reqFilter || projFilter) ? `Clear the ${reqFilter ? 'requester' : 'project'} filter` : groupBy ? 'Clear the grouping' : 'No grouping')}
                   style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k && k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : (!k && groupBy) ? 'var(--t-txt2)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  {label}{groupBy === k && k ? <span style={{ fontSize: 10, transform: groupMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span> : null}{!k && groupBy ? <span title="Clear the grouping" style={{ fontSize: 13, lineHeight: 1, color: 'var(--t-muted)' }}>×</span> : null}
+                  {label}{groupBy === k && k ? <span style={{ fontSize: 10, transform: groupMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span> : null}{!k && (groupBy || reqFilter || projFilter) ? <span style={{ fontSize: 13, lineHeight: 1, color: 'var(--t-muted)' }}>×</span> : null}
                 </button>
               ))}
             </div>
             {groupMenu && groupBy && (() => {
               const known = groupBy === 'requester' ? requesters : projects;
               const values = Array.from(new Set([...known, ...Array.from(groupCounts.keys()).filter(k => k !== '—')]));
-              const pick = (v: string) => { if (groupBy === 'requester') setReqFilter(v); else setProjFilter(v); setGroupMenu(false); };
+              const pick = (v: string) => { if (groupBy === 'requester') { setProjFilter(''); setReqFilter(v); } else { setReqFilter(''); setProjFilter(v); } setGroupMenu(false); };
               return (
                 <div tabIndex={-1} autoFocus
                   onKeyDown={e => {
@@ -1348,8 +1347,8 @@ export function Table() {
                       {String(col.getValue(it) || '—')}
                       {(col.key === 'requester' || col.key === 'project') && String(col.getValue(it) || '') && (
                         <span
-                          onClick={e => { e.stopPropagation(); const v = String(col.getValue(it)); if (col.key === 'requester') setReqFilter(v); else setProjFilter(v); }}
-                          title={`Show only this ${col.key}`}
+                          onClick={e => { e.stopPropagation(); const v = String(col.getValue(it)); if (col.key === 'requester') { setProjFilter(''); setReqFilter(v); } else { setReqFilter(''); setProjFilter(v); } setGroupBy(col.key as 'requester' | 'project'); setCollapsedGroups(new Set()); setGroupMenu(false); }}
+                          title={`Filter by this ${col.key} (via the ${col.key} button)`}
                           style={{ marginLeft: 6, fontSize: 12, color: 'var(--t-acc)', cursor: 'pointer', userSelect: 'none', opacity: hoveredCell === cellKey ? 1 : 0, transition: 'opacity 0.1s' }}>⌕</span>
                       )}
                       {jiraCellUrl && (
