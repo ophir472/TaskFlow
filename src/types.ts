@@ -92,7 +92,7 @@ export interface CustomSystem {
 // per-day checks. The list itself is configuration (Settings → Dashboard).
 export interface AgendaStep {
   id: string;
-  builtin?: 'review' | 'plan' | 'mail' | 'sprint' | 'today';
+  builtin?: 'review' | 'sweep' | 'plan' | 'mail' | 'sprint' | 'today';
   label: string;
   // Checklist step (2026-09-10): a Docs page whose to-dos must all be ticked
   // TODAY (ticks are agenda checks, reset at midnight; the page is the template).
@@ -383,6 +383,9 @@ export interface Task {
   // Mail entries only (2026-09-10): where it goes — Outlook email or a Teams
   // message. Missing = 'outlook' (backward compatible).
   channel?: 'outlook' | 'teams';
+  // Mail entries only (2026-09-10, Sweep): the one-line gist jotted while
+  // skimming — optional; replying comes later in the preview walk.
+  keyPoint?: string;
   // Mail entries only: the task this communication belongs to. The card's
   // "To send" table is a view of entries linked to it — one entity, two views.
   linkedTaskId?: string;

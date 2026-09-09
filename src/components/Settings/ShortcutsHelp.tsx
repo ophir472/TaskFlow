@@ -87,6 +87,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       { keys: ['Shift', 'Enter'], what: 'Add the entry and open it' },
       { keys: ['p'], what: 'Start the preview walkthrough' },
       { keys: ['t'], what: 'Outlook ⇄ Teams — flips the highlighted entry, or the channel new entries get' },
+      { keys: ['Enter'], what: 'Sweep (#mail/sweep): Next — file the subject + key point and clear; Done marks the daily Sweep step' },
       { keys: ['↑', '↓'], what: 'Move the highlight through entries' },
       { keys: ['Enter'], what: 'Open the highlighted entry (when the input is empty)' },
     ],

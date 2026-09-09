@@ -98,6 +98,7 @@ export const TILE_DEFS: TileDef[] = [
 
 export const BUILTIN_STEPS: Record<string, { label: string; icon: string; hash: string; hint: string }> = {
   review: { label: 'Review', icon: '☑', hash: 'review', hint: 'Walk every new/changed task — done when the review queue is empty' },
+  sweep: { label: 'Sweep', icon: '⟳', hash: 'mail/sweep', hint: 'Skim Outlook + Teams, jot subject + key point per item (no replying) — Done ends the sweep' },
   plan: { label: 'Plan', icon: '◷', hash: 'plan', hint: "Write each today-task's steps — done when nothing today is unplanned" },
   mail: { label: 'Communication', icon: '✉', hash: 'mail', hint: 'Answer what you owe — done when no mail entries are pending' },
   sprint: { label: 'Sprint', icon: '▶', hash: 'sprint', hint: 'Blitz the quick stuff — done when the sprint pool is empty' },
@@ -105,7 +106,7 @@ export const BUILTIN_STEPS: Record<string, { label: string; icon: string; hash: 
 };
 
 export function defaultAgendaSteps(): AgendaStep[] {
-  return ['review', 'plan', 'mail', 'sprint', 'today'].map(k => ({ id: k, builtin: k as AgendaStep['builtin'], label: BUILTIN_STEPS[k].label }));
+  return ['review', 'sweep', 'plan', 'mail', 'sprint', 'today'].map(k => ({ id: k, builtin: k as AgendaStep['builtin'], label: BUILTIN_STEPS[k].label }));
 }
 
 /** Page-content lookup for checklist steps (pass to stepDone). */
@@ -133,6 +134,7 @@ export function stepDone(step: AgendaStep, c: DashCounts, todayChecks: Set<strin
   }
   switch (step.builtin) {
     case 'review': return c.review === 0;
+    case 'sweep': return todayChecks.has('sweep');   // the sweep's Done button (per day)
     case 'plan': return c.todayTotal > 0 && c.unplannedToday === 0;
     case 'mail': return c.mail === 0;
     case 'sprint': return c.sprint === 0;

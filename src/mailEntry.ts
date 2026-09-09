@@ -3,10 +3,11 @@ import type { Task } from './types';
 
 // The ONE place a communication-assistant entry is constructed — used by the
 // assistant's capture box, the card's "To send" table, and Play's m shortcut.
-export function buildMailEntry(title: string, linkedTaskId?: string, channel: 'outlook' | 'teams' = 'outlook'): Task {
+export function buildMailEntry(title: string, linkedTaskId?: string, channel: 'outlook' | 'teams' = 'outlook', keyPoint?: string): Task {
   const now = Date.now();
   return {
     id: nextId('t'), kind: 'task', type: 'mail', channel,
+    ...(keyPoint?.trim() ? { keyPoint: keyPoint.trim() } : {}),
     ...(linkedTaskId ? { linkedTaskId } : {}),
     title, description: '', notes: '', blockers: '', generalLink: '', jiraLink: '',
     requester: '', project: '', status: 'backlog',

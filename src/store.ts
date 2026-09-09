@@ -311,6 +311,7 @@ export const useStore = create<AppState>()(
         tiles: ['review', 'mail', 'sprint', 'quickhelp', 'open', 'nojira', 'unplannedToday', 'hub'],
         agendaSteps: [
           { id: 'review', builtin: 'review', label: 'Review' },
+          { id: 'sweep', builtin: 'sweep', label: 'Sweep' },
           { id: 'plan', builtin: 'plan', label: 'Plan' },
           { id: 'mail', builtin: 'mail', label: 'Communication' },
           { id: 'sprint', builtin: 'sprint', label: 'Sprint' },
@@ -1380,7 +1381,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'taskflow-store',
-      version: 12,
+      version: 13,
       storage: createJSONStorage(() => IS_PREVIEW_MODE ? sessionStorage : localStorage),
       skipHydration: IS_PREVIEW_MODE,
       // UI-only fields: kept in-memory per-tab, NOT persisted. Otherwise every
@@ -1527,6 +1528,15 @@ export const useStore = create<AppState>()(
           }));
           persisted.bookmarkFolders = folders;
           persisted.bookmarks = bookmarks;
+        }
+        if (fromVersion < 13 && Array.isArray(persisted.dashboardConfig?.agendaSteps)
+            && !persisted.dashboardConfig.agendaSteps.some((st: { builtin?: string }) => st?.builtin === 'sweep')) {
+          // Sweep (skim Outlook + Teams) joins the daily agenda, right before
+          // Communication (or at the end if that step was removed).
+          const steps = [...persisted.dashboardConfig.agendaSteps];
+          const at = steps.findIndex((st: { builtin?: string }) => st?.builtin === 'mail');
+          steps.splice(at >= 0 ? at : steps.length, 0, { id: 'sweep', builtin: 'sweep', label: 'Sweep' });
+          persisted.dashboardConfig = { ...persisted.dashboardConfig, agendaSteps: steps };
         }
         if (fromVersion < 9 && persisted.dashboardConfig?.tiles && Array.isArray(persisted.dashboardConfig.tiles)
             && !persisted.dashboardConfig.tiles.includes('hub')) {

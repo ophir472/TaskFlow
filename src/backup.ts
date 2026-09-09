@@ -114,6 +114,7 @@ const STATE_DEFAULTS: Record<string, unknown> = {
     tiles: ['review', 'mail', 'sprint', 'quickhelp', 'open', 'nojira', 'unplannedToday', 'hub'],
     agendaSteps: [
       { id: 'review', builtin: 'review', label: 'Review' },
+      { id: 'sweep', builtin: 'sweep', label: 'Sweep' },
       { id: 'plan', builtin: 'plan', label: 'Plan' },
       { id: 'mail', builtin: 'mail', label: 'Communication' },
       { id: 'sprint', builtin: 'sprint', label: 'Sprint' },

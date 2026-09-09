@@ -106,6 +106,7 @@ export function resolveSprintTarget(target: SprintTarget, items: Item[]): Resolv
         title: task.title,
         kindLabel: sendLabel(channelOf(task)),
         context: [
+          { label: 'Key point', value: (task.keyPoint ?? '').trim() || '—' },
           { label: 'Linked card', value: linked?.title ?? '—' },
           { label: 'What I want to say', value: (task.whatIWantToSay ?? '').trim() || '—' },
           { label: sendLabel(channelOf(task)), value: (task.mailToSend ?? '').trim() || '—' },

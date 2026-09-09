@@ -63,6 +63,10 @@ export function MailEntryFields({ entry }: Props) {
         <input value={entry.title} onChange={e => updateItem(entry.id, { title: e.target.value })} style={inp} />
       </div>
       <div>
+        <div style={lbl}>Key point <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>— the gist, from the sweep</span></div>
+        <input value={entry.keyPoint ?? ''} onChange={e => updateItem(entry.id, { keyPoint: e.target.value })} placeholder="One line: what it's about / what they need" style={inp} />
+      </div>
+      <div>
         <div style={lbl}>Linked card</div>
         {entry.linkedTaskId ? (() => {
           const lt = items.find(i => i.id === entry.linkedTaskId);
