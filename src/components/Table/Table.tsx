@@ -780,19 +780,20 @@ export function Table() {
               active one shows ▾ and lists the existing values to filter on). */}
           <div ref={groupMenuRef} style={{ position: 'relative' }}>
             <div style={{ display: 'flex', alignItems: 'stretch', height: 32, border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
-              <button onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has('forToday')) n.delete('forToday'); else n.add('forToday'); return n; })}
-                title="Show only tasks marked for today"
-                style={{ border: 'none', fontSize: 12, fontWeight: 700, padding: '0 10px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, background: quickFilters.has('forToday') ? 'var(--t-amber-bg)' : 'var(--t-surf)', color: quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-muted)' }}>
-                ◷ Today
-              </button>
-              {([['', groupBy ? 'Filtered by' : 'Not filtered'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label]) => (
+              {([['', groupBy ? 'Filtered by' : 'Not filtered'], ['today', '◷ Today'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => k === 'today' ? (
+                <button key="today" onClick={() => setQuickFilters(prev => { const n = new Set(prev); if (n.has('forToday')) n.delete('forToday'); else n.add('forToday'); return n; })}
+                  title="Show only tasks marked for today"
+                  style={{ border: 'none', borderLeft: '1px solid var(--t-brd)', fontSize: 12, fontWeight: 700, padding: '0 10px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, background: quickFilters.has('forToday') ? 'var(--t-amber-bg)' : 'var(--t-surf)', color: quickFilters.has('forToday') ? 'var(--t-amber)' : 'var(--t-muted)' }}>
+                  {label}
+                </button>
+              ) : (
                 <button key={k || 'none'}
                   onClick={() => {
                     if (groupBy === k && k) { setGroupMenu(m => !m); setGroupMenuHi(0); return; }
                     setGroupBy(k); setCollapsedGroups(new Set()); setGroupMenu(false); if (k) setViewMode('table');
                   }}
                   title={k ? (groupBy === k ? `Pick a ${k} to filter on` : `Group rows by ${k}`) : (groupBy ? 'Clear the grouping' : 'No grouping')}
-                  style={{ border: 'none', borderLeft: '1px solid var(--t-brd)', background: groupBy === k && k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : (!k && groupBy) ? 'var(--t-txt2)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '0 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, minWidth: k ? undefined : 92, whiteSpace: 'nowrap' }}>
+                  style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k && k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : (!k && groupBy) ? 'var(--t-txt2)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '0 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, minWidth: k ? undefined : 92, whiteSpace: 'nowrap' }}>
                   {label}{groupBy === k && k ? <span style={{ fontSize: 10, transform: groupMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span> : null}{!k && groupBy ? <span title="Clear the grouping" style={{ fontSize: 13, lineHeight: 1, color: 'var(--t-muted)' }}>×</span> : null}
                 </button>
               ))}
