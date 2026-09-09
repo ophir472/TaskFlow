@@ -135,6 +135,10 @@ export function Table() {
   });
   const [searchOpen, setSearchOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Gantt: live bar resize (duration) — {id, mins} while the handle is held.
+  const [ganttResize, setGanttResize] = useState<{ id: string; mins: number } | null>(null);
+  const ganttDrag = useRef<{ id: string; startX: number; startMins: number; pxPerMin: number } | null>(null);
+  const updateSubtask = useStore(s => s.updateSubtask);
   // Mirror the query into the URL (replaceState — not a history entry per
   // keystroke) and read it back when the hash changes underneath us.
   useEffect(() => {
@@ -942,8 +946,9 @@ export function Table() {
           done, and the label spilling to the right when the bar is too short. */}
       {viewMode === 'gantt' && (() => {
         const gRows = (rows.filter(it => it.kind === 'task' && !it.archived) as Task[]).map(t2 => {
-          const mins = t2.subtasks.filter(su => !su.done).reduce((n, su) => n + (parseEstimate(su.estimate) || 0), 0)
-            || parseEstimate(t2.estimate) || 60;
+          const fromSubs = t2.subtasks.filter(su => !su.done).reduce((n, su) => n + (parseEstimate(su.estimate) || 0), 0);
+          const baseMins = fromSubs || parseEstimate(t2.estimate) || 60;
+          const mins = ganttResize?.id === t2.id ? ganttResize.mins : baseMins;
           const steps = t2.subtasks.length;
           const progress = steps ? t2.subtasks.filter(su => su.done).length / steps : 0;
           return { t: t2, mins, progress };
@@ -959,6 +964,36 @@ export function Table() {
           return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
         };
         const LABEL_MIN_PCT = 14; // below this the name sits beside the bar
+        // Resize = change the remaining estimate. If the duration came from
+        // subtask estimates, scale those proportionally (the bar IS their
+        // sum); otherwise write the task's own estimate.
+        const commitResize = (t2: Task, mins: number) => {
+          const undone = t2.subtasks.filter(su => !su.done && parseEstimate(su.estimate) > 0);
+          const fromSubs = undone.reduce((n, su) => n + parseEstimate(su.estimate), 0);
+          if (fromSubs > 0) {
+            undone.forEach(su => updateSubtask(t2.id, su.id, { estimate: formatMinutes(Math.max(5, Math.round(parseEstimate(su.estimate) / fromSubs * mins / 5) * 5)) }));
+          } else updateItem(t2.id, { estimate: formatMinutes(mins) });
+        };
+        const startResize = (e: React.MouseEvent, t2: Task, mins: number, rowEl: HTMLElement) => {
+          e.preventDefault(); e.stopPropagation();
+          const pxPerMin = rowEl.getBoundingClientRect().width / total;
+          ganttDrag.current = { id: t2.id, startX: e.clientX, startMins: mins, pxPerMin };
+          setGanttResize({ id: t2.id, mins });
+          const onMove = (ev: MouseEvent) => {
+            const d = ganttDrag.current; if (!d) return;
+            const next = Math.max(15, Math.round((d.startMins + (ev.clientX - d.startX) / d.pxPerMin) / 15) * 15);
+            setGanttResize({ id: d.id, mins: next });
+          };
+          const onUp = (ev: MouseEvent) => {
+            window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp);
+            const d = ganttDrag.current; ganttDrag.current = null;
+            if (!d) return;
+            const next = Math.max(15, Math.round((d.startMins + (ev.clientX - d.startX) / d.pxPerMin) / 15) * 15);
+            setGanttResize(null);
+            if (next !== d.startMins) commitResize(t2, next);
+          };
+          window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
+        };
         let acc = 0;
         return (
           <div style={{ background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, overflow: 'hidden' }}>
@@ -984,11 +1019,22 @@ export function Table() {
                 const accent = t2.forToday ? 'var(--t-amber)' : t2.type === 'urgent' ? 'var(--t-urgent)' : 'var(--t-acc)';
                 const inside = widthPct >= LABEL_MIN_PCT;
                 return (
-                  <div key={t2.id} style={{ position: 'relative', height: 40, borderBottom: '1px solid var(--t-brd2)', background: i % 2 ? 'transparent' : 'color-mix(in oklab, var(--t-surf2) 50%, transparent)' }}>
-                    <div onClick={() => openTask(t2.id)} title={`${t2.title} · ~${formatMinutes(mins)} remaining · ${Math.round(progress * 100)}% of steps done`}
-                      style={{ position: 'absolute', left: `${left}%`, width: `${Math.max(widthPct, 0.8)}%`, top: 7, height: 26, borderRadius: 6, cursor: 'pointer', background: `color-mix(in oklab, ${accent} 78%, white)`, boxShadow: '0 1px 2px rgba(0,0,0,0.15)', overflow: 'hidden' }}>
+                  <div key={t2.id}
+                    draggable={!ganttResize}
+                    onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; setDragId(t2.id); }}
+                    onDragOver={e => { e.preventDefault(); if (t2.id !== dragId) setDragOverId(t2.id); }}
+                    onDrop={e => { e.preventDefault(); handleDrop(t2.id); }}
+                    onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+                    data-gantt-row
+                    style={{ position: 'relative', height: 40, borderBottom: '1px solid var(--t-brd2)', background: i % 2 ? 'transparent' : 'color-mix(in oklab, var(--t-surf2) 50%, transparent)', opacity: dragId === t2.id ? 0.4 : 1, borderTop: dragOverId === t2.id && dragId !== t2.id ? '2px solid var(--t-acc)' : undefined, cursor: 'grab' }}>
+                    <div onClick={() => openTask(t2.id)} title={`${t2.title} · ~${formatMinutes(mins)} remaining · ${Math.round(progress * 100)}% of steps done · drag to reorder · drag the right edge to change the time`}
+                      style={{ position: 'absolute', left: `${left}%`, width: `${Math.max(widthPct, 0.8)}%`, top: 7, height: 26, borderRadius: 6, cursor: 'pointer', background: `color-mix(in oklab, ${accent} 78%, white)`, boxShadow: ganttResize?.id === t2.id ? `0 0 0 2px ${accent}` : '0 1px 2px rgba(0,0,0,0.15)', overflow: 'hidden' }}>
                       {/* progress fill */}
                       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${progress * 100}%`, background: accent }} />
+                      {/* resize handle — drag to change the remaining estimate */}
+                      <div onMouseDown={e => startResize(e, t2, mins, (e.currentTarget.closest('[data-gantt-row]') as HTMLElement) ?? e.currentTarget.parentElement!.parentElement!)}
+                        title="Drag to change the time"
+                        style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 10, cursor: 'ew-resize', background: 'linear-gradient(to left, rgba(255,255,255,0.35), transparent)' }} />
                       {inside && (
                         <span style={{ position: 'absolute', left: 8, right: 8, top: 0, bottom: 0, display: 'flex', alignItems: 'center', gap: 8, color: 'white', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textShadow: '0 1px 1px rgba(0,0,0,0.25)' }}>
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t2.title}</span>
@@ -1007,7 +1053,7 @@ export function Table() {
               })}
             </div>
             <div style={{ padding: '8px 14px', fontSize: 11.5, color: 'var(--t-muted)', background: 'var(--t-surf2)', borderTop: '1px solid var(--t-brd)' }}>
-              Sequential from now in current order · bar = remaining estimate (subtasks, then task estimate, 1h default) · darker fill = steps done · total ~{formatMinutes(total)}
+              Drag a row to reorder · drag a bar's right edge to change its time (15-min steps; scales the step estimates when those set the length) · darker fill = steps done · total ~{formatMinutes(total)}
             </div>
           </div>
         );
