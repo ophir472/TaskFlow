@@ -716,14 +716,14 @@ export function Table() {
               clicking it again lists the existing values to filter on. */}
           <div ref={groupMenuRef} style={{ position: 'relative' }}>
             <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--t-brd)', borderRadius: 8, overflow: 'hidden' }}>
-              {([['', 'None'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => (
+              {([['', groupBy ? 'Filtered by' : 'Not filtered'], ['requester', 'Requester'], ['project', 'Project']] as const).map(([k, label], i) => (
                 <button key={k || 'none'}
                   onClick={() => {
                     if (groupBy === k && k) { setGroupMenu(m => !m); setGroupMenuHi(0); return; }
                     setGroupBy(k); setCollapsedGroups(new Set()); setGroupMenu(false); if (k) setViewMode('table');
                   }}
-                  title={k ? (groupBy === k ? `Pick a ${k} to filter on` : `Group rows by ${k}`) : 'No grouping'}
-                  style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  title={k ? (groupBy === k ? `Pick a ${k} to filter on` : `Group rows by ${k}`) : (groupBy ? 'Clear the grouping' : 'No grouping')}
+                  style={{ border: 'none', borderLeft: i ? '1px solid var(--t-brd)' : 'none', background: groupBy === k || (!k && groupBy) ? 'var(--t-acc-bg)' : 'var(--t-surf)', color: groupBy === k || (!k && groupBy) ? 'var(--t-acc-dk)' : 'var(--t-muted)', fontSize: 12, fontWeight: 700, padding: '6px 10px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                   {label}{groupBy === k && k ? <span style={{ fontSize: 10, transform: groupMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span> : null}
                 </button>
               ))}
