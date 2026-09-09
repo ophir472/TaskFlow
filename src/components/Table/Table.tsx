@@ -113,6 +113,19 @@ export function Table() {
   const [aiTaskId, setAiTaskId] = useState<string | null>(null);
   const [dailyOpen, setDailyOpen] = useState(false);
   const [search, setSearch] = useState('');
+  // The search box doubles as the filter picker: focused + empty shows EVERY
+  // filter option; typing narrows both the rows (free text) and the options
+  // (e.g. "wait" → Status: Waiting). Enter on a highlighted option applies it
+  // as a pill and clears the text.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchHi, setSearchHi] = useState(-1);
+  const searchWrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!searchOpen) return;
+    const onDown = (e: MouseEvent) => { if (searchWrapRef.current && !searchWrapRef.current.contains(e.target as Node)) setSearchOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [searchOpen]);
   // The search box lives in the page header (right of the title) via a portal.
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   useEffect(() => { setHeaderSlot(document.getElementById('view-header-slot')); }, []);
@@ -133,8 +146,6 @@ export function Table() {
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(0);
   const [viewMode, setViewMode] = useState<'table' | 'cards' | 'pipeline' | 'gantt'>('table');
-  const [filterMenu, setFilterMenu] = useState<string | null>(null);
-  const filterMenuRef = useRef<HTMLDivElement>(null);
   // A dashboard tile can hand over a filter (e.g. "No Jira yet") — apply it
   // as a normal on-screen pill so it's visible and removable.
   const tableFilterPreset = useStore(s => s.tableFilterPreset);
@@ -147,14 +158,6 @@ export function Table() {
 
   useEffect(() => { setPage(0); }, [workTypeFilter, typeFilter, reqFilter, projFilter, statusFilter, tagFilter, minScore, quickFilters, viewMode, search]);
 
-  useEffect(() => {
-    if (!filterMenu) return;
-    const onDown = (e: MouseEvent) => {
-      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) setFilterMenu(null);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [filterMenu]);
   const colWidths = tableColWidthsStore;
   const [hoveredResize, setHoveredResize] = useState<string | null>(null);
 
@@ -546,21 +549,83 @@ export function Table() {
     if (selectAllRef.current) selectAllRef.current.indeterminate = someChecked;
   }, [someChecked]);
 
+
+  // Every filter as a pickable option (the old "+ Filter" menu, flattened).
+  const FILTER_OPTIONS: { group: string; label: string; apply: () => void }[] = [
+    { group: 'Kind', label: 'Planned', apply: () => setWorkTypeFilter('planned') },
+    { group: 'Kind', label: 'Urgent / same-day', apply: () => setWorkTypeFilter('urgent') },
+    { group: 'Kind', label: 'Quick help', apply: () => setWorkTypeFilter('quick') },
+    { group: 'Kind', label: 'Untyped', apply: () => setWorkTypeFilter('untyped') },
+    ...(['backlog', 'todo', 'in_progress', 'waiting', 'done'] as const).map(st => ({ group: 'Status', label: st === 'todo' ? 'To do' : st.replace('_', ' ').replace(/^./, c => c.toUpperCase()), apply: () => setStatusFilter(st) })),
+    { group: 'Quick', label: 'No Jira yet', apply: () => setQuickFilters(prev => new Set(prev).add('nojira')) },
+    { group: 'Quick', label: '✉ Mail entries', apply: () => setQuickFilters(prev => new Set(prev).add('mail')) },
+    { group: 'Quick', label: 'Created today', apply: () => setQuickFilters(prev => new Set(prev).add('createdToday')) },
+    { group: 'Quick', label: 'Updated today', apply: () => setQuickFilters(prev => new Set(prev).add('updatedToday')) },
+    { group: 'Quick', label: 'Untagged', apply: () => setQuickFilters(prev => new Set(prev).add('untagged')) },
+    { group: 'Quick', label: 'Marked today', apply: () => setQuickFilters(prev => new Set(prev).add('forToday')) },
+    { group: 'Tag', label: 'Urgent', apply: () => setTagFilter('urgent') },
+    { group: 'Tag', label: 'Important', apply: () => setTagFilter('important') },
+    { group: 'Tag', label: 'Quick', apply: () => setTagFilter('quick') },
+    { group: 'Tag', label: 'None of these', apply: () => setTagFilter('noTag') },
+    ...requesters.map(r => ({ group: 'Requester', label: r, apply: () => setReqFilter(r) })),
+    ...projects.map(p => ({ group: 'Project', label: p, apply: () => setProjFilter(p) })),
+    { group: 'Item', label: 'Tasks only', apply: () => setTypeFilter('task') },
+    { group: 'Item', label: 'Reminders only', apply: () => setTypeFilter('reminder') },
+    ...[3, 5, 7, 10].map(n => ({ group: 'Score', label: `Score ≥ ${n}`, apply: () => setMinScore(String(n)) })),
+  ];
+  // Typed text narrows options; "status:wait" style qualifiers work because
+  // ':' is treated as a space against "group label".
+  const searchQ = search.trim().toLowerCase().replace(/:/g, ' ');
+  const visibleOptions = searchQ ? FILTER_OPTIONS.filter(o => `${o.group} ${o.label}`.toLowerCase().includes(searchQ)) : FILTER_OPTIONS;
+  function applyOption(o: { apply: () => void }) { o.apply(); setSearch(''); setSearchHi(-1); setSearchOpen(false); }
+
   return (
     <>
     <div style={{ flex: 1, padding: '8px 36px 36px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', overflowX: 'hidden' }}>
       {headerSlot && createPortal(
         <>
-        {/* Search — title, requester, project, Jira, ITSM, notes, description */}
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        {/* Search + filter picker — title/requester/project/Jira/ITSM/notes text
+            search; focused & empty = every filter option; typing narrows both */}
+        <div ref={searchWrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: 'min(420px, 100%)' }}>
           <span style={{ position: 'absolute', left: 9, fontSize: 13, color: 'var(--t-muted)', pointerEvents: 'none' }}>⌕</span>
-          <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Escape') { setSearch(''); (e.target as HTMLInputElement).blur(); } }}
-            placeholder="Search tasks…  /"
-            style={{ width: 'min(420px, 100%)', fontSize: 13, padding: '6px 26px 6px 26px', borderRadius: 7, border: '1px solid ' + (search ? 'var(--t-acc)' : 'var(--t-brd)'), background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none' }} />
+          <input ref={searchRef} value={search}
+            onChange={e => { setSearch(e.target.value); setSearchHi(-1); setSearchOpen(true); }}
+            onFocus={() => setSearchOpen(true)}
+            onKeyDown={e => {
+              if (e.key === 'Escape') { if (search) setSearch(''); else { setSearchOpen(false); (e.target as HTMLInputElement).blur(); } return; }
+              if (!searchOpen) { if (e.key === 'ArrowDown') setSearchOpen(true); return; }
+              if (e.key === 'ArrowDown') { e.preventDefault(); setSearchHi(h => Math.min(h + 1, visibleOptions.length - 1)); }
+              else if (e.key === 'ArrowUp') { e.preventDefault(); setSearchHi(h => Math.max(h - 1, -1)); }
+              else if (e.key === 'Enter') {
+                if (searchHi >= 0 && visibleOptions[searchHi]) { e.preventDefault(); applyOption(visibleOptions[searchHi]); }
+                else if (search.trim() && visibleOptions.length === 1) { e.preventDefault(); applyOption(visibleOptions[0]); }
+                else setSearchOpen(false); // plain text search — rows already filter live
+              }
+            }}
+            placeholder="Search or filter…  /"
+            style={{ width: '100%', fontSize: 13, padding: '6px 26px 6px 26px', borderRadius: 7, border: '1px solid ' + (search || searchOpen ? 'var(--t-acc)' : 'var(--t-brd)'), background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', boxSizing: 'border-box' }} />
           {search && (
             <span onClick={() => { setSearch(''); searchRef.current?.focus(); }} title="Clear"
               style={{ position: 'absolute', right: 8, fontSize: 13, color: 'var(--t-muted)', cursor: 'pointer', lineHeight: 1 }}>×</span>
+          )}
+          {searchOpen && (visibleOptions.length > 0 || !search.trim()) && (
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 6px)', zIndex: 60, maxHeight: 420, overflowY: 'auto', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 10px 32px rgba(0,0,0,0.18)', padding: '4px 0' }}>
+              {visibleOptions.map((o, i) => {
+                const first = i === 0 || visibleOptions[i - 1].group !== o.group;
+                return (
+                  <Fragment key={`${o.group}:${o.label}`}>
+                    {first && <div style={{ padding: '7px 14px 3px', fontSize: 10.5, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{o.group}</div>}
+                    <div onMouseDown={e => e.preventDefault()} onClick={() => applyOption(o)} onMouseEnter={() => setSearchHi(i)}
+                      style={{ padding: '6px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--t-txt2)', background: searchHi === i ? 'var(--t-surf2)' : 'transparent', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {o.label}
+                    </div>
+                  </Fragment>
+                );
+              })}
+              <div style={{ padding: '7px 14px', fontSize: 11, color: 'var(--t-muted)', borderTop: '1px solid var(--t-brd2)', marginTop: 4 }}>
+                {search.trim() ? 'Text also filters the rows live · ↑↓ pick an option · ↵ apply · esc' : 'Type to search, or pick a filter · ↑↓ · ↵ · esc'}
+              </div>
+            </div>
           )}
         </div>
 
@@ -570,65 +635,6 @@ export function Table() {
 
       {/* Filters + column picker */}
       <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-        {/* + Filter — Linear-style: one button, a popover of fields, active
-            filters render as removable pills. */}
-        <div style={{ position: 'relative' }} ref={filterMenuRef}>
-          <button onClick={() => setFilterMenu(m => (m ? null : 'root'))}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 7, border: '1px dashed var(--t-brd2)', background: 'transparent', color: 'var(--t-muted)', cursor: 'pointer' }}>
-            <span style={{ fontSize: 13 }}>+</span> Filter
-          </button>
-          {filterMenu && (
-            <div style={{ position: 'absolute', left: 0, top: 'calc(100% + 6px)', zIndex: 40, minWidth: 210, maxHeight: 380, overflowY: 'auto', background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 10px 32px rgba(0,0,0,0.18)', padding: '4px 0' }}>
-              {(() => {
-                const groupHdr: React.CSSProperties = { padding: '7px 14px 3px', fontSize: 10.5, fontWeight: 700, color: 'var(--t-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' };
-                const optSt: React.CSSProperties = { padding: '6px 14px', fontSize: 12.5, cursor: 'pointer', color: 'var(--t-txt2)', whiteSpace: 'nowrap' };
-                const opt = (key: string, label: string, apply: () => void) => (
-                  <div key={key} onClick={() => { apply(); setFilterMenu(null); }} style={optSt}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--t-surf2)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    {label}
-                  </div>
-                );
-                return (
-                  <>
-                    <div style={groupHdr}>Kind</div>
-                    {opt('k-planned', 'Planned', () => setWorkTypeFilter('planned'))}
-                    {opt('k-urgent', 'Urgent / same-day', () => setWorkTypeFilter('urgent'))}
-                    {opt('k-quick', 'Quick help', () => setWorkTypeFilter('quick'))}
-                    {opt('k-untyped', 'Untyped', () => setWorkTypeFilter('untyped'))}
-                    <div style={groupHdr}>Status</div>
-                    {(['backlog', 'todo', 'in_progress', 'waiting', 'done'] as const).map(st =>
-                      opt(`s-${st}`, st === 'todo' ? 'To do' : st.replace('_', ' ').replace(/^./, c => c.toUpperCase()), () => setStatusFilter(st)))}
-                    <div style={groupHdr}>Quick</div>
-                    {opt('q-nojira', 'No Jira yet', () => setQuickFilters(prev => new Set(prev).add('nojira')))}
-                    {opt('q-mail', '✉ Mail', () => setQuickFilters(prev => new Set(prev).add('mail')))}
-                    {opt('q-created', 'Created today', () => setQuickFilters(prev => new Set(prev).add('createdToday')))}
-                    {opt('q-updated', 'Updated today', () => setQuickFilters(prev => new Set(prev).add('updatedToday')))}
-                    {opt('q-untagged', 'Untagged', () => setQuickFilters(prev => new Set(prev).add('untagged')))}
-                    <div style={groupHdr}>Tag</div>
-                    {opt('t-urgent', 'Urgent', () => setTagFilter('urgent'))}
-                    {opt('t-important', 'Important', () => setTagFilter('important'))}
-                    {opt('t-quick', 'Quick', () => setTagFilter('quick'))}
-                    {opt('t-none', 'None of these', () => setTagFilter('noTag'))}
-                    {requesters.length > 0 && <div style={groupHdr}>Requester</div>}
-                    {requesters.map(r => opt(`r-${r}`, r, () => setReqFilter(r)))}
-                    {projects.length > 0 && <div style={groupHdr}>Project</div>}
-                    {projects.map(p => opt(`p-${p}`, p, () => setProjFilter(p)))}
-                    <div style={groupHdr}>Item</div>
-                    {opt('i-task', 'Tasks', () => setTypeFilter('task'))}
-                    {opt('i-reminder', 'Reminders', () => setTypeFilter('reminder'))}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', fontSize: 12.5, color: 'var(--t-txt2)', borderTop: '1px solid var(--t-brd2)', marginTop: 4 }}>
-                      Score ≥
-                      <input type="number" min="0" value={minScore} onChange={e => setMinScore(e.target.value)} placeholder="—"
-                        style={{ width: 44, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', outline: 'none', textAlign: 'center' }} />
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          )}
-        </div>
-
         {/* Active filter pills */}
         {(() => {
           const QF_LABELS: Record<string, string> = { createdToday: 'Created today', updatedToday: 'Updated today', forToday: 'Today scope', untagged: 'Untagged', mail: '✉ Mail', nojira: 'No Jira yet' };

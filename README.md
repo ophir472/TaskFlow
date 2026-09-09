@@ -23,7 +23,7 @@ A personal task-management app built with React, TypeScript, and Vite. All data 
 - Subtasks with next-up ★, quick-to-act ◷ (shared with the Quick to Act table), per-subtask checklists, estimates, and a floating parent-context card when a subtask is open
 - "Waiting for" tables, communication fields, custom fields, reminders (with popup scheduling) and recurring **responsibilities** that auto-generate tasks
 
-**Views** — Explore search + spotlight (`⌘F`), Kanban (with one-click Jira board buttons), an inline-editable Table (search, filters, group by requester/project with collapsible headers, hover ⌕ on a requester/project cell to filter on it, bulk actions, AI assign), Archive, and a **Docs** tab (notebook → category → page, markdown-lite with folding headings and checkboxes, "links board" pages).
+**Views** — Explore search + spotlight (`⌘F`), Kanban (with one-click Jira board buttons), an inline-editable Table (a search box that is also the filter picker — focus it empty to see every filter, type to narrow rows and options, pills for what's active; group by requester/project with collapsible headers, hover ⌕ on a requester/project cell to filter on it, bulk actions, AI assign), Archive, and a **Docs** tab (notebook → category → page, markdown-lite with folding headings and checkboxes, "links board" pages).
 
 **Integrations** (all configured from Settings — URLs, fields, and templates are data, so it adapts to any organization)
 - **Jira**: multiple hosts (Data Center; PAT Bearer auth or username+password Basic, per host), create via REST (pre-filled create-URL opens as fallback when the API is unreachable), summary templates, comments, close transitions
