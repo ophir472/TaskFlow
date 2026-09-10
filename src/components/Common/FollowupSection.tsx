@@ -13,6 +13,17 @@ export const PROGRESS_BLUE = 'oklch(0.55 0.15 250)';
 // strikes the row through, resets at 00:00), green ✓✓✓ done (hides the row).
 // Different glyph counts on purpose: one check = a step, three = finished.
 // Shared by the card section and the Hub so they can't drift.
+// The blue "followed up today" ✓ on its own — used by the Hub's ticket, wait
+// and communication rows (shadow record keyed like a ticket).
+export function ProgressMark({ on, onClick, title }: { on: boolean; onClick: () => void; title?: string }) {
+  return (
+    <span onClick={e => { e.stopPropagation(); onClick(); }}
+      title={title ?? (on ? 'Followed up today — click to undo' : 'Followed up today ✓ (strikes through until midnight)')}
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: 18, minWidth: 18, borderRadius: 999, fontSize: 10, fontWeight: 800, cursor: 'pointer', flexShrink: 0, boxSizing: 'border-box',
+        background: on ? PROGRESS_BLUE : 'transparent', color: on ? 'white' : 'var(--t-brd)', border: on ? 'none' : '1.5px solid var(--t-brd)' }}>✓</span>
+  );
+}
+
 export function FollowupMarks({ taskId, row }: { taskId: string; row: FollowupRow }) {
   const toggleFollowupProgressed = useStore(s => s.toggleFollowupProgressed);
   const setFollowupDone = useStore(s => s.setFollowupDone);

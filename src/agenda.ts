@@ -1,5 +1,6 @@
-import type { Item, Task, AgendaStep, SprintTypeToggles, ReviewSession, CustomSystem, DocNotebook } from './types';
+import type { Item, Task, AgendaStep, SprintTypeToggles, ReviewSession, CustomSystem, DocNotebook, HubConfig } from './types';
 import { leafCheckKeys, dailyCheckId } from './docBlocks';
+import { hubOpenCount } from './followups';
 import { buildSprintPool } from './components/Sprint/SprintMode';
 import { flaggedTasks } from './greenPlay';
 
@@ -14,7 +15,7 @@ export interface DashCounts {
   open: number;
   nojira: number;
   unplannedToday: number;
-  hubTickets: number;      // open (not-dismissed) ITSM + custom-system tickets
+  hubTickets: number;      // Hub items not yet followed up today (tickets, waits, threads, followups)
   todayTasks: Task[];       // active (not yet completed) today-tasks
   todayTotal: number;       // including already-completed ones
   todayRemaining: number;
@@ -28,6 +29,7 @@ export function dashCounts(
   sprintOrder: string[],
   reviewSession: ReviewSession | null,
   customSystems: CustomSystem[] = [],
+  hubConfig?: HubConfig,
 ): DashCounts {
   const flagged = flaggedTasks(items);
   let review = flagged.length;
@@ -44,18 +46,8 @@ export function dashCounts(
   // count archived ones toward the total so "today done" is detectable.
   const todayAll = items.filter((it): it is Task => it.kind === 'task' && it.type !== 'mail' && (it as Task).forToday);
   const todayTasks = todayAll.filter(t => !t.archived && t.status !== 'done' && t.status !== 'archived');
-  const workTasks = activeTasks.filter(t => t.type !== 'mail');
-  const hubTickets = workTasks.reduce((n, t) => {
-    const marked = new Set(t.irrelevantTickets ?? []);
-    const itsm = [t.itsmTicket, ...(t.extraItsmTickets ?? [])]
-      .filter((tk): tk is string => !!tk?.trim() && !marked.has(`itsm:${tk.trim()}`)).length;
-    const cs = customSystems.filter(sys => sys.showInHub !== false)
-      .filter(sys => {
-        const tk = (t.customTickets?.[sys.id] ?? '').trim();
-        return tk && !marked.has(`cs:${sys.id}:${tk}`);
-      }).length;
-    return n + itsm + cs;
-  }, 0);
+  // Everything the Hub lists minus what was followed up today (blue ✓) or is done.
+  const hubTickets = hubOpenCount(items, customSystems, hubConfig);
   return {
     review,
     mail: activeTasks.filter(t => t.type === 'mail').length,
@@ -91,7 +83,7 @@ export const TILE_DEFS: TileDef[] = [
   { id: 'open', label: 'Open tasks', icon: '☰', color: 'var(--t-acc)', hash: 'table', count: c => c.open },
   { id: 'nojira', label: 'No Jira yet', icon: '⧉', color: 'var(--t-urgent)', hash: 'table', preset: 'nojira', count: c => c.nojira },
   { id: 'unplannedToday', label: 'Unplanned today', icon: '◷', color: 'var(--t-amber)', hash: 'plan', count: c => c.unplannedToday },
-  { id: 'hub', label: 'Open tickets', icon: '▣', color: 'var(--t-acc)', hash: 'hub', count: c => c.hubTickets },
+  { id: 'hub', label: 'To follow up', icon: '▣', color: 'var(--t-acc)', hash: 'hub', count: c => c.hubTickets },
 ];
 
 // ── Agenda pipeline — built-in step metadata + completion detection ──

@@ -16,14 +16,15 @@ export function WalkthroughBar() {
   const sprintOrder = useStore(s => s.sprintOrder);
   const reviewSession = useStore(s => s.reviewSession);
   const customSystems = useStore(s => s.customSystems);
+  const hubConfig = useStore(s => s.hubConfig);
   const agendaChecks = useStore(s => s.agendaChecks);
   const toggleAgendaCheck = useStore(s => s.toggleAgendaCheck);
   const notebooks = useStore(s => s.notebooks);
   const pageContent = useMemo(() => docPageContentLookup(notebooks), [notebooks]);
 
   const counts = useMemo(
-    () => dashCounts(items, sprintToggles, sprintOrder, reviewSession, customSystems),
-    [items, sprintToggles, sprintOrder, reviewSession, customSystems]);
+    () => dashCounts(items, sprintToggles, sprintOrder, reviewSession, customSystems, hubConfig),
+    [items, sprintToggles, sprintOrder, reviewSession, customSystems, hubConfig]);
   const todayChecks = useMemo(
     () => new Set(agendaChecks.date === todayKey() ? agendaChecks.ids : []),
     [agendaChecks]);

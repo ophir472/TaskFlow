@@ -8,8 +8,8 @@ import { getCommunications, commChannel } from '../Common/CommunicationSection';
 import { BrandIcon } from '../Mail/ChannelToggle';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { RelevanceToggle, itsmKey, csKey } from '../Common/RelevanceToggle';
-import { followupRows, isProgressed, type FollowupRow } from '../../followups';
-import { FollowupMarks } from '../Common/FollowupSection';
+import { followupRows, isProgressed, progressedToday, waitKey, commKey, type FollowupRow } from '../../followups';
+import { FollowupMarks, ProgressMark } from '../Common/FollowupSection';
 import { GetBackToModal } from '../GetBackTo/GetBackToModal';
 import { buildGetBackTo } from '../../getBackTo';
 
@@ -29,6 +29,10 @@ export function Hub() {
   const itsmConfig = useStore(s => s.itsmConfig);
   const customSystems = useStore(s => s.customSystems);
   const updateItem = useStore(s => s.updateItem);
+  const toggleFollowupProgressed = useStore(s => s.toggleFollowupProgressed);
+  // "Followed up today" on any Hub row — the same blue ✓ the followup table has.
+  const fu = (t: Task, key: string, title: string) => ({ on: progressedToday(t, key), toggle: () => toggleFollowupProgressed(t.id, { ticketKey: key, title }) });
+  const struck = (on: boolean): React.CSSProperties => (on ? { textDecoration: 'line-through', color: 'var(--t-muted)' } : {});
   const [showDismissed, setShowDismissed] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [showDoneFU, setShowDoneFU] = useState(false);
@@ -138,9 +142,10 @@ export function Hub() {
             {visItsm.map(({ t, ticket, key, marked }) => {
               const url = itsmTicketUrl(itsmConfig, ticket);
               return (
-                <div key={`${t.id}-${key}`} style={{ ...rowSt, opacity: marked ? 0.5 : 1 }}>
+                <div key={`${t.id}-${key}`} style={{ ...rowSt, opacity: marked ? 0.5 : fu(t, key, ticket).on ? 0.75 : 1 }}>
                   <RelevanceToggle task={t} ticketKey={key} />
-                  <span style={{ fontWeight: 700, color: 'var(--t-txt)', flexShrink: 0, textDecoration: marked ? 'line-through' : 'none' }}>{ticket}</span>
+                  <ProgressMark on={fu(t, key, ticket).on} onClick={fu(t, key, ticket).toggle} />
+                  <span style={{ fontWeight: 700, color: 'var(--t-txt)', flexShrink: 0, textDecoration: marked || fu(t, key, ticket).on ? 'line-through' : 'none' }}>{ticket}</span>
                   {t.itsmTicket === ticket && t.itsmStatus && (
                     <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'var(--t-acc-bg)', color: 'var(--t-acc-dk)', textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>{t.itsmStatus}</span>
                   )}
@@ -167,9 +172,10 @@ export function Hub() {
                 {rows.map(({ t, ticket, key, marked }) => {
                   const url = customOpenUrl(sys, ticket);
                   return (
-                    <div key={`${t.id}-${key}`} style={{ ...rowSt, opacity: marked ? 0.5 : 1 }}>
+                    <div key={`${t.id}-${key}`} style={{ ...rowSt, opacity: marked ? 0.5 : fu(t, key, ticket).on ? 0.75 : 1 }}>
                       <RelevanceToggle task={t} ticketKey={key} />
-                      <span style={{ fontWeight: 700, color: 'var(--t-txt)', flexShrink: 0, textDecoration: marked ? 'line-through' : 'none' }}>{ticket}</span>
+                      <ProgressMark on={fu(t, key, ticket).on} onClick={fu(t, key, ticket).toggle} />
+                      <span style={{ fontWeight: 700, color: 'var(--t-txt)', flexShrink: 0, textDecoration: marked || fu(t, key, ticket).on ? 'line-through' : 'none' }}>{ticket}</span>
                       <span style={{ flex: 1 }} />
                       <span onClick={() => openTask(t.id)} title="Open the task" style={taskLink}>{t.title}</span>
                       {url && <>
@@ -192,9 +198,10 @@ export function Hub() {
             {commRows.map(({ t, f, label, value }, i) => (
               <div key={`${t.id}-${i}`} style={rowSt}>
                 <span title={commChannel(f) === 'teams' ? 'Teams' : 'Outlook'} style={{ display: 'inline-flex', flexShrink: 0 }}><BrandIcon channel={commChannel(f)} size={16} /></span>
+                <ProgressMark on={fu(t, commKey(f.id), `${label}: ${value}`).on} onClick={fu(t, commKey(f.id), `${label}: ${value}`).toggle} />
                 <span onClick={() => updateCommunicationField(t.id, f.id, { focus: !f.focus })} title={f.focus ? 'In focus — click to drop' : 'Click to focus'} style={{ cursor: 'pointer', color: f.focus ? 'var(--t-acc)' : 'var(--t-muted)', fontSize: 13, flexShrink: 0 }}>{f.focus ? '◉' : '◎'}</span>
                 <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'var(--t-surf3)', color: 'var(--t-txt2)', textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>{label}</span>
-                <span style={{ flex: 1, minWidth: 0, color: 'var(--t-txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={value}>{value}</span>
+                <span style={{ flex: 1, minWidth: 0, color: 'var(--t-txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...struck(fu(t, commKey(f.id), '').on) }} title={value}>{value}</span>
                 <span onClick={() => openTask(t.id)} title="Open the task" style={taskLink}>{t.title}</span>
               </div>
             ))}
@@ -211,7 +218,8 @@ export function Hub() {
                 <span onClick={() => toggleWaitDone(t, row.id)}
                   title="Mark the wait as over"
                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 5, fontSize: 11, fontWeight: 800, cursor: 'pointer', flexShrink: 0, background: 'transparent', color: 'var(--t-brd)', border: '1.5px solid var(--t-brd)' }}>✓</span>
-                <span style={{ flex: 1, minWidth: 0, color: 'var(--t-txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <ProgressMark on={fu(t, waitKey(row.id), row.cells.filter(c => c?.trim()).join(' — ')).on} onClick={fu(t, waitKey(row.id), row.cells.filter(c => c?.trim()).join(' — ')).toggle} />
+                <span style={{ flex: 1, minWidth: 0, color: 'var(--t-txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...struck(fu(t, waitKey(row.id), '').on) }}>
                   {row.cells.filter(c => c?.trim()).join(' — ')}
                 </span>
                 <span onClick={() => openTask(t.id)} title="Open the task" style={taskLink}>{t.title}</span>

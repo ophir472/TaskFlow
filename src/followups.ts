@@ -1,7 +1,13 @@
-import type { Task, Followup, CustomSystem } from './types';
+import type { Task, Followup, CustomSystem, Item, HubConfig } from './types';
 
 export const itsmKey = (ticket: string) => `itsm:${ticket}`;
 export const csKey = (sysId: string, ticket: string) => `cs:${sysId}:${ticket}`;
+// Hub rows that aren't tickets get the same "followed up today" mark through
+// a shadow followup record keyed like a ticket (never rendered as a followup
+// row — followupRows only lists ticket keys it knows).
+export const waitKey = (rowId: string) => `wait:${rowId}`;
+export const commKey = (fieldId: string) => `comm:${fieldId}`;
+export const progressedToday = (task: Task, key: string) => isProgressed(task.followups?.find(f => f.ticketKey === key) ?? {});
 
 export const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
 
@@ -64,3 +70,45 @@ export function storedFollowups(task: Task): Followup[] {
  *  the shadow record created on first touch). Structurally = store.FollowupRef. */
 export const refOf = (r: FollowupRow): { id: string } | { ticketKey: string; title: string } =>
   r.manual ? { id: r.id } : { ticketKey: r.ticketKey!, title: r.title };
+
+/** What the ▣ Hub shows, minus what's been followed up today (or is done):
+ *  the tile number. Same rules as the Hub page — tickets from every active
+ *  card, waits + manual followups from today's cards, communication threads
+ *  per hubConfig (touched today / focus). */
+export function hubOpenCount(items: Item[], customSystems: CustomSystem[], hubConfig: HubConfig = { commTodayOnly: true, commFocusOnly: true }): number {
+  const tasks = items.filter((it): it is Task => it.kind === 'task' && it.type !== 'mail' && !it.archived && it.status !== 'done' && it.status !== 'archived');
+  const day = startOfToday();
+  let n = 0;
+  for (const t of tasks) {
+    const marked = new Set(t.irrelevantTickets ?? []);
+    for (const tk of [t.itsmTicket, ...(t.extraItsmTickets ?? [])]) {
+      if (!tk?.trim()) continue;
+      const k = itsmKey(tk.trim());
+      if (!marked.has(k) && !progressedToday(t, k)) n++;
+    }
+    for (const sys of customSystems) {
+      if (sys.showInHub === false) continue;
+      const tk = (t.customTickets?.[sys.id] ?? '').trim();
+      if (!tk) continue;
+      const k = csKey(sys.id, tk);
+      if (!marked.has(k) && !progressedToday(t, k)) n++;
+    }
+    for (const f of t.communications ?? []) {
+      if (!f.value.trim()) continue;
+      if (hubConfig.commTodayOnly && !(f.touchedAt ? f.touchedAt >= day : t.forToday)) continue;
+      if (hubConfig.commFocusOnly && !f.focus) continue;
+      if (!progressedToday(t, commKey(f.id))) n++;
+    }
+    if (t.forToday) {
+      for (const r of t.waitingFor?.rows ?? []) {
+        if (r.done || !r.cells.some(c => c?.trim())) continue;
+        if (!progressedToday(t, waitKey(r.id))) n++;
+      }
+      for (const f of t.followups ?? []) {
+        if (f.ticketKey || f.done || isProgressed(f)) continue;   // ticket rows counted above
+        n++;
+      }
+    }
+  }
+  return n;
+}
