@@ -370,6 +370,22 @@ function BookmarkSettingsCard() {
   );
 }
 
+// ▣ Hub — which communication threads the Hub lists.
+function HubSettingsCard() {
+  const config = useStore(s => s.hubConfig);
+  const setHubConfig = useStore(s => s.setHubConfig);
+  const cardSt: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20, marginBottom: 16 };
+  const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5, cursor: 'pointer', padding: '6px 0' };
+  return (
+    <div style={cardSt}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t-txt)', marginBottom: 3 }}>▣ Hub — communications</div>
+      <div style={{ fontSize: 13, color: 'var(--t-muted)', marginBottom: 10 }}>Which card communication threads the Hub lists. Each thread has an Outlook / Teams mark and a ◉ Focus toggle on its card.</div>
+      <label style={row}><input type="checkbox" checked={config.commTodayOnly} onChange={e => setHubConfig({ commTodayOnly: e.target.checked })} /><span><b>Only threads touched today</b> <span style={{ color: 'var(--t-muted)' }}>— edited today (older threads without a stamp: their card must be marked Today)</span></span></label>
+      <label style={row}><input type="checkbox" checked={config.commFocusOnly} onChange={e => setHubConfig({ commFocusOnly: e.target.checked })} /><span><b>Only threads marked ◉ Focus</b></span></label>
+    </div>
+  );
+}
+
 const SETTINGS_TABS = [
   { id: 'general', label: 'General' },
   { id: 'dashboard', label: 'Dashboard' },
@@ -604,6 +620,7 @@ export function Settings() {
       )}
 
       {tab === 'general' && <BookmarkSettingsCard />}
+      {tab === 'general' && <HubSettingsCard />}
 
       {/* Backup & Version History */}
       {tab === 'backup' && (<>

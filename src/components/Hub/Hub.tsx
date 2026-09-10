@@ -4,7 +4,8 @@ import type { Task, GetBackTo as GetBackToItem } from '../../types';
 import { itsmTicketUrl } from '../../itsm';
 import { customOpenUrl } from '../../customSystems';
 import { openTicketWindow } from '../../ticketWindow';
-import { getCommunications } from '../Common/CommunicationSection';
+import { getCommunications, commChannel } from '../Common/CommunicationSection';
+import { BrandIcon } from '../Mail/ChannelToggle';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { RelevanceToggle, itsmKey, csKey } from '../Common/RelevanceToggle';
 import { followupRows, isProgressed, type FollowupRow } from '../../followups';
@@ -76,11 +77,20 @@ export function Hub() {
     return tk ? [{ sys, t, ticket: tk, key: csKey(sys.id, tk), marked: (t.irrelevantTickets ?? []).includes(csKey(sys.id, tk)) }] : [];
   }));
 
-  // ── Today's communications (the card fields, NOT the to-send entries) ──
-  const commRows = todayTasks.flatMap(t =>
+  // ── Communications (the card fields, NOT the to-send entries) — threads
+  // from every active card, narrowed by Settings → General → Hub: touched
+  // today (fields without a stamp fall back to "card marked Today") and/or
+  // marked focus. Both on by default. ──
+  const hubConfig = useStore(s => s.hubConfig);
+  const updateCommunicationField = useStore(s => s.updateCommunicationField);
+  const allItems = useStore(s => s.items);
+  const dayStart = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })();
+  const commRows = (allItems.filter((it): it is Task => it.kind === 'task' && it.type !== 'mail' && !it.archived && it.status !== 'done' && it.status !== 'archived')).flatMap(t =>
     getCommunications(t.communications)
       .filter(f => f.value.trim())
-      .map(f => ({ t, label: f.label, value: f.value })));
+      .filter(f => !hubConfig.commTodayOnly || (f.touchedAt ? f.touchedAt >= dayStart : t.forToday))
+      .filter(f => !hubConfig.commFocusOnly || f.focus)
+      .map(f => ({ t, f, label: f.label, value: f.value })));
 
   // ── Today's open waiting-for rows ──
   const waitRows = todayTasks.flatMap(t =>
@@ -176,11 +186,13 @@ export function Hub() {
 
         {/* Today's communications (card fields, not the ✉ to-send queue) */}
         <div style={sectionCard}>
-          <div style={{ ...sectionTitle, marginBottom: 12 }}>Communications · today's cards <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t-muted)' }}>{commRows.length}</span></div>
+          <div style={{ ...sectionTitle, marginBottom: 12 }}>Communications{hubConfig.commTodayOnly ? ' · today' : ''}{hubConfig.commFocusOnly ? ' · focus' : ''} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t-muted)' }}>{commRows.length}</span></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {commRows.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--t-muted)' }}>No filled communication fields on today's cards.</div>}
-            {commRows.map(({ t, label, value }, i) => (
+            {commRows.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--t-muted)' }}>{hubConfig.commFocusOnly ? 'No thread in focus' : 'No filled communication fields'}{hubConfig.commTodayOnly ? ' touched today' : ''}. Mark a thread ◉ Focus on its card{hubConfig.commTodayOnly || hubConfig.commFocusOnly ? ', or change the filters in Settings → General → Hub' : ''}.</div>}
+            {commRows.map(({ t, f, label, value }, i) => (
               <div key={`${t.id}-${i}`} style={rowSt}>
+                <span title={commChannel(f) === 'teams' ? 'Teams' : 'Outlook'} style={{ display: 'inline-flex', flexShrink: 0 }}><BrandIcon channel={commChannel(f)} size={16} /></span>
+                <span onClick={() => updateCommunicationField(t.id, f.id, { focus: !f.focus })} title={f.focus ? 'In focus — click to drop' : 'Click to focus'} style={{ cursor: 'pointer', color: f.focus ? 'var(--t-acc)' : 'var(--t-muted)', fontSize: 13, flexShrink: 0 }}>{f.focus ? '◉' : '◎'}</span>
                 <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'var(--t-surf3)', color: 'var(--t-txt2)', textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>{label}</span>
                 <span style={{ flex: 1, minWidth: 0, color: 'var(--t-txt)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={value}>{value}</span>
                 <span onClick={() => openTask(t.id)} title="Open the task" style={taskLink}>{t.title}</span>

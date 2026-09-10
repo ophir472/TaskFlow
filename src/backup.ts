@@ -105,6 +105,7 @@ const STATE_DEFAULTS: Record<string, unknown> = {
   notebooks: [],
   bookmarks: [],
   bookmarkFolders: [],
+  hubConfig: { commTodayOnly: true, commFocusOnly: true },
   bookmarkConfig: { faviconTemplate: 'https://www.google.com/s2/favicons?domain={domain}&sz=64', view: 'list', sort: 'added' },
   sprintTypeToggles: { quickTask: true, quickSubtask: true, mail: true, todayOnly: true },
   sprintOrder: [],

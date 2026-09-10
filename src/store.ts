@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Bookmark, BookmarkFolder, BookmarkConfig, Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField, Followup, GetBackTo } from './types';
+import type { Bookmark, BookmarkFolder, BookmarkConfig, HubConfig, Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField, Followup, GetBackTo } from './types';
 import { EMPTY_SN_CONFIG } from './servicenow';
 import { EMPTY_AI_CONFIG } from './ai';
 import { triggerIfDue, computeNextDueAt } from './responsibilities';
@@ -85,6 +85,7 @@ interface AppState {
   bookmarks: Bookmark[];
   bookmarkFolders: BookmarkFolder[];
   bookmarkConfig: BookmarkConfig;
+  hubConfig: HubConfig;
   taskOrder: string[];
   tableVisibleCols: string[] | null;
   archiveVisibleCols: string[] | null;
@@ -220,6 +221,7 @@ interface AppState {
   removeBookmarkFolder: (id: string) => void;
   importBookmarks: (folders: BookmarkFolder[], bookmarks: Bookmark[], intoFolderId: string | null) => void;
   setBookmarkConfig: (patch: Partial<BookmarkConfig>) => void;
+  setHubConfig: (patch: Partial<HubConfig>) => void;
   setSprintOrder: (keys: string[]) => void;
   setReviewOrder: (ids: string[]) => void;
   beginReview: (taskIds: string[], initialReviewedAt: Record<string, number>) => void;
@@ -298,6 +300,7 @@ export const useStore = create<AppState>()(
       bookmarks: [],
       bookmarkFolders: [],
       bookmarkConfig: DEFAULT_BOOKMARK_CONFIG,
+      hubConfig: { commTodayOnly: true, commFocusOnly: true },
       taskOrder: [],
       tableVisibleCols: null,
       archiveVisibleCols: null,
@@ -1096,6 +1099,10 @@ export const useStore = create<AppState>()(
       setBookmarkConfig: (patch) => {
         slog('bookmark-config:set', { keys: Object.keys(patch) });
         set(s => ({ bookmarkConfig: { ...s.bookmarkConfig, ...patch } }));
+      },
+      setHubConfig: (patch) => {
+        slog('hub-config:set', patch);
+        set(s => ({ hubConfig: { ...s.hubConfig, ...patch } }));
       },
 
       setSprintTypeToggle: (key, on) => {

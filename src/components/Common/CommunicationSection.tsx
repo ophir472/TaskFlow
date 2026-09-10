@@ -2,6 +2,10 @@ import { useState } from 'react';
 import type { CommunicationField, Task } from '../../types';
 import { LinkedCommTable } from '../Mail/LinkedCommTable';
 import { useStore } from '../../store';
+import { BrandIcon, OUTLOOK_BLUE, TEAMS_PURPLE } from '../Mail/ChannelToggle';
+
+// A field's channel: the seeded 'Teams' field defaults to Teams, others to Outlook.
+export const commChannel = (f: CommunicationField): 'outlook' | 'teams' => f.channel ?? (/team/i.test(f.label) ? 'teams' : 'outlook');
 
 interface Props {
   taskId: string;
@@ -43,12 +47,22 @@ export function CommunicationSection({ taskId, task, fields, emphasized }: Props
       background: emphasized ? 'var(--t-acc-bg)' : 'var(--t-surf2)',
       borderRadius: 10, padding: emphasized ? 16 : 12, transition: 'all 0.2s',
     }}>
-      <div style={{
-        fontSize: emphasized ? 13 : 11, fontWeight: 700,
-        color: emphasized ? 'var(--t-acc-dk)' : 'var(--t-muted)',
-        textTransform: 'uppercase', letterSpacing: '0.05em',
-        marginBottom: 10,
-      }}>Communication</div>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{
+          fontSize: emphasized ? 13 : 11, fontWeight: 700,
+          color: emphasized ? 'var(--t-acc-dk)' : 'var(--t-muted)',
+          textTransform: 'uppercase', letterSpacing: '0.05em',
+        }}>Communication</div>
+        {primaryHasValue && (
+          <button
+            onClick={() => addField(taskId, `Field ${fields.length + 1}`)}
+            title="Add another communication field"
+            style={{ marginLeft: 'auto', border: '1px dashed var(--t-brd)', background: 'transparent', color: 'var(--t-muted)', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, cursor: 'pointer', lineHeight: 1.4 }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--t-surf)'; e.currentTarget.style.color = 'var(--t-txt2)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--t-muted)'; }}
+          >+ field</button>
+        )}
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {fields.map((f, i) => {
@@ -78,10 +92,11 @@ export function CommunicationSection({ taskId, task, fields, emphasized }: Props
                   onClick={() => { setEditingLabelId(f.id); setLabelDraft(f.label); }}
                 >{f.label}</div>
               )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <input
                 value={f.value}
                 placeholder={placeholderFor(f.label)}
-                onChange={e => updateField(taskId, f.id, { value: e.target.value })}
+                onChange={e => updateField(taskId, f.id, { value: e.target.value, touchedAt: Date.now() })}
                 onBlur={() => {
                   if (f.value.trim()) return;
                   // Empty on blur → remove the field; the primary is only
@@ -90,6 +105,20 @@ export function CommunicationSection({ taskId, task, fields, emphasized }: Props
                 }}
                 style={sInp}
               />
+              {/* channel — Outlook / Teams (brand marks); focus — shows on the ▣ Hub */}
+              {(() => { const ch = commChannel(f); const brand = ch === 'teams' ? TEAMS_PURPLE : OUTLOOK_BLUE; return (
+                <button type="button" onClick={() => updateField(taskId, f.id, { channel: ch === 'teams' ? 'outlook' : 'teams' })}
+                  title={ch === 'teams' ? 'Teams thread — click for Outlook' : 'Outlook thread — click for Teams'}
+                  style={{ height: emphasized ? 36 : 32, padding: '0 8px', display: 'inline-flex', alignItems: 'center', gap: 5, border: `1px solid ${brand}`, background: `color-mix(in oklab, ${brand} 10%, var(--t-surf))`, color: brand, borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                  <BrandIcon channel={ch} size={16} />{ch === 'teams' ? 'Teams' : 'Outlook'}
+                </button>
+              ); })()}
+              <button type="button" onClick={() => updateField(taskId, f.id, { focus: !f.focus })}
+                title={f.focus ? 'In focus — shown on the ▣ Hub. Click to drop it' : 'Not in focus — click to show it on the ▣ Hub'}
+                style={{ height: emphasized ? 36 : 32, padding: '0 8px', display: 'inline-flex', alignItems: 'center', gap: 4, border: `1px solid ${f.focus ? 'var(--t-acc)' : 'var(--t-brd)'}`, background: f.focus ? 'var(--t-acc)' : 'var(--t-surf)', color: f.focus ? 'white' : 'var(--t-muted)', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                {f.focus ? '◉' : '◎'} Focus
+              </button>
+              </div>
             </div>
           );
         })}
@@ -100,19 +129,6 @@ export function CommunicationSection({ taskId, task, fields, emphasized }: Props
         <LinkedCommTable task={task} />
       </div>
 
-      {primaryHasValue && (
-        <button
-          onClick={() => addField(taskId, `Field ${fields.length + 1}`)}
-          style={{
-            marginTop: 10, width: '100%',
-            border: '1px dashed var(--t-brd)', background: 'transparent',
-            color: 'var(--t-muted)', fontSize: 12, fontWeight: 500,
-            padding: '5px 0', borderRadius: 6, cursor: 'pointer',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'var(--t-surf)'; e.currentTarget.style.color = 'var(--t-txt2)'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--t-muted)'; }}
-        >+ Add another field</button>
-      )}
     </div>
   );
 }

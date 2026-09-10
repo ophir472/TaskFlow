@@ -336,6 +336,18 @@ export interface CommunicationField {
   id: string;
   label: string;
   value: string;
+  // 2026-09-10: where the thread lives (missing = teams for the default
+  // 'Teams' field, else outlook), whether it's in focus (shown on the Hub),
+  // and when its value was last edited (the Hub's "today" filter).
+  channel?: 'outlook' | 'teams';
+  focus?: boolean;
+  touchedAt?: number;
+}
+
+// ▣ Hub — what the Communications section shows (Settings → General).
+export interface HubConfig {
+  commTodayOnly: boolean;   // only threads touched today
+  commFocusOnly: boolean;   // only threads marked focus
 }
 
 // "Waiting for" table on a card: user-defined columns (2 by default), rows
