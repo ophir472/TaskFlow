@@ -86,10 +86,13 @@ function HomeV1() {
               🚶 Walkthrough
             </button>
           )}
-          {nextStep && nextStep.step.builtin && (
+          {nextStep && (
+            // Continue works for every kind of step: built-ins navigate to their
+            // screen, checklist steps open the popup, manual steps get checked off.
             <button onClick={() => goStep(nextStep.step)}
+              title={nextStep.step.builtin ? BUILTIN_STEPS[nextStep.step.builtin].hint : nextStep.step.docPageId ? 'Open the checklist and tick every box' : 'Mark this manual step done for today'}
               style={{ border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 13.5, fontWeight: 700, padding: '10px 18px', borderRadius: 10, cursor: 'pointer' }}>
-              ▶ Continue: {nextStep.step.label}
+              {nextStep.step.builtin || nextStep.step.docPageId ? `▶ Continue: ${nextStep.step.label}` : `✓ Mark done: ${nextStep.step.label}`}
             </button>
           )}
         </div>
