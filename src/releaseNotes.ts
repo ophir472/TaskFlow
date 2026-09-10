@@ -2,7 +2,7 @@
 // push (part of the session finish routine in CLAUDE.md). Shown at the
 // bottom of Settings; clicking the version opens the full history.
 
-export const APP_VERSION = '1.6.0';
+export const APP_VERSION = '1.7.0';
 
 export interface Release {
   version: string;
@@ -11,6 +11,23 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
+  {
+    version: '1.7.0',
+    date: '2026-09-10',
+    notes: [
+      'Bookmarks: a line with a bump along the bottom of every screen (or b) opens a full bookmark manager — nested folders, drag to organise, tags, notes, favorites, Unsorted inbox, duplicate check, list/grid/cards, Chrome HTML import/export, search with tag: / folder: / is:. Every link on a card is mirrored here automatically, tagged with the task',
+      'Docs: Notion-style blocks — nested to-dos, toggles, callouts, quotes, code, tables, [[links]] to pages and tasks; / block menu, [[ link picker, Enter/Tab list handling, ⌘B/I/E. Links boards became bookmark folders',
+      'Daily agenda: any Docs checklist page can be a step — ticks reset at midnight, tick inline from Home or the walkthrough, copy link / Add to agenda on the page',
+      'Daily agenda: Sweep — skim Outlook + Teams, jot subject + key point, Next, Done; replies stay in the preview walk. Pipeline redrawn Jenkins-style with live per-stage numbers, full width',
+      'Communication: Outlook / Teams per entry (real brand marks); card threads get Outlook / Teams + ◉ Focus; the Hub lists focus threads touched today (Settings → General → Hub)',
+      'Hub rebuilt: Get back to on top, then Today and All cards with ITSM · custom systems · waiting for · communication · followups, each full width; blue ✓ = followed up today on every row; the Home tile counts what is left',
+      'Comments on every card — quick timestamped updates; the review\'s Update-Jira box opens with them and the Σ summary lists them',
+      'Table: Archive view folded in (is:archived / status:done, ↩ Restore), group by requester/project with click-to-filter, Kibana-style filter picker, URL-mirrored search + view + page size with a copy-link button, filter bar and empty state with a way out, Tags as a dropdown like Kind, professional Gantt with drag to reorder / resize, cards view roomier, bulk archive/restore without dialogs (banner)',
+      'Sprint: only quick work from Today cards by default (toggle in Settings → Sprint queue)',
+      'Look: page, cards, rows and borders read apart (two steps darker); new High contrast theme',
+      'Fixes: page 2 was unreachable; browser-back left the task popup open with a filter set; closing an overlay after a walkthrough hop reopened the previous one; the walkthrough bar lingered; the header ran off-page when zoomed; Continue button vanished on custom steps; pipeline stages overlapped',
+    ],
+  },
   {
     version: '1.6.0',
     date: '2026-09-10',

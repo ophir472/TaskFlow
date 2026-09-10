@@ -1538,7 +1538,7 @@ export const useStore = create<AppState>()(
           const folders: BookmarkFolder[] = Array.isArray(persisted.bookmarkFolders) ? [...persisted.bookmarkFolders] : [];
           const bookmarks: Bookmark[] = Array.isArray(persisted.bookmarks) ? [...persisted.bookmarks] : [];
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          persisted.notebooks = persisted.notebooks.map((nb: any) => ({
+          persisted.notebooks = persisted.notebooks.filter(Boolean).map((nb: any) => ({
             ...nb,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             categories: (nb.categories ?? []).map((c: any) => ({

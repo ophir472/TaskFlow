@@ -942,6 +942,10 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
         s.itemsCompleted++;
         s.details.push({ action: 'completed', title: d.title || titleFor(d.id) });
         break;
+      case 'item:continue':
+        s.otherChanges++;
+        s.details.push({ action: 'continued (back from hold)', title: d.title || titleFor(d.id) });
+        break;
       case 'item:hold':
         s.itemsHeld++;
         s.details.push({ action: 'held', title: titleFor(d.id), extra: d.toCheck || undefined });
