@@ -57,7 +57,7 @@ npm run preview    # preview the production build
 
 ## Design tokens
 
-Background `#f6f5f2`, cards/sidebar `#ffffff`, borders `#e9e6de`/`#e6e3dc`, text primary `#211f1c`, secondary `#48453e`, muted `#8b877e`. Accent (CTA, active nav): `oklch(0.5 0.15 264)`. Success (Complete, pie goal): `oklch(0.5 0.14 150)`. Amber (Hold resume, to-check): `oklch(0.93 0.05 85)` bg / `oklch(0.45 0.13 85)` text. Radii: 16px cards, 10–12px panels, 9px buttons, 999px chips.
+Background `#e9e6df` (darkened 2026-09-10 so page ≠ card ≠ inner row read apart), cards/sidebar `#ffffff`, inner rows `#f4f2ed`, borders `#cfcabf`/`#dfdbd2`; a 'High contrast' theme goes further (Settings → Appearance), text primary `#211f1c`, secondary `#48453e`, muted `#8b877e`. Accent (CTA, active nav): `oklch(0.5 0.15 264)`. Success (Complete, pie goal): `oklch(0.5 0.14 150)`. Amber (Hold resume, to-check): `oklch(0.93 0.05 85)` bg / `oklch(0.45 0.13 85)` text. Radii: 16px cards, 10–12px panels, 9px buttons, 999px chips.
 
 ## Working agreements (how Ophir works — follow these without being asked)
 
