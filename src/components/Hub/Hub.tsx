@@ -13,12 +13,12 @@ import { FollowupMarks, ProgressMark } from '../Common/FollowupSection';
 import { GetBackToModal } from '../GetBackTo/GetBackToModal';
 import { buildGetBackTo } from '../../getBackTo';
 
-const sectionCard: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 14, padding: '18px 20px' };
+const sectionCard: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 14, padding: '20px 24px', width: '100%', boxSizing: 'border-box' };
 const sectionTitle: React.CSSProperties = { fontSize: 14, fontWeight: 800, color: 'var(--t-txt)', display: 'flex', alignItems: 'center', gap: 8 };
 const rowSt: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--t-surf2)', border: '1px solid var(--t-brd2)', borderRadius: 9, fontSize: 13 };
 const taskLink: React.CSSProperties = { fontSize: 11.5, color: 'var(--t-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220, cursor: 'pointer', flexShrink: 0 };
 const ext: React.CSSProperties = { fontSize: 14, color: 'var(--t-acc)', cursor: 'pointer', flexShrink: 0, userSelect: 'none' };
-const empty: React.CSSProperties = { fontSize: 12.5, color: 'var(--t-muted)' };
+const empty: React.CSSProperties = { fontSize: 12.5, color: 'var(--t-muted)', gridColumn: '1 / -1' };
 const count = (n: number) => <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t-muted)' }}>{n}</span>;
 
 // ▣ Hub (layout 2026-09-10):
@@ -111,8 +111,8 @@ export function Hub() {
 
     const part = (title: string, n: number, body: React.ReactNode) => (
       <div style={sectionCard}>
-        <div style={{ ...sectionTitle, marginBottom: 12 }}>{title} {count(n)}</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{body}</div>
+        <div style={{ ...sectionTitle, marginBottom: 14 }}>{title} {count(n)}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 520px), 1fr))', gap: 8 }}>{body}</div>
       </div>
     );
     const ticketRow = (t: Task, ticket: string, key: string, marked: boolean, url: string | null, badge?: React.ReactNode, sysName?: string) => {
@@ -136,7 +136,7 @@ export function Hub() {
     const none = (what: string) => <div style={empty}>{what} {todayScope ? "on today's cards" : 'on any card'}.</div>;
 
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
         {part('ITSM tickets', itsmRows.length, <>
           {itsmRows.length === 0 && none('No ITSM tickets')}
           {itsmRows.map(({ t, ticket, key, marked }) => ticketRow(t, ticket, key, marked, itsmTicketUrl(itsmConfig, ticket),
@@ -195,7 +195,7 @@ export function Hub() {
   }
 
   const scopeHeader = (label: string, sub: string, open?: boolean, onToggle?: () => void) => (
-    <div onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '30px 0 12px', cursor: onToggle ? 'pointer' : 'default' }}>
+    <div onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '44px 0 18px', cursor: onToggle ? 'pointer' : 'default' }}>
       <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--t-txt)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
       <span style={{ fontSize: 12, color: 'var(--t-muted)' }}>{sub}</span>
       <span style={{ flex: 1, height: 1, background: 'var(--t-brd)' }} />
