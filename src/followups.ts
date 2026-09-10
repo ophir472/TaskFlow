@@ -71,15 +71,16 @@ export function storedFollowups(task: Task): Followup[] {
 export const refOf = (r: FollowupRow): { id: string } | { ticketKey: string; title: string } =>
   r.manual ? { id: r.id } : { ticketKey: r.ticketKey!, title: r.title };
 
-/** What the ▣ Hub shows, minus what's been followed up today (or is done):
- *  the tile number. Same rules as the Hub page — tickets from every active
- *  card, waits + manual followups from today's cards, communication threads
- *  per hubConfig (touched today / focus). */
+/** The ▣ Hub's TODAY scope minus what's been followed up today (or is done):
+ *  the tile number. Same rules as the Hub page's Today section — tickets,
+ *  waits, manual followups and communication threads (focus / touched today
+ *  per hubConfig) on cards marked Today. */
 export function hubOpenCount(items: Item[], customSystems: CustomSystem[], hubConfig: HubConfig = { commTodayOnly: true, commFocusOnly: true }): number {
   const tasks = items.filter((it): it is Task => it.kind === 'task' && it.type !== 'mail' && !it.archived && it.status !== 'done' && it.status !== 'archived');
   const day = startOfToday();
   let n = 0;
   for (const t of tasks) {
+    if (!t.forToday) continue;
     const marked = new Set(t.irrelevantTickets ?? []);
     for (const tk of [t.itsmTicket, ...(t.extraItsmTickets ?? [])]) {
       if (!tk?.trim()) continue;
@@ -95,11 +96,11 @@ export function hubOpenCount(items: Item[], customSystems: CustomSystem[], hubCo
     }
     for (const f of t.communications ?? []) {
       if (!f.value.trim()) continue;
-      if (hubConfig.commTodayOnly && !(f.touchedAt ? f.touchedAt >= day : t.forToday)) continue;
+      if (hubConfig.commTodayOnly && f.touchedAt && f.touchedAt < day) continue;
       if (hubConfig.commFocusOnly && !f.focus) continue;
       if (!progressedToday(t, commKey(f.id))) n++;
     }
-    if (t.forToday) {
+    {
       for (const r of t.waitingFor?.rows ?? []) {
         if (r.done || !r.cells.some(c => c?.trim())) continue;
         if (!progressedToday(t, waitKey(r.id))) n++;
