@@ -25,6 +25,7 @@ export function buildReviewSummary(items: Item[], since: number, until: number):
   const allTasks = items.filter((it): it is Task => it.kind === 'task');
   const fuProgressed = allTasks.flatMap(t => (t.followups ?? []).filter(f => inRange(f.progressedAt)).map(f => ({ t, f })));
   const fuDone = allTasks.flatMap(t => (t.followups ?? []).filter(f => f.done && inRange(f.doneAt)).map(f => ({ t, f })));
+  const commented = allTasks.flatMap(t => (t.comments ?? []).filter(c => inRange(c.createdAt)).map(c => ({ t, c }))).sort((a, b) => a.c.createdAt - b.c.createdAt);
   const getbacks = items.filter((it): it is GetBackTo => it.kind === 'getback');
   const gbFollowedUp = getbacks.filter(g => g.done && inRange(g.doneAt));
   const gbAdded = getbacks.filter(g => inRange(g.createdAt));
@@ -44,6 +45,7 @@ export function buildReviewSummary(items: Item[], since: number, until: number):
   section('Communications handled', mailHandled.map(m => m.title));
   section('Followups completed', fuDone.map(({ t, f }) => `${f.title}${f.notes.trim() ? ` — ${f.notes.trim()}` : ''} (${t.title})`));
   section('Followups progressed', fuProgressed.filter(x => !fuDone.some(y => y.f.id === x.f.id)).map(({ t, f }) => `${f.title} (${t.title})`));
+  section('Comments', commented.map(({ t, c }) => `${c.text.trim()} (${t.title})`));
   section('Followed up with', gbFollowedUp.map(g => g.notes.trim() ? `${g.who} — ${g.notes.trim()}` : g.who));
   section('Added to get-back-to', gbAdded.map(g => g.who));
   if (planned.length) lines.push(`Planned: ${planned.length} task${planned.length !== 1 ? 's' : ''} (${planned.map(t => t.title).join(', ')})`, '');

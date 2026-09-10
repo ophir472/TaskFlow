@@ -451,6 +451,9 @@ export interface Task {
   // ticket rows (ITSM / custom systems) are DERIVED at render and only get a
   // record here (with `ticketKey`) once progressed/annotated/done.
   followups?: Followup[];
+  // Comments (2026-09-10): quick timestamped updates; those written since the
+  // card's last review feed the review's Update-Jira prefill.
+  comments?: TaskComment[];
   // ServiceNow sync for the primary ITSM ticket: last fetched status +
   // server-side update time, and when the user last opened the ticket (↗).
   // Set QUIETLY (no updatedAt bump / history) so background sync never flags
@@ -522,6 +525,13 @@ export interface Responsibility {
 // mark resets itself at 00:00 with no scheduled job. `done` hides the row
 // (a "show completed" toggle reveals it). `ticketKey` marks the shadow
 // record of an auto ITSM/custom-system row (`itsm:<t>` / `cs:<sys>:<t>`).
+export interface TaskComment {
+  id: string;
+  text: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
 export interface Followup {
   id: string;
   title: string;

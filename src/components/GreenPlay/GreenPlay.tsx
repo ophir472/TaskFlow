@@ -152,9 +152,9 @@ export function GreenPlay({ onClose }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTask?.id, currentStep?.kind]);
 
-  // Prefill the "Update Jira" summary box: names of subtasks created since the
-  // card's last review, plus the whole notes section when notes changed since
-  // then. Both checks are pure store data (createdAt / notesChangedAt vs the
+  // Prefill the "Update Jira" summary box: comments and names of subtasks
+  // created since the card's last review, plus the whole notes section when
+  // notes changed since then. Both checks are pure store data (createdAt / notesChangedAt vs the
   // review baseline) — the forensic logs are never consulted.
   useEffect(() => {
     setCommentStatus(null);
@@ -172,6 +172,9 @@ export function GreenPlay({ onClose }: Props) {
     const newSubs = currentTask.subtasks.filter(s => s.createdAt > baseline);
     const changedSubs = currentTask.subtasks.filter(s => s.createdAt <= baseline && (s.changedAt ?? 0) > baseline);
     const parts: string[] = [];
+    // Comments written since the last review — the quick updates, oldest first.
+    const newComments = [...(currentTask.comments ?? [])].filter(c => c.createdAt > baseline).sort((a, b) => a.createdAt - b.createdAt);
+    if (newComments.length) parts.push(`Updates:\n${newComments.map(c => `- ${new Date(c.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}: ${c.text.trim()}`).join('\n')}`);
     if (newSubs.length) parts.push(`New subtasks:\n${newSubs.flatMap(s => [`- ${s.title}`, ...subDetail(s)]).join('\n')}`);
     if (changedSubs.length) parts.push(`Updated subtasks:\n${changedSubs.flatMap(s => [`- ${s.title}`, ...subDetail(s)]).join('\n')}`);
     if (currentTask.notes?.trim() && (currentTask.notesChangedAt ?? 0) > baseline) {

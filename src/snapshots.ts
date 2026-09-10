@@ -752,7 +752,7 @@ const COALESCE_DATA_EVENTS = new Set([
     'followup:add', 'followup:update', 'followup:remove', 'followup:progress', 'followup:done',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
-    'bookmark:add', 'bookmark:update', 'bookmark:remove', 'bookmark:restore', 'bookmark:move', 'bookmark:import', 'bookmark-folder:add', 'bookmark-folder:update', 'bookmark-folder:remove', 'bookmark-config:set', 'hub-config:set', 'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content',
+    'bookmark:add', 'bookmark:update', 'bookmark:remove', 'bookmark:restore', 'bookmark:move', 'bookmark:import', 'bookmark-folder:add', 'bookmark-folder:update', 'bookmark-folder:remove', 'bookmark-config:set', 'hub-config:set', 'comment:add', 'comment:update', 'comment:remove', 'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content',
   'theme:set',
   // Per-card UI preferences that the user cares to preserve across versions.
   'card:resize',
@@ -865,7 +865,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'followup:add', 'followup:update', 'followup:remove', 'followup:progress', 'followup:done',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
-    'bookmark:add', 'bookmark:update', 'bookmark:remove', 'bookmark:restore', 'bookmark:move', 'bookmark:import', 'bookmark-folder:add', 'bookmark-folder:update', 'bookmark-folder:remove', 'bookmark-config:set', 'hub-config:set', 'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
+    'bookmark:add', 'bookmark:update', 'bookmark:remove', 'bookmark:restore', 'bookmark:move', 'bookmark:import', 'bookmark-folder:add', 'bookmark-folder:update', 'bookmark-folder:remove', 'bookmark-config:set', 'hub-config:set', 'comment:add', 'comment:update', 'comment:remove', 'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
     'card:resize',
     'responsibility:add', 'responsibility:update', 'responsibility:remove',
     'responsibility:toggle-active', 'responsibility:generate-tasks',
@@ -902,7 +902,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'followup:add', 'followup:update', 'followup:remove', 'followup:progress', 'followup:done',
     'doc:notebook:add', 'doc:notebook:rename', 'doc:notebook:remove',
     'doc:category:add', 'doc:category:rename', 'doc:category:remove',
-    'bookmark:add', 'bookmark:update', 'bookmark:remove', 'bookmark:restore', 'bookmark:move', 'bookmark:import', 'bookmark-folder:add', 'bookmark-folder:update', 'bookmark-folder:remove', 'bookmark-config:set', 'hub-config:set', 'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
+    'bookmark:add', 'bookmark:update', 'bookmark:remove', 'bookmark:restore', 'bookmark:move', 'bookmark:import', 'bookmark-folder:add', 'bookmark-folder:update', 'bookmark-folder:remove', 'bookmark-config:set', 'hub-config:set', 'comment:add', 'comment:update', 'comment:remove', 'doc:page:add', 'doc:page:rename', 'doc:page:remove', 'doc:page:content', 'theme:set',
     'card:resize',
     'responsibility:add', 'responsibility:update', 'responsibility:remove',
     'responsibility:toggle-active', 'responsibility:generate-tasks',
@@ -1118,6 +1118,9 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
         s.otherChanges++;
         s.details.push({ action: 'added a followup', title: d.title ?? '' });
         break;
+      case 'comment:add': s.otherChanges++; s.details.push({ action: `commented: ${String(d.text ?? '').slice(0, 80)}`, title: d.title ?? '' }); break;
+      case 'comment:update': s.otherChanges++; s.details.push({ action: 'edited a comment', title: d.title ?? '' }); break;
+      case 'comment:remove': s.otherChanges++; s.details.push({ action: 'removed a comment', title: d.title ?? '' }); break;
       case 'followup:update':
         s.otherChanges++;
         s.details.push({ action: 'edited a followup', title: titleFor(d.taskId) });

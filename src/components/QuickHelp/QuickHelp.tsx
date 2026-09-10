@@ -7,6 +7,7 @@ import { FollowupSection } from '../Common/FollowupSection';
 import { TicketSections } from '../Common/TicketSections';
 import { QuickToActSection } from '../Common/QuickToActSection';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
+import { CommentsSection } from '../Common/CommentsSection';
 import { WaitingForSection } from '../Common/WaitingForSection';
 import { EstimatesSection } from '../Common/EstimatesSection';
 import { ResizableTextarea } from '../Common/ResizableTextarea';
@@ -96,6 +97,7 @@ export function QuickHelp({ onToast }: Props) {
           <ResizableTextarea taskId={t.id} fieldKey="notes" value={t.notes} onChange={e => updateItem(t.id, { notes: e.target.value })} rows={3} style={ta} />
         </div>
         <QuickToActSection task={t} />
+        <CommentsSection task={t} />
         <CommunicationSection taskId={t.id} task={t} fields={getCommunications(t.communications)} />
         <WaitingForSection task={t} />
         <FollowupSection task={t} />

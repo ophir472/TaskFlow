@@ -9,6 +9,7 @@ import { WaitingForSection } from '../Common/WaitingForSection';
 import { QuickToActSection } from '../Common/QuickToActSection';
 import { SubtaskChecklist } from '../SubtaskPanel/SubtaskChecklist';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
+import { CommentsSection } from '../Common/CommentsSection';
 import { ResizableTextarea } from '../Common/ResizableTextarea';
 import { TicketSections } from '../Common/TicketSections';
 import { TypePicker } from '../Common/TypePicker';
@@ -399,6 +400,9 @@ export function TaskModal({ taskId, allIds, onNavigate, onClose, urlDriven = tru
               <div style={fl}>Blockers</div>
               <ResizableTextarea taskId={taskId} fieldKey="blockers" value={task.blockers} onChange={e => updateItem(taskId, { blockers: e.target.value })} rows={3} placeholder="Who can help?" style={ta} />
             </div>
+
+            {/* Comments — quick updates; feed the review's Update-Jira prefill */}
+            <CommentsSection task={task} />
 
             {/* Communication */}
             <CommunicationSection taskId={taskId} task={task} fields={getCommunications(task.communications)} />

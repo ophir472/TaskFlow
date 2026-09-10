@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Bookmark, BookmarkFolder, BookmarkConfig, HubConfig, Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField, Followup, GetBackTo } from './types';
+import type { Bookmark, BookmarkFolder, BookmarkConfig, HubConfig, TaskComment, Item, Task, Subtask, ChangeRecord, ScheduleSpec, CustomField, JiraConfig, ItsmConfig, CommunicationField, ReviewSession, Responsibility, JiraBoard, SnConfig, SnField, SnTemplate, SnTicketType, AiConfig, DocNotebook, DocPage, DocPageType , SprintTypeToggles, DashboardConfig, CustomSystem, ReviewSummary, MinutesField, Followup, GetBackTo } from './types';
 import { EMPTY_SN_CONFIG } from './servicenow';
 import { EMPTY_AI_CONFIG } from './ai';
 import { triggerIfDue, computeNextDueAt } from './responsibilities';
@@ -222,6 +222,9 @@ interface AppState {
   importBookmarks: (folders: BookmarkFolder[], bookmarks: Bookmark[], intoFolderId: string | null) => void;
   setBookmarkConfig: (patch: Partial<BookmarkConfig>) => void;
   setHubConfig: (patch: Partial<HubConfig>) => void;
+  addComment: (taskId: string, text: string) => void;
+  updateComment: (taskId: string, id: string, text: string) => void;
+  removeComment: (taskId: string, id: string) => void;
   setSprintOrder: (keys: string[]) => void;
   setReviewOrder: (ids: string[]) => void;
   beginReview: (taskIds: string[], initialReviewedAt: Record<string, number>) => void;
@@ -1039,6 +1042,29 @@ export const useStore = create<AppState>()(
           const next = on ? Array.from(new Set([...cur, ...ids])) : cur.filter(x => !ids.includes(x));
           return { agendaChecks: { date: today, ids: next } };
         });
+      },
+
+      // ── Comments (card quick updates) ──
+      addComment: (taskId, text) => {
+        const c: TaskComment = { id: nextId('cm'), text: text.trim(), createdAt: Date.now() };
+        slog('comment:add', { taskId, id: c.id, text: c.text, title: get().items.find(it => it.id === taskId)?.title });
+        set(s => ({
+          items: s.items.map(it => it.id === taskId && it.kind === 'task' ? { ...it, comments: [...(it.comments ?? []), c], updatedAt: Date.now() } : it),
+          history: pushHistory(s.history, { ts: Date.now(), type: 'update', id: taskId }),
+        }));
+      },
+      updateComment: (taskId, id, text) => {
+        slog('comment:update', { taskId, id, text, title: get().items.find(it => it.id === taskId)?.title });
+        set(s => ({
+          items: s.items.map(it => it.id === taskId && it.kind === 'task' ? { ...it, comments: (it.comments ?? []).map(c => c.id === id ? { ...c, text: text.trim(), updatedAt: Date.now() } : c), updatedAt: Date.now() } : it),
+        }));
+      },
+      removeComment: (taskId, id) => {
+        const t = get().items.find(it => it.id === taskId);
+        slog('comment:remove', { taskId, id, text: t?.kind === 'task' ? t.comments?.find(c => c.id === id)?.text : undefined, title: t?.title });
+        set(s => ({
+          items: s.items.map(it => it.id === taskId && it.kind === 'task' ? { ...it, comments: (it.comments ?? []).filter(c => c.id !== id), updatedAt: Date.now() } : it),
+        }));
       },
 
       // ── Bookmarks ──

@@ -44,6 +44,13 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     ],
   },
   {
+    title: 'Comments (card, popup, Quick Help)',
+    rows: [
+      { keys: ['Enter'], what: 'Post the comment · Shift+Enter = newline' },
+      { keys: ['dbl-click'], what: 'Edit a comment (blur or Enter saves, Esc cancels) · × twice deletes' },
+    ],
+  },
+  {
     title: 'Subtask add fields (card & popup)',
     rows: [
       { keys: ['Enter'], what: 'Add subtask — the green action' },

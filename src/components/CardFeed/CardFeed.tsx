@@ -6,6 +6,7 @@ import { EstimatesSection } from '../Common/EstimatesSection';
 import { WaitingForSection } from '../Common/WaitingForSection';
 import { QuickToActSection } from '../Common/QuickToActSection';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
+import { CommentsSection } from '../Common/CommentsSection';
 import { ResizableTextarea } from '../Common/ResizableTextarea';
 import { TaskModal } from '../TaskModal/TaskModal';
 import { formatSchedule } from '../../scheduleEngine';
@@ -697,6 +698,9 @@ export function CardFeed({ onToast }: Props) {
                 <div style={fl}>Blockers</div>
                 <ResizableTextarea taskId={current.id} fieldKey="blockers" value={t.blockers} onChange={e => updateItem(current.id, { blockers: e.target.value })} rows={3} placeholder="Who can help?" style={ta} />
               </div>
+
+              {/* Comments — quick updates; feed the review's Update-Jira prefill */}
+              <CommentsSection task={t} />
 
               {/* Communication */}
               <CommunicationSection taskId={current.id} task={t} fields={getCommunications(t.communications)} />
