@@ -71,14 +71,15 @@ export function AgendaPipeline({ steps, counts, todayChecks, pageContent, walkin
       </div>
 
       {/* the track */}
-      <div style={{ display: 'flex', alignItems: 'stretch', overflowX: 'auto', paddingBottom: 4 }}>
+      {/* stages never squeeze below a readable width — the track scrolls sideways instead */}
+      <div style={{ display: 'flex', alignItems: 'stretch', overflowX: 'auto', paddingBottom: 8, scrollbarWidth: 'thin' }}>
         {steps.map(({ step, done }, i) => {
           const st = statusOf(i);
           const m = metric(step);
           const col = colorOf(st);
           const prevDone = i > 0 && steps[i - 1].done;
           return (
-            <div key={step.id} style={{ display: 'flex', alignItems: 'stretch', flex: '1 1 0', minWidth: 0 }}>
+            <div key={step.id} style={{ display: 'flex', alignItems: 'stretch', flex: '1 0 auto' }}>
               {/* connector — solid green behind success, flowing into the running stage, dashed grey ahead */}
               {i > 0 && (
                 <div style={{ width: 'clamp(28px, 4vw, 64px)', flexShrink: 0, display: 'flex', alignItems: 'center' }}>
@@ -96,7 +97,7 @@ export function AgendaPipeline({ steps, counts, todayChecks, pageContent, walkin
               {/* stage node */}
               <div onClick={() => onGo(step)} title={hint(step)}
                 style={{
-                  flex: 1, minWidth: 150, boxSizing: 'border-box', padding: '14px 14px 12px', borderRadius: 12, cursor: 'pointer', position: 'relative',
+                  flex: 1, minWidth: 200, maxWidth: 320, boxSizing: 'border-box', padding: '14px 14px 12px', borderRadius: 12, cursor: 'pointer', position: 'relative',
                   background: st === 'running' ? `color-mix(in oklab, ${BLUE} 6%, var(--t-surf))` : st === 'success' ? `color-mix(in oklab, ${GREEN} 5%, var(--t-surf))` : 'var(--t-surf2)',
                   border: `1.5px solid ${st === 'queued' ? 'var(--t-brd)' : col}`,
                   boxShadow: st === 'running' ? `0 0 0 4px color-mix(in oklab, ${BLUE} 14%, transparent)` : 'none',

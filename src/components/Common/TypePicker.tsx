@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 import { QUICK_BLUE } from './QuickToActSection';
@@ -32,6 +32,19 @@ export function TypePicker({ task, compact }: { task: Task; compact?: boolean })
   // Popover is position:fixed (anchored to the button's rect) so it escapes
   // overflow:hidden ancestors — e.g. the Table's Kind column.
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
+  // Keep a fixed-position popover inside the viewport: measure after it
+  // opens, shift left if it would run off the right edge, flip above the
+  // button if it would run off the bottom.
+  const popRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!open || !anchor || !popRef.current) return;
+    const p = popRef.current.getBoundingClientRect();
+    const btn = ref.current?.querySelector('button')?.getBoundingClientRect();
+    let left = anchor.left, top = anchor.top;
+    if (left + p.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - 8 - p.width);
+    if (top + p.height > window.innerHeight - 8 && btn) top = Math.max(8, btn.top - 6 - p.height);
+    if (left !== anchor.left || top !== anchor.top) setAnchor({ left, top });
+  }, [open, anchor]);
 
   useEffect(() => {
     if (!open) return;
@@ -66,7 +79,7 @@ export function TypePicker({ task, compact }: { task: Task; compact?: boolean })
         <span style={{ fontSize: 10, opacity: 0.7, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
       </button>
       {open && (
-        <div onClick={e => e.stopPropagation()}
+        <div ref={popRef} onClick={e => e.stopPropagation()}
           style={{ position: 'fixed', left: anchor?.left ?? 0, top: anchor?.top ?? 0, zIndex: 120, display: 'flex', gap: 6, flexWrap: 'wrap', padding: 8, minWidth: 260, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 10, boxShadow: '0 10px 32px rgba(0,0,0,0.18)' }}>
           {TYPE_DEFS.map((d, i) => {
             const on = task.type === d.key;

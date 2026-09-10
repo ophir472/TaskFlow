@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
 
@@ -33,6 +33,19 @@ export function TagDropdown({ task, open: openProp, onOpenChange, compact }: Pro
   const [hi, setHi] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
+  // Keep a fixed-position popover inside the viewport: measure after it
+  // opens, shift left if it would run off the right edge, flip above the
+  // button if it would run off the bottom.
+  const popRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!open || !anchor || !popRef.current) return;
+    const p = popRef.current.getBoundingClientRect();
+    const btn = ref.current?.querySelector('button')?.getBoundingClientRect();
+    let left = anchor.left, top = anchor.top;
+    if (left + p.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - 8 - p.width);
+    if (top + p.height > window.innerHeight - 8 && btn) top = Math.max(8, btn.top - 6 - p.height);
+    if (left !== anchor.left || top !== anchor.top) setAnchor({ left, top });
+  }, [open, anchor]);
 
   useEffect(() => {
     if (!open) return;
@@ -66,7 +79,7 @@ export function TagDropdown({ task, open: openProp, onOpenChange, compact }: Pro
         <span style={{ fontSize: 11, color: 'var(--t-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
       </button>
       {open && (
-        <div onClick={e => e.stopPropagation()} style={{ ...(compact ? { position: 'fixed' as const, left: anchor?.left ?? 0, top: anchor?.top ?? 0, zIndex: 120 } : { position: 'absolute' as const, left: 0, top: 'calc(100% + 6px)', zIndex: 40 }), display: 'flex', gap: 8, flexWrap: 'wrap', padding: 10, minWidth: 320, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, boxShadow: '0 10px 32px rgba(0,0,0,0.18)' }}>
+        <div ref={popRef} onClick={e => e.stopPropagation()} style={{ ...(compact ? { position: 'fixed' as const, left: anchor?.left ?? 0, top: anchor?.top ?? 0, zIndex: 120 } : { position: 'absolute' as const, left: 0, top: 'calc(100% + 6px)', zIndex: 40 }), display: 'flex', gap: 8, flexWrap: 'wrap', padding: 10, minWidth: 320, background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, boxShadow: '0 10px 32px rgba(0,0,0,0.18)' }}>
           {TAG_DEFS.map((d, i) => {
             const on = !!task[d.key];
             return (
