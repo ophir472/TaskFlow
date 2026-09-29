@@ -130,19 +130,38 @@ var JiraMoverCore = (function () {
     return { send: send, missing: missing, filled: filled };
   }
 
-  // Defaults for fields that are NOT on any transition screen: set on the
-  // ticket itself before moving (only the empty ones unless overwrite).
-  function planEdit(settings, issue, values, editmeta, skipIds) {
+  // FILL FIRST: what to write on the ticket itself before any move — every
+  // default whose field is empty (or all of them with overwrite), plus what
+  // was typed in the pane (typed always wins). Workflow validators check the
+  // ticket's fields, not the transition screen, so the ticket must be
+  // complete before the first hop. Fields this ticket can't edit are left
+  // to the transition screens.
+  function planEdit(settings, issue, values, editmeta, skipIds, typed) {
     var defaults = defaultsFor(settings, issue), out = {};
-    Object.keys(defaults).forEach(function (id) {
+    var ids = Object.keys(defaults);
+    Object.keys(typed || {}).forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
+    ids.forEach(function (id) {
       if (skipIds && skipIds[id]) return;
-      if (!isEmpty(values ? values[id] : undefined) && !settings.overwrite) return;
+      var t = typed && typed[id] != null && String(typed[id]).trim() !== '' ? String(typed[id]) : null;
+      if (t == null && !isEmpty(values ? values[id] : undefined) && !settings.overwrite) return;
       var meta = editmeta && editmeta[id];
       if (editmeta && !meta) return;               // not editable on this ticket type
-      var v = shape(defaults[id].raw, meta);
-      if (v !== undefined) out[id] = v;
+      var raw = t != null ? t : defaults[id] ? defaults[id].raw : null;
+      if (raw == null) return;
+      var v = shape(raw, meta);
+      if (v !== undefined && !(Array.isArray(v) && !v.length)) out[id] = v;
     });
     return out;
+  }
+
+  // A transition Jira refused because of fields (a validator, or a screen
+  // field we had nothing for): turn its error into questions for the pane.
+  function missingFromErrors(fieldErrors, screen, editmeta) {
+    return Object.keys(fieldErrors || {}).map(function (id) {
+      var meta = (screen && screen[id]) || (editmeta && editmeta[id]) || {};
+      return { id: id, label: meta.name || String(fieldErrors[id]).replace(/\s+is required\.?$/i, '') || id,
+        allowed: (meta.allowedValues || []).map(function (a) { return a.value || a.name || a.key || String(a.id); }) };
+    });
   }
 
   // Settings → Detect: match Jira's field list by name.
@@ -183,6 +202,6 @@ var JiraMoverCore = (function () {
     return d;
   }
 
-  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
+  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, missingFromErrors: missingFromErrors, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = JiraMoverCore;

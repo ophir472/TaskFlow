@@ -30,11 +30,21 @@ Tick "remember" and it is never asked again.
 
 ## What it does on a move
 
-- Walks the flow `New > To do > In progress > Done` one legal transition at a
-  time, in either direction.
-- Fills **only empty** fields (there is a setting to overwrite instead).
-- Fields on a transition screen go in with the transition. Defaults for
-  fields on no screen (often the epic) are set on the ticket first.
+1. **Fills the ticket first.** Every default whose field is empty is written
+   on the ticket (there is a setting to overwrite instead). Jira's workflow
+   checks the ticket's fields on each step, so it must be complete before
+   the first move.
+2. **Then walks the flow** `New > To do > In progress > Done` one legal
+   transition at a time, in either direction. A field that can only be set
+   on a transition screen goes in with that transition.
+3. **If Jira still refuses** because of a field, the pane asks for exactly
+   that field, with Jira's own choices when it is a list.
+
+## The pane
+
+Drag it by its title bar, resize it from the bottom-right corner. Position
+and size are remembered; double-click the title bar to reset. It can't be
+dragged off-screen.
 
 ## Keys
 

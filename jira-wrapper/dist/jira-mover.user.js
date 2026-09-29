@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Mover
 // @namespace    jira-mover
-// @version      1.0.0
+// @version      1.1.0
 // @description  Click a ticket, move it to In progress in one click — required fields filled from your defaults
 // @match        *://*/browse/*
 // @match        *://*/secure/*
@@ -149,19 +149,38 @@ var JiraMoverCore = (function () {
     return { send: send, missing: missing, filled: filled };
   }
 
-  // Defaults for fields that are NOT on any transition screen: set on the
-  // ticket itself before moving (only the empty ones unless overwrite).
-  function planEdit(settings, issue, values, editmeta, skipIds) {
+  // FILL FIRST: what to write on the ticket itself before any move — every
+  // default whose field is empty (or all of them with overwrite), plus what
+  // was typed in the pane (typed always wins). Workflow validators check the
+  // ticket's fields, not the transition screen, so the ticket must be
+  // complete before the first hop. Fields this ticket can't edit are left
+  // to the transition screens.
+  function planEdit(settings, issue, values, editmeta, skipIds, typed) {
     var defaults = defaultsFor(settings, issue), out = {};
-    Object.keys(defaults).forEach(function (id) {
+    var ids = Object.keys(defaults);
+    Object.keys(typed || {}).forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
+    ids.forEach(function (id) {
       if (skipIds && skipIds[id]) return;
-      if (!isEmpty(values ? values[id] : undefined) && !settings.overwrite) return;
+      var t = typed && typed[id] != null && String(typed[id]).trim() !== '' ? String(typed[id]) : null;
+      if (t == null && !isEmpty(values ? values[id] : undefined) && !settings.overwrite) return;
       var meta = editmeta && editmeta[id];
       if (editmeta && !meta) return;               // not editable on this ticket type
-      var v = shape(defaults[id].raw, meta);
-      if (v !== undefined) out[id] = v;
+      var raw = t != null ? t : defaults[id] ? defaults[id].raw : null;
+      if (raw == null) return;
+      var v = shape(raw, meta);
+      if (v !== undefined && !(Array.isArray(v) && !v.length)) out[id] = v;
     });
     return out;
+  }
+
+  // A transition Jira refused because of fields (a validator, or a screen
+  // field we had nothing for): turn its error into questions for the pane.
+  function missingFromErrors(fieldErrors, screen, editmeta) {
+    return Object.keys(fieldErrors || {}).map(function (id) {
+      var meta = (screen && screen[id]) || (editmeta && editmeta[id]) || {};
+      return { id: id, label: meta.name || String(fieldErrors[id]).replace(/\s+is required\.?$/i, '') || id,
+        allowed: (meta.allowedValues || []).map(function (a) { return a.value || a.name || a.key || String(a.id); }) };
+    });
   }
 
   // Settings → Detect: match Jira's field list by name.
@@ -202,7 +221,7 @@ var JiraMoverCore = (function () {
     return d;
   }
 
-  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
+  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, missingFromErrors: missingFromErrors, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
 })();
 
 // Jira Mover — the part that lives in the Jira page: the pane, the settings
@@ -265,8 +284,30 @@ var JiraMoverCore = (function () {
   // ── the move: walk the flow hop by hop, filling what each screen demands ──
   // Resolves { status, filled[], hops[] } or rejects; when a required field
   // has no value and no default it rejects with err.missing so the pane asks.
+  // Order matters: FILL the ticket first, THEN walk. Jira's workflow checks
+  // the ticket's fields on every hop, so New → To do → In progress only goes
+  // through once the ticket is complete.
   function move(key, target, typed, log) {
-    var hops = [], filledAll = [], edited = false, seen = {};
+    var hops = [], filledAll = [];
+    function putEach(edit) {
+      // One field per call: a field this ticket type refuses must not block the others.
+      return Object.keys(edit).reduce(function (p, id) {
+        return p.then(function () {
+          var one = {}; one[id] = edit[id];
+          return api('PUT', '/issue/' + encodeURIComponent(key), { fields: one })
+            .then(function () { filledAll.push(labelOf(id)); })
+            .catch(function () { /* not editable here — its transition screen will carry it */ });
+        });
+      }, Promise.resolve());
+    }
+    function fill() {
+      return getIssue(key).then(function (issue) {
+        if (C.same(issue.status, target)) return;
+        var edit = C.planEdit(settings, issue, issue.values, issue.editmeta, null, typed);
+        if (!Object.keys(edit).length) return;
+        return putEach(edit).then(function () { if (filledAll.length) log('Filled: ' + filledAll.join(', ')); });
+      });
+    }
     function step(guard) {
       return getIssue(key).then(function (issue) {
         if (C.same(issue.status, target)) return { status: issue.status, filled: filledAll, hops: hops };
@@ -278,40 +319,24 @@ var JiraMoverCore = (function () {
           var tr = trs.filter(function (t) { return C.same(t.to && t.to.name, next); })[0];
           var plan = C.planHop(settings, issue, tr.fields || {}, issue.values, typed);
           if (plan.missing.length) { var e = new Error('“' + next + '” needs: ' + plan.missing.map(function (m) { return m.label; }).join(', ')); e.missing = plan.missing; e.at = next; throw e; }
-          // Defaults for fields that were on NO transition screen along the way
-          // go on the ticket itself — once, at the last hop, when every screen
-          // of the walk has been seen (a field a later screen fills is left to it).
-          trs.forEach(function (t) { Object.keys(t.fields || {}).forEach(function (id) { seen[id] = true; }); });
-          var pre = Promise.resolve();
-          if (!edited && C.same(next, target)) {
-            edited = true;
-            var edit = C.planEdit(settings, issue, issue.values, issue.editmeta, seen);
-            var ids = Object.keys(edit);
-            if (ids.length) {
-              // One field per call: a field this ticket type refuses must not block the others.
-              pre = ids.reduce(function (p, id) {
-                return p.then(function () {
-                  var one = {}; one[id] = edit[id];
-                  return api('PUT', '/issue/' + encodeURIComponent(key), { fields: one })
-                    .then(function () { filledAll.push(labelOf(id)); })
-                    .catch(function (err) { log('skipped ' + labelOf(id) + ': ' + err.message, 'warn'); });
-                });
-              }, Promise.resolve());
-            }
-          }
-          return pre.then(function () {
-            log(issue.status + ' → ' + next + (plan.filled.length ? '  (filled: ' + plan.filled.join(', ') + ')' : ''));
-            var body = { transition: { id: tr.id } };
-            if (Object.keys(plan.send).length) body.fields = plan.send;
-            return api('POST', '/issue/' + encodeURIComponent(key) + '/transitions', body);
-          }).then(function () {
+          log(issue.status + ' → ' + next + (plan.filled.length ? '  (with: ' + plan.filled.join(', ') + ')' : ''));
+          var body = { transition: { id: tr.id } };
+          if (Object.keys(plan.send).length) body.fields = plan.send;
+          return api('POST', '/issue/' + encodeURIComponent(key) + '/transitions', body).then(function () {
             hops.push(next); filledAll = filledAll.concat(plan.filled);
             return step(guard - 1);
+          }, function (err) {
+            // Jira refused because of fields (a validator): ask for exactly those.
+            if (err.fieldErrors && Object.keys(err.fieldErrors).length) {
+              var m = C.missingFromErrors(err.fieldErrors, tr.fields, issue.editmeta);
+              var e2 = new Error('“' + next + '” needs: ' + m.map(function (x) { return x.label; }).join(', ')); e2.missing = m; e2.at = next; throw e2;
+            }
+            throw err;
           });
         });
       });
     }
-    return step(settings.flow.length + 2);
+    return fill().then(function () { return step(settings.flow.length + 2); });
   }
   function labelOf(id) {
     var f = settings.fields, k;
@@ -333,13 +358,51 @@ var JiraMoverCore = (function () {
   var INP = FONT + 'width:100%;box-sizing:border-box;border:1px solid #c1c7d0;border-radius:6px;padding:6px 8px;background:#fafbfc;color:#172b4d;';
   var LBL = 'font-size:11px;font-weight:700;color:#6b778c;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px;';
 
-  var pane = el('div', FONT + 'position:fixed;top:64px;right:16px;width:330px;max-height:calc(100vh - 90px);overflow:auto;z-index:2147483000;background:#fff;color:#172b4d;border:1px solid #c1c7d0;border-radius:12px;box-shadow:0 12px 40px rgba(9,30,66,.28);padding:14px 16px;display:none;');
+  // The pane can be dragged by its title bar and resized from its bottom-right
+  // corner; where you leave it is remembered (double-click the title to reset).
+  var GEOM = 'jira-mover-geom-v1', MIN_W = 260, MIN_H = 160;
+  var pane = el('div', FONT + 'position:fixed;box-sizing:border-box;min-width:' + MIN_W + 'px;min-height:' + MIN_H + 'px;max-width:calc(100vw - 8px);max-height:calc(100vh - 8px);overflow:auto;resize:both;z-index:2147483000;background:#fff;color:#172b4d;border:1px solid #c1c7d0;border-radius:12px;box-shadow:0 12px 40px rgba(9,30,66,.28);padding:14px 16px;display:none;');
   pane.setAttribute('data-jira-mover', '1');
   document.body.appendChild(pane);
 
+  function defaultGeom() { return { left: Math.max(8, window.innerWidth - 330 - 16), top: 64, width: 330, height: 0 }; }
+  function readGeom() { try { var g = JSON.parse(localStorage.getItem(GEOM) || 'null'); if (g && isFinite(g.left) && isFinite(g.top) && isFinite(g.width)) return g; } catch (e) { /* ignore */ } return defaultGeom(); }
+  function applyGeom(g) {
+    // Always keep the whole pane reachable, whatever the window became.
+    var w = Math.max(MIN_W, Math.min(g.width || 330, window.innerWidth - 8));
+    var h = g.height ? Math.max(MIN_H, Math.min(g.height, window.innerHeight - 8)) : 0;
+    var left = Math.max(4, Math.min(g.left, window.innerWidth - w - 4));
+    var top = Math.max(4, Math.min(g.top, window.innerHeight - (h || MIN_H) - 4));
+    pane.style.left = left + 'px'; pane.style.top = top + 'px'; pane.style.width = w + 'px';
+    pane.style.height = h ? h + 'px' : 'auto';
+  }
+  var geom = readGeom(), geomReady = false;
+  function saveGeom() { try { localStorage.setItem(GEOM, JSON.stringify(geom)); } catch (e) { /* ignore */ } }
+  applyGeom(geom);
+  window.addEventListener('resize', function () { applyGeom(geom); });
+  if (window.ResizeObserver) new ResizeObserver(function () {
+    if (!geomReady || pane.style.display === 'none') return;
+    var r = pane.getBoundingClientRect();
+    // Only a real drag of the corner sets an explicit size (the browser writes inline width/height).
+    var w = Math.round(r.width), h = pane.style.height && pane.style.height !== 'auto' ? Math.round(r.height) : 0;
+    if (w !== geom.width || h !== geom.height) { geom.width = w; geom.height = h; saveGeom(); }
+  }).observe(pane);
+  var drag = null;
+  document.addEventListener('mousemove', function (e) {
+    if (!drag) return;
+    e.preventDefault();
+    geom.left = drag.left + (e.clientX - drag.x); geom.top = drag.top + (e.clientY - drag.y);
+    applyGeom(geom);
+  }, true);
+  document.addEventListener('mouseup', function () {
+    if (!drag) return;
+    drag = null; document.body.style.userSelect = '';
+    var r = pane.getBoundingClientRect(); geom.left = Math.round(r.left); geom.top = Math.round(r.top); saveGeom();
+  }, true);
+
   var state = { key: null, issue: null, busy: false, log: [], missing: null, pendingTarget: null, view: 'ticket', loadErr: null };
 
-  function show(on) { pane.style.display = on ? 'block' : 'none'; if (on) render(); }
+  function show(on) { pane.style.display = on ? 'block' : 'none'; if (on) { applyGeom(geom); render(); setTimeout(function () { geomReady = true; }, 0); } }
   function visible() { return pane.style.display !== 'none'; }
 
   function open(key) {
@@ -393,8 +456,18 @@ var JiraMoverCore = (function () {
   }
 
   function header(title) {
-    var h = el('div', 'display:flex;align-items:center;gap:8px;margin-bottom:8px;');
-    h.appendChild(el('div', 'font-weight:800;font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', title));
+    var h = el('div', 'display:flex;align-items:center;gap:8px;margin:-14px -16px 8px;padding:10px 16px 8px;cursor:move;user-select:none;border-bottom:1px solid #ebecf0;background:#f4f5f7;border-radius:12px 12px 0 0;position:sticky;top:-14px;z-index:1;');
+    h.title = 'Drag to move · drag the bottom-right corner to resize · double-click to reset';
+    h.setAttribute('data-drag', '1');
+    h.addEventListener('mousedown', function (e) {
+      if (e.button !== 0 || (e.target !== h && e.target.getAttribute('data-title') !== '1')) return;   // not on ⚙ / ×
+      var r = pane.getBoundingClientRect();
+      drag = { x: e.clientX, y: e.clientY, left: r.left, top: r.top };
+      document.body.style.userSelect = 'none'; e.preventDefault();
+    });
+    h.addEventListener('dblclick', function (e) { if (e.target !== h && e.target.getAttribute('data-title') !== '1') return; geom = defaultGeom(); saveGeom(); applyGeom(geom); });
+    h.appendChild(el('span', 'color:#97a0af;font-size:12px;letter-spacing:-2px;pointer-events:none;', '⋮⋮'));
+    h.appendChild(el('div', 'font-weight:800;font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', title, { 'data-title': '1' }));
     h.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:15px;', state.view === 'settings' ? '←' : '⚙', { title: state.view === 'settings' ? 'Back to the ticket' : 'Settings', onclick: function () { state.view = state.view === 'settings' ? 'ticket' : 'settings'; render(); } }));
     h.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:18px;line-height:1;', '×', { title: 'Close (Esc)', onclick: function () { show(false); } }));
     return h;

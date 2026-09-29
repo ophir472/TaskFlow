@@ -11,7 +11,7 @@ execSync('node build.mjs', { stdio: 'ignore' });
 const script = readFileSync('dist/jira-mover.user.js', 'utf8');
 
 const FLOW = ['New', 'To do', 'In progress', 'Done'];
-const issue = { key: 'PROJ-1', fields: { summary: 'Fix <b>login</b>', status: { name: 'New' }, issuetype: { name: 'Story' }, cf_ac: null, cf_sp: null, cf_team: null, cf_epic: null, cf_root: null, cf_keep: 'mine' } };
+const issue = { key: 'PROJ-1', fields: { summary: 'Fix <b>login</b>', status: { name: 'New' }, issuetype: { name: 'Story' }, cf_ac: null, cf_sp: null, cf_team: null, cf_epic: null, cf_root: null, cf_sev: null, cf_keep: 'mine' } };
 const calls = [];
 const screenFor = to => to !== 'In progress' ? {} : {
   cf_ac: { required: true, name: 'Acceptance Criteria', schema: { type: 'string' } },
@@ -37,6 +37,7 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><meta name="appli
   try {
     if (sessionStorage.getItem('phase') === 'after-reload') {
       out.afterReload = true; out.paneHiddenOnLoad = pane().style.display === 'none';
+      await new Promise(r => setTimeout(r, 300)); const r = pane().getBoundingClientRect(); out.rect = [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)];
       await fetch('/__report', { method: 'POST', body: JSON.stringify({ reload: out }) }); return;
     }
     out.hiddenBeforeClick = pane().style.display === 'none';
@@ -44,12 +45,31 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><meta name="appli
     const big = await until(() => [...pane().querySelectorAll('button')].find(b => /^Move to In progress$/.test(b.textContent)), 'primary button');
     out.summaryAsText = pane().textContent.includes('Fix <b>login</b>') && !pane().querySelector('b');
     out.steps.push('opened');
-    big.click();
+    const again = () => until(() => [...pane().querySelectorAll('button')].find(b => /^Move to In progress$/.test(b.textContent) && !b.disabled), 'button again');
+    // move + resize the pane before using it
+    const bar = pane().querySelector('[data-drag]'), r0 = pane().getBoundingClientRect();
+    const fire = (t, type, x, y) => t.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }));
+    fire(bar, 'mousedown', r0.left + 40, r0.top + 12); fire(document, 'mousemove', r0.left - 160, r0.top + 112); fire(document, 'mouseup', r0.left - 160, r0.top + 112);
+    const r1 = pane().getBoundingClientRect();
+    out.dragged = [Math.round(r1.left - r0.left), Math.round(r1.top - r0.top)];
+    pane().style.width = '420px'; pane().style.height = '380px';           // what dragging the corner does
+    await until(() => { const g = JSON.parse(localStorage.getItem('jira-mover-geom-v1') || 'null'); return g && g.width === 420 && g.height === 380; }, 'size saved');
+    fire(bar, 'mousedown', 0, 0); fire(document, 'mousemove', -5000, -5000); fire(document, 'mouseup', -5000, -5000);
+    const r2 = pane().getBoundingClientRect(); out.clamped = r2.left >= 0 && r2.top >= 0;
+    fire(bar, 'mousedown', r2.left + 40, r2.top + 12); fire(document, 'mousemove', r2.left + 140, r2.top + 72); fire(document, 'mouseup', r2.left + 140, r2.top + 72);
+    out.geom = JSON.parse(localStorage.getItem('jira-mover-geom-v1'));
+    big.isConnected ? big.click() : (await again()).click();
+    const sev = await until(() => pane().querySelector('[data-missing-id="cf_sev"]'), 'asks for Severity');
+    out.asked1 = [...pane().querySelectorAll('[data-missing-id]')].map(i => i.getAttribute('data-missing-id'));
+    out.sevIsSelect = sev.tagName === 'SELECT' && [...sev.options].map(o => o.value).join() === ',High,Low';
+    out.statusWhenAsked1 = (await (await fetch('/rest/api/2/issue/PROJ-1')).json()).fields.status.name;
+    sev.value = 'High';
+    (await again()).click();
     const inp = await until(() => pane().querySelector('[data-missing-id="cf_root"]'), 'asks for Root cause');
     out.askedOnly = [...pane().querySelectorAll('[data-missing-id]')].map(i => i.getAttribute('data-missing-id'));
     inp.value = 'Config drift';
     sessionStorage.setItem('phase', 'after-reload');
-    (await until(() => [...pane().querySelectorAll('button')].find(b => /^Move to In progress$/.test(b.textContent) && !b.disabled), 'button again')).click();
+    (await again()).click();
     await until(() => /is now In progress/.test(pane().textContent), 'success line');
     out.remembered = JSON.parse(localStorage.getItem('jira-mover-settings-v1')).extra;
     out.steps.push('moved');
@@ -64,13 +84,15 @@ const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/__report') { report = { ...(report || {}), ...JSON.parse(body) }; send(200, {}); if (report.reload || report.run?.error) done(); return; }
     if (url.pathname.startsWith('/rest/')) calls.push(`${req.method} ${url.pathname.replace('/rest/api/2', '')}${body ? ' ' + body : ''}`);
-    if (req.method === 'GET' && url.pathname === '/rest/api/2/issue/PROJ-1') return send(200, { ...issue, editmeta: { fields: { cf_epic: { schema: { type: 'any' } }, cf_ac: {}, cf_sp: { schema: { type: 'number' } }, cf_team: {}, cf_root: {} } } });
+    if (req.method === 'GET' && url.pathname === '/rest/api/2/issue/PROJ-1') return send(200, { ...issue, editmeta: { fields: { cf_epic: { name: 'Epic Link', schema: { type: 'any' } }, cf_ac: { name: 'Acceptance Criteria', schema: { type: 'string' } }, cf_sp: { name: 'Story Points', schema: { type: 'number' } }, cf_team: { name: 'Scrum-Team', schema: { type: 'option' }, allowedValues: [{ id: '101', value: 'Platform' }] }, cf_root: { name: 'Root cause', schema: { type: 'string' } }, cf_sev: { name: 'Severity', schema: { type: 'option' }, allowedValues: [{ id: '7', value: 'High' }, { id: '8', value: 'Low' }] } } } });
     if (req.method === 'GET' && url.pathname === '/rest/api/2/issue/PROJ-1/transitions') return send(200, { transitions: transitions() });
     if (req.method === 'PUT' && url.pathname === '/rest/api/2/issue/PROJ-1') { Object.assign(issue.fields, JSON.parse(body).fields); return send(204); }
     if (req.method === 'POST' && url.pathname === '/rest/api/2/issue/PROJ-1/transitions') {
       const b = JSON.parse(body); const tr = transitions().find(t => t.id === b.transition.id);
       if (!tr) return send(400, { errorMessages: ['Transition not valid from ' + issue.fields.status.name], errors: {} });
       const after = { ...issue.fields, ...(b.fields || {}) };
+      // workflow validator on New → To do: the TICKET must have story points and a severity (neither is on a screen)
+      if (tr.to.name === 'To do') { const v = {}; if (after.cf_sp == null) v.cf_sp = 'Story Points is required.'; if (after.cf_sev == null) v.cf_sev = 'Severity is required.'; if (Object.keys(v).length) return send(400, { errorMessages: [], errors: v }); }
       const lacking = Object.entries(tr.fields).filter(([id, m]) => m.required && (after[id] == null || after[id] === ''));
       if (lacking.length) return send(400, { errorMessages: [], errors: Object.fromEntries(lacking.map(([id, m]) => [id, m.name + ' is required'])) });
       Object.assign(issue.fields, b.fields || {}); issue.fields.status = { name: tr.to.name }; return send(204);
@@ -81,7 +103,7 @@ const server = http.createServer((req, res) => {
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
-const chrome = execFile(CHROME, ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', `--user-data-dir=/private/tmp/jira-mover-test-${process.pid}`, '--remote-debugging-port=0', `http://127.0.0.1:${port}/browse/PROJ-1`], () => {});
+const chrome = execFile(CHROME, ['--headless=new', '--window-size=1400,900', '--disable-gpu', '--no-first-run', '--no-default-browser-check', `--user-data-dir=/private/tmp/jira-mover-test-${process.pid}`, '--remote-debugging-port=0', `http://127.0.0.1:${port}/browse/PROJ-1`], () => {});
 const timer = setTimeout(() => { report = report || { run: { error: 'no report within 25s' } }; done(); }, 25000);
 await finished; clearTimeout(timer); chrome.kill(); server.close();
 try { execSync(`rm -rf /private/tmp/jira-mover-test-${process.pid}`); } catch { /* ignore */ }
@@ -97,9 +119,14 @@ eq('ticket ended In progress', issue.fields.status.name, 'In progress');
 eq('fields filled from defaults, shaped per field type', [issue.fields.cf_ac, issue.fields.cf_sp, issue.fields.cf_team, issue.fields.cf_root], ['Fix <b>login</b>', 1, { id: '101' }, 'Config drift']);
 eq('epic (on no screen) was set on the ticket', issue.fields.cf_epic, 'PROJ-12');
 eq('existing value untouched', issue.fields.cf_keep, 'mine');
-eq('typed value remembered as a default', run.remembered, [{ id: 'cf_root', label: 'Root cause', value: 'Config drift' }]);
+eq('typed values remembered as defaults', run.remembered, [{ id: 'cf_sev', label: 'Severity', value: 'High' }, { id: 'cf_root', label: 'Root cause', value: 'Config drift' }]);
 const posts = calls.filter(c => c.startsWith('POST'));
-eq('walked New → To do → In progress in two transitions', posts.map(p => JSON.parse(p.slice(p.indexOf('{'))).transition.id), ['2', '3']);
-eq('no failed transition was ever sent to Jira', calls.filter(c => c.startsWith('POST')).length, 2);
+eq('walked New → To do → In progress', [...new Set(posts.map(p => JSON.parse(p.slice(p.indexOf('{'))).transition.id))], ['2', '3']);
+eq('the ticket was FILLED before the first move', (() => { const firstPost = calls.findIndex(c => c.startsWith('POST')); return ['cf_ac', 'cf_sp', 'cf_team', 'cf_epic'].map(id => { const i = calls.findIndex(c => c.startsWith('PUT') && c.includes('"' + id + '"')); return i !== -1 && i < firstPost; }); })(), [true, true, true, true]);
+eq('validator refusal (field on no screen) became a question, with Jira\'s own choices', [run.asked1, run.sevIsSelect, run.statusWhenAsked1], [['cf_sev'], true, 'New']);
+eq('severity written as Jira\'s option id', issue.fields.cf_sev, { id: '7' });
+eq('pane dragged by its title bar', run.dragged, [-200, 100]);
+eq('pane can never be dragged off-screen', run.clamped, true);
+eq('position and size remembered', [run.geom.width, run.geom.height, report.reload?.rect?.slice(2), report.reload?.rect?.[0] === run.geom.left, report.reload?.rect?.[1] === run.geom.top], [420, 380, [420, 380], true, true]);
 eq('page refreshed after the move and the pane reopened on the ticket', [report.reload?.afterReload, report.reload?.paneHiddenOnLoad], [true, false]);
 if (fails) { console.log(`${fails} FAILED\ncalls:\n  ${calls.join('\n  ')}`); process.exit(1); }
