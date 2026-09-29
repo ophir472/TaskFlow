@@ -1,0 +1,583 @@
+// ==UserScript==
+// @name         Jira Mover
+// @namespace    jira-mover
+// @version      1.0.0
+// @description  Click a ticket, move it to In progress in one click — required fields filled from your defaults
+// @match        *://*/browse/*
+// @match        *://*/secure/*
+// @match        *://*/projects/*
+// @match        *://*/issues/*
+// @match        *://*/*/browse/*
+// @match        *://*/*/secure/*
+// @match        *://*/*/projects/*
+// @match        *://*/*/issues/*
+// @grant        none
+// @run-at       document-idle
+// ==/UserScript==
+(function () {
+if (!(document.querySelector('meta[name="application-name"][content="JIRA"]') || (window.AJS && window.JIRA) || document.body.id === 'jira')) return;
+window.__jiraMoverAuto = true;
+// Jira Mover — core logic. Pure functions, no DOM, no network: the same file
+// is loaded by the page script and by the node tests.
+//
+// The job: move a ticket along the flow (New > To do > In progress > Done)
+// with one click, filling whatever the transition screens demand from the
+// defaults in settings, and never overwriting a value that is already set.
+var JiraMoverCore = (function () {
+  'use strict';
+
+  var DEFAULT_SETTINGS = {
+    flow: ['New', 'To do', 'In progress', 'Done'],
+    primary: 'In progress',
+    // The four known fields. id = customfield_12345 (Detect fills it).
+    fields: {
+      acceptance: { label: 'Acceptance criteria', id: '', value: '<TICKET TITLE>' },
+      points: { label: 'Story points', id: '', value: '1' },
+      team: { label: 'Scrum team', id: '', value: '' },
+      epic: { label: 'Epic', id: '', value: '' },
+    },
+    // Any other field a transition demands: { id, label, value }. Filled the
+    // same way. The pane adds to this list when you tick "remember".
+    extra: [],
+    overwrite: false,        // false = fill only what is empty
+    reloadAfter: true,       // refresh the page after a successful move
+  };
+
+  function norm(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/[\s_-]+/g, ' '); }
+  function same(a, b) { return !!norm(a) && norm(a) === norm(b); }
+
+  // Which status to go to next. Direct hop when Jira offers it, else the
+  // furthest legal status on the way; a ticket outside the flow re-enters at
+  // the offered status nearest the target. null = stuck.
+  function nextHop(flow, current, target, offered) {
+    if (same(current, target)) return null;
+    var i, direct = offered.filter(function (o) { return same(o, target); })[0];
+    if (direct) return direct;
+    var idx = function (s) { for (var k = 0; k < flow.length; k++) if (same(flow[k], s)) return k; return -1; };
+    var ci = idx(current), ti = idx(target);
+    if (ti === -1) return null;
+    if (ci === -1) {
+      var best = null, bestD = Infinity;
+      offered.forEach(function (o) { var k = idx(o); if (k !== -1 && Math.abs(k - ti) < bestD) { best = o; bestD = Math.abs(k - ti); } });
+      return best;
+    }
+    var step = ti > ci ? 1 : -1;
+    for (i = ti - step; i !== ci; i -= step) {
+      var hit = offered.filter(function (o) { return same(o, flow[i]); })[0];
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  function isEmpty(v) {
+    if (v == null) return true;
+    if (typeof v === 'string') return v.trim() === '';
+    if (Array.isArray(v)) return v.length === 0;
+    return false;
+  }
+
+  // Shape a typed-in value the way the field wants it, using Jira's own
+  // description of the field (schema + allowedValues) when we have it.
+  function shape(raw, meta) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (s === '') return undefined;
+    var schema = (meta && meta.schema) || {};
+    var allowed = (meta && meta.allowedValues) || null;
+    var pick = function (txt) {
+      if (!allowed) return null;
+      for (var k = 0; k < allowed.length; k++) {
+        var a = allowed[k];
+        if (same(a.value, txt) || same(a.name, txt) || String(a.id) === txt || same(a.key, txt)) return { id: String(a.id) };
+      }
+      return null;
+    };
+    var one = function (txt) {
+      var hit = pick(txt);
+      if (hit) return hit;
+      if (schema.type === 'option' || schema.items === 'option') return { value: txt };
+      if (schema.type === 'user' || schema.items === 'user') return { name: txt };
+      if (schema.type === 'priority' || schema.type === 'resolution' || schema.items === 'component' || schema.items === 'version') return { name: txt };
+      return txt;
+    };
+    if (schema.type === 'number') { var n = Number(s); return isFinite(n) ? n : undefined; }
+    if (schema.type === 'array') {
+      if (schema.items === 'string') return s.split(/[,\s]+/).filter(Boolean);           // labels
+      return s.split(',').map(function (x) { return x.trim(); }).filter(Boolean).map(one);
+    }
+    return one(s);
+  }
+
+  // Every default from settings as { id: { label, raw } }, templates resolved.
+  function defaultsFor(settings, issue) {
+    var out = {};
+    var title = (issue && issue.summary) || '';
+    var put = function (id, label, value) {
+      id = String(id || '').trim();
+      if (!id || String(value == null ? '' : value).trim() === '') return;
+      out[id] = { label: label || id, raw: String(value).replace(/<ticket title>|<task name>/gi, title) };
+    };
+    var f = settings.fields || {};
+    Object.keys(f).forEach(function (k) { put(f[k].id, f[k].label, f[k].value); });
+    (settings.extra || []).forEach(function (e) { put(e.id, e.label, e.value); });
+    return out;
+  }
+
+  // Plan one hop. `screen` = the transition's fields (from
+  // ?expand=transitions.fields), `values` = the ticket's current values,
+  // `typed` = what the user entered in the pane for this move.
+  //   send    → goes in the transition POST (fields on its screen)
+  //   missing → required, empty, no default: the pane must ask
+  function planHop(settings, issue, screen, values, typed) {
+    var defaults = defaultsFor(settings, issue);
+    var send = {}, missing = [], filled = [];
+    Object.keys(screen || {}).forEach(function (id) {
+      var meta = screen[id] || {};
+      var has = !isEmpty(values ? values[id] : undefined);
+      var raw = typed && typed[id] != null && String(typed[id]).trim() !== '' ? typed[id]
+        : defaults[id] ? defaults[id].raw : null;
+      if (has && !(settings.overwrite && raw != null) && !(typed && typed[id] != null && String(typed[id]).trim() !== '')) return;
+      if (raw == null) {
+        // Jira fills these itself or they have a server default.
+        if (meta.required && !meta.hasDefaultValue && !has) missing.push({ id: id, label: meta.name || id, allowed: (meta.allowedValues || []).map(function (a) { return a.value || a.name || a.key || String(a.id); }) });
+        return;
+      }
+      var v = shape(raw, meta);
+      if (v === undefined || (Array.isArray(v) && !v.length)) { if (meta.required && !has) missing.push({ id: id, label: meta.name || id, allowed: [] }); return; }
+      send[id] = v;
+      filled.push((defaults[id] && defaults[id].label) || meta.name || id);
+    });
+    return { send: send, missing: missing, filled: filled };
+  }
+
+  // Defaults for fields that are NOT on any transition screen: set on the
+  // ticket itself before moving (only the empty ones unless overwrite).
+  function planEdit(settings, issue, values, editmeta, skipIds) {
+    var defaults = defaultsFor(settings, issue), out = {};
+    Object.keys(defaults).forEach(function (id) {
+      if (skipIds && skipIds[id]) return;
+      if (!isEmpty(values ? values[id] : undefined) && !settings.overwrite) return;
+      var meta = editmeta && editmeta[id];
+      if (editmeta && !meta) return;               // not editable on this ticket type
+      var v = shape(defaults[id].raw, meta);
+      if (v !== undefined) out[id] = v;
+    });
+    return out;
+  }
+
+  // Settings → Detect: match Jira's field list by name.
+  var MATCH = {
+    acceptance: [/^acceptance criteria$/i, /acceptance criteri/i],
+    points: [/^story points$/i, /^story point estimate$/i, /story point/i],
+    team: [/^scrum[ -]?team$/i, /scrum[ -]?team/i, /^team$/i],
+    epic: [/^epic link$/i, /^parent link$/i],
+  };
+  function detect(fields) {
+    var out = {};
+    Object.keys(MATCH).forEach(function (k) {
+      for (var r = 0; r < MATCH[k].length; r++) {
+        var hit = (fields || []).filter(function (f) { return f.custom !== false && MATCH[k][r].test(String(f.name).trim()); })[0];
+        if (hit) { out[k] = { id: hit.id, name: hit.name }; break; }
+      }
+    });
+    return out;
+  }
+
+  function issueKeyFrom(text) {
+    var m = /(?:^|[\/=\s"'#])([A-Z][A-Z0-9_]+-\d+)(?=$|[\/?&#\s"'.,;:)])/.exec(String(text || ''));
+    return m ? m[1] : null;
+  }
+
+  function mergeSettings(saved) {
+    var d = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    if (!saved || typeof saved !== 'object') return d;
+    if (Array.isArray(saved.flow) && saved.flow.filter(Boolean).length >= 2) d.flow = saved.flow.map(function (s) { return String(s).trim(); }).filter(Boolean);
+    if (saved.primary) d.primary = String(saved.primary);
+    Object.keys(d.fields).forEach(function (k) {
+      var s = (saved.fields || {})[k];
+      if (s) { if (s.id != null) d.fields[k].id = String(s.id).trim(); if (s.value != null) d.fields[k].value = String(s.value); }
+    });
+    if (Array.isArray(saved.extra)) d.extra = saved.extra.filter(function (e) { return e && e.id; }).map(function (e) { return { id: String(e.id).trim(), label: String(e.label || e.id), value: String(e.value == null ? '' : e.value) }; });
+    if (typeof saved.overwrite === 'boolean') d.overwrite = saved.overwrite;
+    if (typeof saved.reloadAfter === 'boolean') d.reloadAfter = saved.reloadAfter;
+    return d;
+  }
+
+  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
+})();
+
+// Jira Mover — the part that lives in the Jira page: the pane, the settings
+// panel and the calls to Jira's own REST API. It runs INSIDE your logged-in
+// Jira tab, so it uses your session — no token, nothing leaves Jira.
+//
+// Click any ticket (board card, list row, link) → the pane opens for it.
+// Alt+J toggles the pane · Alt+I moves the ticket to the primary status
+// (In progress) · Esc closes.
+(function () {
+  'use strict';
+  var C = JiraMoverCore;
+  if (window.__jiraMover) { window.__jiraMover.toggle(true); return; }
+
+  var STORE = 'jira-mover-settings-v1';
+  // Installed as a userscript it runs on every Jira page and survives a
+  // refresh; run from the bookmark it lives until the page reloads.
+  var AUTO = !!window.__jiraMoverAuto;
+  var base = (function () {
+    // Jira may live under a context path (https://host/jira). AJS knows it.
+    try { if (window.AJS && typeof window.AJS.contextPath === 'function') return location.origin + window.AJS.contextPath(); } catch (e) { /* ignore */ }
+    var m = /^(\/[^\/]+)\/(browse|secure|projects|issues)\//.exec(location.pathname);
+    return location.origin + (m ? m[1] : '');
+  })();
+
+  function load() { try { return C.mergeSettings(JSON.parse(localStorage.getItem(STORE) || 'null')); } catch (e) { return C.mergeSettings(null); } }
+  function save(s) { localStorage.setItem(STORE, JSON.stringify(s)); settings = C.mergeSettings(s); }
+  var settings = load();
+
+  // ── Jira REST (same origin, your session) ──
+  function api(method, path, body) {
+    return fetch(base + '/rest/api/2' + path, {
+      method: method, credentials: 'same-origin',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Atlassian-Token': 'no-check' },
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(function (res) {
+      return res.text().then(function (text) {
+        var data = null; try { data = text ? JSON.parse(text) : null; } catch (e) { /* not json */ }
+        if (!res.ok) {
+          var msg = 'HTTP ' + res.status;
+          if (data && data.errorMessages && data.errorMessages.length) msg = data.errorMessages.join('; ');
+          else if (data && data.errors && Object.keys(data.errors).length) msg = Object.keys(data.errors).map(function (k) { return k + ': ' + data.errors[k]; }).join('; ');
+          else if (res.status === 401) msg = 'Not logged in to Jira in this tab';
+          var err = new Error(msg); err.fieldErrors = (data && data.errors) || null; throw err;
+        }
+        return data;
+      });
+    });
+  }
+  function getIssue(key) {
+    return api('GET', '/issue/' + encodeURIComponent(key) + '?expand=editmeta').then(function (d) {
+      var f = d.fields || {};
+      return { key: d.key, summary: f.summary || '', status: (f.status && f.status.name) || '', type: (f.issuetype && f.issuetype.name) || '', values: f, editmeta: (d.editmeta && d.editmeta.fields) || null };
+    });
+  }
+  function getTransitions(key) {
+    return api('GET', '/issue/' + encodeURIComponent(key) + '/transitions?expand=transitions.fields').then(function (d) { return d.transitions || []; });
+  }
+
+  // ── the move: walk the flow hop by hop, filling what each screen demands ──
+  // Resolves { status, filled[], hops[] } or rejects; when a required field
+  // has no value and no default it rejects with err.missing so the pane asks.
+  function move(key, target, typed, log) {
+    var hops = [], filledAll = [], edited = false, seen = {};
+    function step(guard) {
+      return getIssue(key).then(function (issue) {
+        if (C.same(issue.status, target)) return { status: issue.status, filled: filledAll, hops: hops };
+        if (guard <= 0) throw new Error('Stopped at "' + issue.status + '" before reaching "' + target + '"');
+        return getTransitions(key).then(function (trs) {
+          var offered = trs.map(function (t) { return (t.to && t.to.name) || ''; }).filter(Boolean);
+          var next = C.nextHop(settings.flow, issue.status, target, offered);
+          if (!next) throw new Error('Jira offers no way from "' + issue.status + '" toward "' + target + '" (offered: ' + (offered.join(', ') || 'none') + ')');
+          var tr = trs.filter(function (t) { return C.same(t.to && t.to.name, next); })[0];
+          var plan = C.planHop(settings, issue, tr.fields || {}, issue.values, typed);
+          if (plan.missing.length) { var e = new Error('“' + next + '” needs: ' + plan.missing.map(function (m) { return m.label; }).join(', ')); e.missing = plan.missing; e.at = next; throw e; }
+          // Defaults for fields that were on NO transition screen along the way
+          // go on the ticket itself — once, at the last hop, when every screen
+          // of the walk has been seen (a field a later screen fills is left to it).
+          trs.forEach(function (t) { Object.keys(t.fields || {}).forEach(function (id) { seen[id] = true; }); });
+          var pre = Promise.resolve();
+          if (!edited && C.same(next, target)) {
+            edited = true;
+            var edit = C.planEdit(settings, issue, issue.values, issue.editmeta, seen);
+            var ids = Object.keys(edit);
+            if (ids.length) {
+              // One field per call: a field this ticket type refuses must not block the others.
+              pre = ids.reduce(function (p, id) {
+                return p.then(function () {
+                  var one = {}; one[id] = edit[id];
+                  return api('PUT', '/issue/' + encodeURIComponent(key), { fields: one })
+                    .then(function () { filledAll.push(labelOf(id)); })
+                    .catch(function (err) { log('skipped ' + labelOf(id) + ': ' + err.message, 'warn'); });
+                });
+              }, Promise.resolve());
+            }
+          }
+          return pre.then(function () {
+            log(issue.status + ' → ' + next + (plan.filled.length ? '  (filled: ' + plan.filled.join(', ') + ')' : ''));
+            var body = { transition: { id: tr.id } };
+            if (Object.keys(plan.send).length) body.fields = plan.send;
+            return api('POST', '/issue/' + encodeURIComponent(key) + '/transitions', body);
+          }).then(function () {
+            hops.push(next); filledAll = filledAll.concat(plan.filled);
+            return step(guard - 1);
+          });
+        });
+      });
+    }
+    return step(settings.flow.length + 2);
+  }
+  function labelOf(id) {
+    var f = settings.fields, k;
+    for (k in f) if (f[k].id === id) return f[k].label;
+    for (k = 0; k < settings.extra.length; k++) if (settings.extra[k].id === id) return settings.extra[k].label;
+    return id;
+  }
+
+  // ── DOM helpers (textContent only — ticket text is never parsed as HTML) ──
+  function el(tag, style, text, attrs) {
+    var n = document.createElement(tag);
+    if (style) n.style.cssText = style;
+    if (text != null) n.textContent = text;
+    if (attrs) Object.keys(attrs).forEach(function (k) { if (k === 'onclick') n.addEventListener('click', attrs[k]); else n.setAttribute(k, attrs[k]); });
+    return n;
+  }
+  var FONT = 'font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
+  var BTN = FONT + 'border:1px solid #c1c7d0;background:#fff;color:#172b4d;border-radius:6px;padding:7px 10px;cursor:pointer;font-weight:600;';
+  var INP = FONT + 'width:100%;box-sizing:border-box;border:1px solid #c1c7d0;border-radius:6px;padding:6px 8px;background:#fafbfc;color:#172b4d;';
+  var LBL = 'font-size:11px;font-weight:700;color:#6b778c;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px;';
+
+  var pane = el('div', FONT + 'position:fixed;top:64px;right:16px;width:330px;max-height:calc(100vh - 90px);overflow:auto;z-index:2147483000;background:#fff;color:#172b4d;border:1px solid #c1c7d0;border-radius:12px;box-shadow:0 12px 40px rgba(9,30,66,.28);padding:14px 16px;display:none;');
+  pane.setAttribute('data-jira-mover', '1');
+  document.body.appendChild(pane);
+
+  var state = { key: null, issue: null, busy: false, log: [], missing: null, pendingTarget: null, view: 'ticket', loadErr: null };
+
+  function show(on) { pane.style.display = on ? 'block' : 'none'; if (on) render(); }
+  function visible() { return pane.style.display !== 'none'; }
+
+  function open(key) {
+    if (!key) return;
+    settings = load();   // another Jira tab may have changed them
+    if (state.key !== key) { state.key = key; state.issue = null; state.log = []; state.missing = null; state.pendingTarget = null; state.loadErr = null; }
+    state.view = 'ticket';
+    show(true);
+    refresh();
+  }
+  function refresh() {
+    if (!state.key) return;
+    var key = state.key;
+    getIssue(key).then(function (i) { if (state.key === key) { state.issue = i; state.loadErr = null; render(); } })
+      .catch(function (e) { if (state.key === key) { state.loadErr = e.message; render(); } });
+  }
+  function addLog(text, kind) { state.log.push({ text: text, kind: kind || 'info' }); if (visible()) render(); }
+
+  function run(target) {
+    if (state.busy || !state.key) return;
+    settings = load();
+    var typed = {};
+    Array.prototype.forEach.call(pane.querySelectorAll('[data-missing-id]'), function (inp) {
+      if (inp.value.trim()) typed[inp.getAttribute('data-missing-id')] = inp.value.trim();
+    });
+    var remember = pane.querySelector('[data-remember]');
+    if (remember && remember.checked) {
+      var s = load();
+      Object.keys(typed).forEach(function (id) {
+        var m = (state.missing || []).filter(function (x) { return x.id === id; })[0];
+        var known = Object.keys(s.fields).filter(function (k) { return s.fields[k].id === id; })[0];
+        if (known) s.fields[known].value = typed[id];
+        else { s.extra = s.extra.filter(function (e) { return e.id !== id; }); s.extra.push({ id: id, label: (m && m.label) || id, value: typed[id] }); }
+      });
+      save(s);
+    }
+    state.busy = true; state.missing = null; state.pendingTarget = target; state.log = [];
+    render();
+    move(state.key, target, typed, addLog).then(function (r) {
+      state.busy = false; state.pendingTarget = null;
+      addLog('✓ ' + state.key + ' is now ' + r.status + (r.hops.length > 1 ? '  (' + r.hops.length + ' hops)' : ''), 'ok');
+      refresh();
+      if (r.hops.length && settings.reloadAfter && AUTO) { addLog('Refreshing the page…'); setTimeout(function () { location.reload(); }, 900); }
+      else if (r.hops.length) addLog('Refresh the page to see it in Jira' + (AUTO ? '' : ' (then click the bookmark again)'));
+    }).catch(function (e) {
+      state.busy = false;
+      if (e.missing) { state.missing = e.missing; addLog(e.message + ' — fill below and press the button again', 'warn'); }
+      else { state.pendingTarget = null; addLog('✗ ' + e.message, 'err'); }
+      refresh();
+    });
+  }
+
+  function header(title) {
+    var h = el('div', 'display:flex;align-items:center;gap:8px;margin-bottom:8px;');
+    h.appendChild(el('div', 'font-weight:800;font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', title));
+    h.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:15px;', state.view === 'settings' ? '←' : '⚙', { title: state.view === 'settings' ? 'Back to the ticket' : 'Settings', onclick: function () { state.view = state.view === 'settings' ? 'ticket' : 'settings'; render(); } }));
+    h.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:18px;line-height:1;', '×', { title: 'Close (Esc)', onclick: function () { show(false); } }));
+    return h;
+  }
+
+  function render() {
+    while (pane.firstChild) pane.removeChild(pane.firstChild);
+    if (state.view === 'settings') return renderSettings();
+    pane.appendChild(header(state.key || 'Jira Mover'));
+    if (!state.key) { pane.appendChild(el('div', 'color:#6b778c;', 'Click a ticket on the page — a board card, a row or a ticket link — and it opens here.')); return; }
+    if (state.loadErr) { pane.appendChild(el('div', 'color:#bf2600;', state.loadErr)); return; }
+    if (!state.issue) { pane.appendChild(el('div', 'color:#6b778c;', 'Loading…')); return; }
+    var i = state.issue;
+    pane.appendChild(el('div', 'font-weight:600;margin-bottom:6px;', i.summary));
+    var st = el('div', 'display:flex;align-items:center;gap:8px;margin-bottom:12px;');
+    st.appendChild(el('span', 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:10px;background:#deebff;color:#0747a6;', i.status));
+    if (i.type) st.appendChild(el('span', 'font-size:12px;color:#6b778c;', i.type));
+    pane.appendChild(st);
+
+    // required fields the last attempt could not fill
+    if (state.missing && state.missing.length) {
+      var box = el('div', 'border:1px solid #ffab00;background:#fffae6;border-radius:8px;padding:10px;margin-bottom:12px;');
+      box.appendChild(el('div', 'font-weight:700;margin-bottom:2px;', 'Jira requires these to move on'));
+      state.missing.forEach(function (m) {
+        box.appendChild(el('div', LBL, m.label));
+        var inp;
+        if (m.allowed && m.allowed.length) {
+          inp = el('select', INP);
+          inp.appendChild(el('option', null, '— choose —', { value: '' }));
+          m.allowed.forEach(function (a) { inp.appendChild(el('option', null, a, { value: a })); });
+        } else inp = el('input', INP);
+        inp.setAttribute('data-missing-id', m.id);
+        box.appendChild(inp);
+      });
+      var rl = el('label', 'display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;cursor:pointer;');
+      var cb = el('input'); cb.type = 'checkbox'; cb.checked = true; cb.setAttribute('data-remember', '1');
+      rl.appendChild(cb); rl.appendChild(el('span', null, 'Remember as the default for next time'));
+      box.appendChild(rl);
+      pane.appendChild(box);
+    }
+
+    // the moves — primary first, big
+    var primary = settings.flow.filter(function (s) { return C.same(s, settings.primary); })[0] || settings.flow[Math.min(2, settings.flow.length - 1)];
+    var at = C.same(i.status, primary);
+    var big = el('button', BTN + 'width:100%;padding:11px 10px;font-size:14px;border:none;color:#fff;background:' + (at ? '#97a0af' : '#0052cc') + ';' + (state.busy ? 'opacity:.6;cursor:wait;' : ''),
+      state.busy && C.same(state.pendingTarget, primary) ? 'Moving…' : at ? 'Already ' + primary : 'Move to ' + primary,
+      { title: 'Alt+I', onclick: function () { if (!at) run(primary); } });
+    if (at || state.busy) big.disabled = true;
+    pane.appendChild(big);
+    var row = el('div', 'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;');
+    settings.flow.forEach(function (s) {
+      if (C.same(s, primary)) return;
+      var here = C.same(i.status, s);
+      var b = el('button', BTN + 'flex:1;font-size:12px;' + (here ? 'background:#f4f5f7;color:#97a0af;cursor:default;' : '') + (state.busy ? 'opacity:.6;' : ''), here ? '● ' + s : s, { onclick: function () { if (!here) run(s); } });
+      if (here || state.busy) b.disabled = true;
+      row.appendChild(b);
+    });
+    pane.appendChild(row);
+
+    // what a move will fill
+    var defs = C.defaultsFor(settings, i), ids = Object.keys(defs);
+    var will = ids.filter(function (id) { return settings.overwrite || C.isEmpty(i.values[id]); });
+    pane.appendChild(el('div', LBL, 'On move'));
+    if (!ids.length) pane.appendChild(el('div', 'color:#6b778c;font-size:12px;', 'No field defaults yet — open ⚙ and press Detect.'));
+    else if (!will.length) pane.appendChild(el('div', 'color:#6b778c;font-size:12px;', 'Nothing to fill — every field already has a value.'));
+    else will.forEach(function (id) {
+      var r = el('div', 'display:flex;gap:8px;font-size:12px;padding:2px 0;');
+      r.appendChild(el('span', 'color:#6b778c;flex:0 0 118px;', defs[id].label));
+      r.appendChild(el('span', 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', defs[id].raw));
+      pane.appendChild(r);
+    });
+
+    if (state.log.length) {
+      var lg = el('div', 'margin-top:12px;padding-top:10px;border-top:1px solid #ebecf0;font-size:12px;');
+      state.log.forEach(function (l) { lg.appendChild(el('div', 'padding:1px 0;color:' + (l.kind === 'err' ? '#bf2600' : l.kind === 'warn' ? '#974f0c' : l.kind === 'ok' ? '#006644' : '#42526e') + ';' + (l.kind === 'ok' || l.kind === 'err' ? 'font-weight:700;' : ''), l.text)); });
+      pane.appendChild(lg);
+    }
+    pane.appendChild(el('div', 'margin-top:10px;font-size:11px;color:#97a0af;', 'Alt+I move · Alt+J show/hide · Esc close'));
+  }
+
+  function renderSettings() {
+    var s = load();
+    pane.appendChild(header('Jira Mover — settings'));
+    var status = el('div', 'font-size:12px;min-height:16px;margin-bottom:4px;');
+    var field = function (label, value, onchange, ph) {
+      pane.appendChild(el('div', LBL, label));
+      var i = el('input', INP); i.value = value == null ? '' : value; if (ph) i.placeholder = ph;
+      i.addEventListener('change', function () { onchange(i.value); save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
+      pane.appendChild(i); return i;
+    };
+    field('Status flow, in order', s.flow.join(' > '), function (v) { var f = v.split(/>|,/).map(function (x) { return x.trim(); }).filter(Boolean); if (f.length >= 2) s.flow = f; }, 'New > To do > In progress > Done');
+    field('Main button moves to', s.primary, function (v) { s.primary = v.trim() || 'In progress'; }, 'In progress');
+
+    var dh = el('div', 'display:flex;align-items:center;margin-top:14px;');
+    dh.appendChild(el('div', 'font-weight:800;flex:1;', 'Fields filled on a move'));
+    dh.appendChild(el('button', BTN + 'padding:4px 9px;font-size:12px;', '⌕ Detect', { title: 'Find the four field ids in this Jira by name', onclick: function () {
+      status.textContent = 'Asking Jira…'; status.style.color = '#6b778c';
+      api('GET', '/field').then(function (list) {
+        var found = C.detect(list), names = [];
+        Object.keys(found).forEach(function (k) { s.fields[k].id = found[k].id; names.push(found[k].name); });
+        save(s); render();
+        var st2 = pane.querySelector('[data-status]');
+        if (st2) { st2.textContent = names.length ? '✓ Found: ' + names.join(', ') : 'Nothing matched by name — type the ids by hand'; st2.style.color = names.length ? '#006644' : '#974f0c'; }
+      }).catch(function (e) { status.textContent = '✗ ' + e.message; status.style.color = '#bf2600'; });
+    } }));
+    pane.appendChild(dh);
+    status.setAttribute('data-status', '1');
+    pane.appendChild(status);
+
+    var pair = function (label, obj, note) {
+      pane.appendChild(el('div', LBL, label + (note ? '  ·  ' + note : '')));
+      var r = el('div', 'display:flex;gap:6px;');
+      var id = el('input', INP + 'flex:0 0 138px;width:138px;font-family:ui-monospace,Menlo,monospace;font-size:12px;'); id.value = obj.id || ''; id.placeholder = 'customfield_…';
+      var v = el('input', INP + 'flex:1;'); v.value = obj.value == null ? '' : obj.value; v.placeholder = 'default value';
+      id.addEventListener('change', function () { obj.id = id.value.trim(); save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
+      v.addEventListener('change', function () { obj.value = v.value; save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
+      r.appendChild(id); r.appendChild(v);
+      return r;
+    };
+    pane.appendChild(pair('Acceptance criteria', s.fields.acceptance, '<TICKET TITLE> = the title'));
+    pane.appendChild(pair('Story points', s.fields.points));
+    pane.appendChild(pair('Scrum team', s.fields.team));
+    pane.appendChild(pair('Epic', s.fields.epic, 'epic key'));
+
+    pane.appendChild(el('div', 'font-weight:800;margin-top:14px;', 'Other required fields'));
+    pane.appendChild(el('div', 'font-size:12px;color:#6b778c;', 'Added when a move asks for a field and you tick "remember".'));
+    s.extra.forEach(function (e, idx) {
+      var r = pair(e.label, e);
+      r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:16px;align-self:center;', '×', { title: 'Remove', onclick: function () { s.extra.splice(idx, 1); save(s); render(); } }));
+      pane.appendChild(r);
+    });
+    pane.appendChild(el('button', BTN + 'margin-top:8px;padding:4px 9px;font-size:12px;', '+ Add a field', { onclick: function () { s.extra.push({ id: 'customfield_', label: 'Field', value: '' }); save(s); render(); } }));
+
+    var chk = function (label, key) {
+      var l = el('label', 'display:flex;align-items:flex-start;gap:7px;margin-top:10px;cursor:pointer;font-size:12.5px;');
+      var c = el('input'); c.type = 'checkbox'; c.checked = !!s[key];
+      c.addEventListener('change', function () { s[key] = c.checked; save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
+      l.appendChild(c); l.appendChild(el('span', null, label)); pane.appendChild(l);
+    };
+    chk('Overwrite fields that already have a value (off = fill only the empty ones)', 'overwrite');
+    chk('Refresh the Jira page after a move', 'reloadAfter');
+
+    pane.appendChild(el('div', LBL, 'Copy settings to another computer'));
+    var ta = el('textarea', INP + 'height:64px;font-family:ui-monospace,Menlo,monospace;font-size:11px;'); ta.value = JSON.stringify(s);
+    ta.addEventListener('change', function () { try { save(C.mergeSettings(JSON.parse(ta.value))); render(); } catch (e) { status.textContent = '✗ Not valid settings text'; status.style.color = '#bf2600'; } });
+    pane.appendChild(ta);
+    pane.appendChild(el('div', 'font-size:11px;color:#97a0af;margin-top:4px;', 'Settings are kept in this browser, for this Jira only.'));
+  }
+
+  // ── which ticket was clicked ──
+  function keyOf(node) {
+    for (var n = node, d = 0; n && n !== document && d < 12; n = n.parentNode, d++) {
+      if (n.getAttribute) {
+        if (n.getAttribute('data-jira-mover')) return null;
+        var k = n.getAttribute('data-issue-key') || n.getAttribute('data-issuekey') || n.getAttribute('data-key');
+        if (k && C.issueKeyFrom(' ' + k)) return C.issueKeyFrom(' ' + k);
+        if (n.tagName === 'A' && n.getAttribute('href')) { var h = C.issueKeyFrom(n.getAttribute('href')); if (h && /\/browse\/|selectedIssue=/.test(n.getAttribute('href'))) return h; }
+      }
+    }
+    return null;
+  }
+  function keyOfPage() {
+    var m = /\/browse\/([A-Z][A-Z0-9_]+-\d+)/.exec(location.pathname) || /[?&]selectedIssue=([A-Z][A-Z0-9_]+-\d+)/.exec(location.search);
+    return m ? m[1] : null;
+  }
+  document.addEventListener('click', function (e) { var k = keyOf(e.target); if (k) open(k); }, true);   // never blocks Jira's own click
+  var lastUrl = '';
+  setInterval(function () {
+    if (location.href === lastUrl) return;
+    lastUrl = location.href;
+    var k = keyOfPage();
+    if (k && (visible() || /\/browse\//.test(location.pathname))) open(k);
+  }, 700);
+  document.addEventListener('keydown', function (e) {
+    var t = e.target, typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+    if (e.altKey && e.code === 'KeyJ') { e.preventDefault(); if (visible()) show(false); else { var k = state.key || keyOfPage(); if (k) open(k); else show(true); } }
+    else if (e.altKey && e.code === 'KeyI') { e.preventDefault(); var key = state.key || keyOfPage(); if (key) { open(key); var go = function () { if (state.issue && state.key === key) run(settings.primary); else setTimeout(go, 200); }; go(); } }
+    else if (e.key === 'Escape' && visible() && !(typing && pane.contains(t) === false)) show(false);
+  }, true);
+
+  window.__jiraMover = { toggle: function (on) { if (on === true) { var k = state.key || keyOfPage(); if (k) open(k); else show(true); } else show(!visible()); }, open: open };
+  var first = keyOfPage();
+  if (first) open(first); else if (!AUTO) show(true);   // the bookmark was clicked: show yourself
+})();
+
+})();

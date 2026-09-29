@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Side tool: `jira-wrapper/`
+
+Standalone (own `package.json`, no shared code/build/data with TaskFlow; vanilla JS, no dependencies): a script that runs INSIDE the Jira page (bookmark or userscript) — click a ticket, a pane opens, one click walks it to In progress filling the transition's required fields from defaults. `src/core.js` = pure logic, `src/page.js` = pane + Jira REST on the tab's session, `npm test` there runs logic tests + a headless-Chrome run against a mock Jira, `npm run build` regenerates the committed `dist/`. TaskFlow's tsc/vite/oxlint only look at `src`, so the folder doesn't affect the app.
+
 ## Commands
 
 ```bash

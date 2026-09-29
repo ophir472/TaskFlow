@@ -2,7 +2,7 @@
 // push (part of the session finish routine in CLAUDE.md). Shown at the
 // bottom of Settings; clicking the version opens the full history.
 
-export const APP_VERSION = '1.7.0';
+export const APP_VERSION = '1.8.0';
 
 export interface Release {
   version: string;
@@ -11,6 +11,15 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
+  {
+    version: '1.8.0',
+    date: '2026-09-29',
+    notes: [
+      'Jira create: acceptance criteria (defaults to the task title, editable) and story points (default 1, editable); scrum team and epic from the host defaults. Settings → Integrations → Jira host has the field ids with a Detect button',
+      'Jira status flow New > To do > In progress > Done: tickets are walked one legal step at a time; the primary ticket follows its card\'s status in the background (mapping editable, can be switched off). TaskFlow\'s own statuses are unchanged — the Jira status shows only as a badge next to the ticket',
+      'New side tool in the repo, jira-wrapper/: a bookmark or userscript that runs inside Jira — click a ticket, one click moves it to In progress with the required fields filled',
+    ],
+  },
   {
     version: '1.7.0',
     date: '2026-09-10',
