@@ -2,7 +2,7 @@
 // push (part of the session finish routine in CLAUDE.md). Shown at the
 // bottom of Settings; clicking the version opens the full history.
 
-export const APP_VERSION = '1.8.0';
+export const APP_VERSION = '1.8.1';
 
 export interface Release {
   version: string;
@@ -11,6 +11,13 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
+  {
+    version: '1.8.1',
+    date: '2026-09-30',
+    notes: [
+      'jira-wrapper 1.1.0 (side tool): a move now fills the ticket first, then walks To do → In progress; a field Jira still demands is asked in the pane with Jira\'s own choices; the pane can be dragged, resized and remembers where you left it. Re-install the bookmark / userscript to get it',
+    ],
+  },
   {
     version: '1.8.0',
     date: '2026-09-29',
