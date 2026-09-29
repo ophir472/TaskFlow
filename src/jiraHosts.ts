@@ -59,10 +59,16 @@ export function applySummaryTemplate(cfg: JiraConfig | null, taskTitle: string):
  * {description} placeholders when present, otherwise appended as query params.
  * Returns null when the host has no override (caller should use the API).
  */
-export function buildJiraCreateUrl(cfg: JiraConfig, summary: string, description: string): string | null {
+export function buildJiraCreateUrl(cfg: JiraConfig, summary: string, description: string, extras?: { acceptanceCriteria?: string; storyPoints?: number | string }): string | null {
   let u = cfg.createUrlTemplate?.trim();
   if (!u) return null;
   const enc = encodeURIComponent;
+  // Optional placeholders for the custom fields (put them in the template as
+  // customfield_12345={acceptance} etc.).
+  u = u.replace(/\{acceptance\}/gi, enc(extras?.acceptanceCriteria ?? ''))
+    .replace(/\{storypoints\}/gi, enc(String(extras?.storyPoints ?? cfg.defaultStoryPoints ?? 1)))
+    .replace(/\{team\}/gi, enc(cfg.defaultScrumTeam ?? ''))
+    .replace(/\{epic\}/gi, enc(cfg.defaultEpic ?? ''));
   if (/\{summary\}|\{description\}/i.test(u)) {
     u = u.replace(/\{summary\}/gi, enc(summary)).replace(/\{description\}/gi, enc(description));
   } else {

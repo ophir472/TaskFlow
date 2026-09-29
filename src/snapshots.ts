@@ -878,7 +878,7 @@ function summarizePrepared({ logs, titleMap }: PreparedLogs, fromTime: number, t
     'restore:start', 'restore:complete', 'restore:failed', 'item:import',
     'snapshot-dir:configured',
     'review:mark-task', 'review:dismiss', 'review:begin', 'review:end', 'review:extend',
-    'itsm:sync', 'itsm:viewed', 'task:planned', 'agenda:check', 'walkthrough:set', 'bookmark:auto',
+    'itsm:sync', 'jira:sync', 'itsm:viewed', 'task:planned', 'agenda:check', 'walkthrough:set', 'bookmark:auto',
     'table-cols:set', 'archive-cols:set', 'table-widths:set', 'archive-widths:set',
     'ai:request', 'ai:response', 'ai:error',
   ]);

@@ -146,6 +146,10 @@ export interface Subtask {
   createdAt: number;
 }
 
+// How a Jira custom field wants its value: plain text, a number, a select
+// option ({value}), several options, an object id ({id}) or a label list.
+export type JiraFieldFormat = 'text' | 'number' | 'option' | 'options' | 'id' | 'labels';
+
 export interface JiraConfig {
   // Stable id — used as React key + as the identifier for update/remove
   // actions. Generated on creation, never reused.
@@ -183,6 +187,28 @@ export interface JiraConfig {
   // placeholders are present. Credentials above remain in use for comments,
   // transitions and other API features.
   createUrlTemplate?: string;
+  // ── Custom fields (2026-09-29) — all optional; a field with no id is not
+  // sent. Ids/formats come from the Detect button or are typed by hand. ──
+  acceptanceCriteriaFieldId?: string;
+  acceptanceCriteriaFormat?: JiraFieldFormat;
+  // "<TASK NAME>" → the task title. Empty = the title as-is. Editable per create.
+  acceptanceCriteriaTemplate?: string;
+  storyPointsFieldId?: string;
+  storyPointsFormat?: JiraFieldFormat;
+  defaultStoryPoints?: number;          // missing = 1; editable per create
+  scrumTeamFieldId?: string;
+  scrumTeamFormat?: JiraFieldFormat;
+  defaultScrumTeam?: string;
+  epicFieldId?: string;
+  epicFormat?: JiraFieldFormat;
+  defaultEpic?: string;                 // the epic's key, e.g. PROJ-12
+  // ── Status flow — missing = New > To do > In progress > Done. The ticket
+  // follows the card's status (statusMap: card status → Jira status, '' =
+  // leave the ticket alone) unless syncStatus is false. TaskFlow's own
+  // statuses are never changed by Jira. ──
+  statusFlow?: string[];
+  statusMap?: Record<string, string>;
+  syncStatus?: boolean;                 // missing = true
   // Exactly one entry has isDefault=true. The default is used for "Create Jira"
   // (in the card and in Green Play review) and as the fallback host when a
   // pasted ticket's project prefix doesn't match any configured entry.
@@ -469,6 +495,11 @@ export interface Task {
   // features like the review's update-summary prefill never need to consult
   // the forensic logs — logs are logs, not a functional dependency.
   notesChangedAt?: number;
+  // Jira's own status of the primary ticket (2026-09-29) — machine-written,
+  // shown only next to the ticket; never drives the card's status.
+  jiraStatus?: string;
+  jiraStatusAt?: number;
+  jiraSyncError?: string;
   // Set on tasks auto-created by a Responsibility. Points at Responsibility.id
   // so the task can display a "from: <name>" pill and the schedule can avoid
   // re-firing while an unfinished previous instance still exists.

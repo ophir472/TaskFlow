@@ -15,6 +15,7 @@ import { QuickHelp } from './components/QuickHelp/QuickHelp';
 import { Hub } from './components/Hub/Hub';
 import { Home } from './components/Home/Home';
 import { ChecklistPopup } from './components/Docs/ChecklistPopup';
+import { startJiraStatusSync } from './jiraSync';
 import { BookmarksDrawer, readBookmarksHash } from './components/Bookmarks/BookmarksDrawer';
 import { WalkthroughBar } from './components/Home/WalkthroughBar';
 import { Explore } from './components/Explore/Explore';
@@ -420,7 +421,9 @@ export default function App() {
     syncFromHash();
     window.addEventListener('hashchange', syncFromHash);
     log('app:mount', { tab: getTabId() });
-    return () => window.removeEventListener('hashchange', syncFromHash);
+    // Jira tickets follow their card's status (never in snapshot preview).
+    const stopJiraSync = isPreviewMode() ? () => {} : startJiraStatusSync();
+    return () => { window.removeEventListener('hashchange', syncFromHash); stopJiraSync(); };
   }, [setView]);
 
   // View → URL: only update when switching views; preserve sub-path within

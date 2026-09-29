@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useStore } from '../../store';
-import type { JiraConfig } from '../../types';
-import { testJiraAuth } from '../../jira';
+import type { JiraConfig, JiraFieldFormat } from '../../types';
+import { testJiraAuth, detectJiraFields } from '../../jira';
+import { DEFAULT_STATUS_FLOW, DEFAULT_STATUS_MAP, DEFAULT_STORY_POINTS, statusFlowOf } from '../../jiraFields';
 
 const card: React.CSSProperties = { background: 'var(--t-surf)', border: '1px solid var(--t-brd)', borderRadius: 12, padding: 20 };
 const fi: React.CSSProperties = { fontSize: 13.5, padding: '8px 10px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf)', color: 'var(--t-txt)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)', width: '100%', boxSizing: 'border-box' };
@@ -45,10 +46,26 @@ function BoardRow({ id, label, url, onSave, onRemove }: {
 }
 
 type DraftEntry = Omit<JiraConfig, 'id' | 'isDefault'>;
+// Custom fields + status flow (2026-09-29).
+const EMPTY_EXTRAS = {
+  acceptanceCriteriaFieldId: '', acceptanceCriteriaFormat: 'text' as JiraFieldFormat, acceptanceCriteriaTemplate: '',
+  storyPointsFieldId: '', storyPointsFormat: 'number' as JiraFieldFormat, defaultStoryPoints: DEFAULT_STORY_POINTS,
+  scrumTeamFieldId: '', scrumTeamFormat: 'option' as JiraFieldFormat, defaultScrumTeam: '',
+  epicFieldId: '', epicFormat: 'text' as JiraFieldFormat, defaultEpic: '',
+  statusFlow: DEFAULT_STATUS_FLOW, statusMap: DEFAULT_STATUS_MAP, syncStatus: true,
+};
+const FORMATS: { v: JiraFieldFormat; label: string }[] = [
+  { v: 'text', label: 'text' }, { v: 'number', label: 'number' }, { v: 'option', label: 'select option' },
+  { v: 'options', label: 'multi-select' }, { v: 'id', label: 'object id' }, { v: 'labels', label: 'labels' },
+];
+const CARD_STATUSES: { k: string; label: string }[] = [
+  { k: 'backlog', label: 'Backlog' }, { k: 'todo', label: 'To do' }, { k: 'in_progress', label: 'In progress' }, { k: 'waiting', label: 'Waiting' }, { k: 'done', label: 'Done' },
+];
 const EMPTY_DRAFT: DraftEntry = {
   host: '', username: '', apiToken: '', projectKey: '', authMode: 'pat',
   component: '', defaultAssigneeId: '',
   pid: '', issueTypeId: '', priorityId: '', summaryTemplate: '', createUrlTemplate: '',
+  ...EMPTY_EXTRAS,
 };
 
 export function JiraHostsSection() {
@@ -66,11 +83,15 @@ export function JiraHostsSection() {
   const [adding, setAdding] = useState<boolean>(jiraConfigs.length === 0);
   const [draft, setDraft] = useState<DraftEntry>(EMPTY_DRAFT);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [detectResult, setDetectResult] = useState<string | null>(null);
+  const [flowText, setFlowText] = useState(DEFAULT_STATUS_FLOW.join(' > '));
 
   function startAdd() {
     setAdding(true);
     setEditingId(null);
     setDraft(EMPTY_DRAFT);
+    setFlowText(DEFAULT_STATUS_FLOW.join(' > '));
+    setDetectResult(null);
   }
   function startEdit(c: JiraConfig) {
     setTestResult(null);
@@ -81,7 +102,14 @@ export function JiraHostsSection() {
       projectKey: c.projectKey, component: c.component, defaultAssigneeId: c.defaultAssigneeId,
       pid: c.pid ?? '', issueTypeId: c.issueTypeId ?? '', priorityId: c.priorityId ?? '', urgentLabel: c.urgentLabel ?? '',
       summaryTemplate: c.summaryTemplate ?? '', createUrlTemplate: c.createUrlTemplate ?? '',
+      acceptanceCriteriaFieldId: c.acceptanceCriteriaFieldId ?? '', acceptanceCriteriaFormat: c.acceptanceCriteriaFormat ?? 'text', acceptanceCriteriaTemplate: c.acceptanceCriteriaTemplate ?? '',
+      storyPointsFieldId: c.storyPointsFieldId ?? '', storyPointsFormat: c.storyPointsFormat ?? 'number', defaultStoryPoints: c.defaultStoryPoints ?? DEFAULT_STORY_POINTS,
+      scrumTeamFieldId: c.scrumTeamFieldId ?? '', scrumTeamFormat: c.scrumTeamFormat ?? 'option', defaultScrumTeam: c.defaultScrumTeam ?? '',
+      epicFieldId: c.epicFieldId ?? '', epicFormat: c.epicFormat ?? 'text', defaultEpic: c.defaultEpic ?? '',
+      statusFlow: statusFlowOf(c), statusMap: { ...DEFAULT_STATUS_MAP, ...(c.statusMap ?? {}) }, syncStatus: c.syncStatus !== false,
     });
+    setFlowText(statusFlowOf(c).join(' > '));
+    setDetectResult(null);
   }
   function cancelForm() {
     setTestResult(null);
@@ -91,7 +119,8 @@ export function JiraHostsSection() {
   }
   function saveForm() {
     if (!draft.host.trim() || !draft.projectKey.trim() || !draft.apiToken.trim() || (draft.authMode === 'basic' && !draft.username.trim())) return;
-    const normalized: DraftEntry = { ...draft, projectKey: draft.projectKey.trim().toUpperCase() };
+    const flow = flowText.split(/>|,|\n/).map(x => x.trim()).filter(Boolean);
+    const normalized: DraftEntry = { ...draft, projectKey: draft.projectKey.trim().toUpperCase(), statusFlow: flow.length >= 2 ? flow : DEFAULT_STATUS_FLOW, defaultStoryPoints: Number.isFinite(Number(draft.defaultStoryPoints)) ? Number(draft.defaultStoryPoints) : DEFAULT_STORY_POINTS };
     if (editingId) updateJiraConfig(editingId, normalized);
     else addJiraConfig(normalized);
     cancelForm();
@@ -253,6 +282,81 @@ export function JiraHostsSection() {
               <input value={draft.priorityId} onChange={e => setDraft(d => ({ ...d, priorityId: e.target.value }))} placeholder="3 (optional)" style={fi} />
             </div>
           </div>
+          <div style={{ ...grp, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>Ticket fields — acceptance criteria · story points · scrum team · epic</span>
+            <button disabled={!draft.host.trim() || !draft.apiToken.trim()}
+              onClick={async () => {
+                setDetectResult('Asking Jira for its fields…');
+                try {
+                  const found = await detectJiraFields({ ...draft, id: 'detect', isDefault: false });
+                  setDraft(d => ({
+                    ...d,
+                    ...(found.acceptanceCriteria ? { acceptanceCriteriaFieldId: found.acceptanceCriteria.id, acceptanceCriteriaFormat: found.acceptanceCriteria.format } : {}),
+                    ...(found.storyPoints ? { storyPointsFieldId: found.storyPoints.id, storyPointsFormat: found.storyPoints.format } : {}),
+                    ...(found.scrumTeam ? { scrumTeamFieldId: found.scrumTeam.id, scrumTeamFormat: found.scrumTeam.format } : {}),
+                    ...(found.epic ? { epicFieldId: found.epic.id, epicFormat: found.epic.format } : {}),
+                  }));
+                  const names = Object.values(found).map(f => `${f.name} = ${f.id}`);
+                  const missing = (['acceptanceCriteria', 'storyPoints', 'scrumTeam', 'epic'] as const).filter(k => !found[k]).map(k => ({ acceptanceCriteria: 'acceptance criteria', storyPoints: 'story points', scrumTeam: 'scrum team', epic: 'epic' }[k]));
+                  setDetectResult(`✓ ${names.length ? names.join(' · ') : 'nothing matched'}${missing.length ? ` — not found: ${missing.join(', ')} (type the id by hand)` : ''} — Save to keep`);
+                } catch (err) {
+                  setDetectResult(`✗ ${err instanceof Error ? err.message : String(err)} — type the ids by hand`);
+                }
+              }}
+              title="Look the four fields up by name in this Jira (GET /rest/api/2/field)"
+              style={{ ...ghostBtn, marginLeft: 'auto', textTransform: 'none', letterSpacing: 0, opacity: draft.host.trim() && draft.apiToken.trim() ? 1 : 0.5 }}>
+              ⌕ Detect
+            </button>
+          </div>
+          {detectResult && <div style={{ fontSize: 12, fontWeight: 600, color: detectResult.startsWith('✓') ? 'var(--t-success)' : detectResult.startsWith('✗') ? 'var(--t-urgent)' : 'var(--t-muted)' }}>{detectResult}</div>}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr 0.8fr 1.6fr', gap: '8px 12px', alignItems: 'end' }}>
+            {([
+              { label: 'Acceptance criteria', id: 'acceptanceCriteriaFieldId', fmt: 'acceptanceCriteriaFormat', def: 'acceptanceCriteriaTemplate', defLabel: 'Default (template)', ph: 'empty = the task title · <TASK NAME> inserts it', note: 'editable on every create' },
+              { label: 'Story points', id: 'storyPointsFieldId', fmt: 'storyPointsFormat', def: 'defaultStoryPoints', defLabel: 'Default', ph: '1', note: 'editable on every create' },
+              { label: 'Scrum team', id: 'scrumTeamFieldId', fmt: 'scrumTeamFormat', def: 'defaultScrumTeam', defLabel: 'Default', ph: 'team name as Jira lists it', note: '' },
+              { label: 'Epic', id: 'epicFieldId', fmt: 'epicFormat', def: 'defaultEpic', defLabel: 'Default', ph: 'epic key, e.g. PROJ-12', note: '' },
+            ] as const).map(f => (
+              <Fragment key={f.id}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--t-txt)', paddingBottom: 8 }}>{f.label}{f.note && <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--t-muted)' }}>{f.note}</div>}</div>
+                <div><div style={fl}>Field id</div>
+                  <input value={String(draft[f.id] ?? '')} onChange={e => setDraft(d => ({ ...d, [f.id]: e.target.value.trim() }))} placeholder="customfield_12345" style={{ ...fi, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }} />
+                </div>
+                <div><div style={fl}>Value type</div>
+                  <select value={String(draft[f.fmt] ?? 'text')} onChange={e => setDraft(d => ({ ...d, [f.fmt]: e.target.value as JiraFieldFormat }))} style={fi}>
+                    {FORMATS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+                  </select>
+                </div>
+                <div><div style={fl}>{f.defLabel}</div>
+                  <input value={String(draft[f.def] ?? '')} type={f.def === 'defaultStoryPoints' ? 'number' : 'text'} min={0} step={0.5}
+                    onChange={e => setDraft(d => ({ ...d, [f.def]: f.def === 'defaultStoryPoints' ? (e.target.value === '' ? ('' as unknown as number) : Number(e.target.value)) : e.target.value }))}
+                    placeholder={f.ph} style={fi} />
+                </div>
+              </Fragment>
+            ))}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--t-muted)' }}>A field with no id is simply not sent — Jira rejects a create that names a field it doesn't know. For the URL fallback, put <b>{'{acceptance}'}</b>, <b>{'{storypoints}'}</b>, <b>{'{team}'}</b>, <b>{'{epic}'}</b> in the Create-URL override.</div>
+
+          <div style={grp}>Status flow</div>
+          <div>
+            <div style={fl}>Jira statuses, in order</div>
+            <input value={flowText} onChange={e => setFlowText(e.target.value)} placeholder="New > To do > In progress > Done" style={fi} />
+            <div style={{ fontSize: 11.5, color: 'var(--t-muted)', marginTop: 4 }}>
+              Jira only allows the hops its workflow defines, so a ticket is walked along this flow one status at a time (New → To do → In progress → Done). TaskFlow's own statuses don't change — the Jira status only shows next to the ticket.
+            </div>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+            <input type="checkbox" checked={draft.syncStatus !== false} onChange={e => setDraft(d => ({ ...d, syncStatus: e.target.checked }))} />
+            <span><b>The ticket follows the card's status</b> <span style={{ color: 'var(--t-muted)' }}>— off: tickets only move when you close them in the review</span></span>
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, opacity: draft.syncStatus === false ? 0.5 : 1 }}>
+            {CARD_STATUSES.map(cs => (
+              <div key={cs.k}><div style={fl}>Card: {cs.label} →</div>
+                <input value={draft.statusMap?.[cs.k] ?? ''} onChange={e => setDraft(d => ({ ...d, statusMap: { ...(d.statusMap ?? {}), [cs.k]: e.target.value } }))}
+                  placeholder="(leave ticket)" style={fi} />
+              </div>
+            ))}
+          </div>
+
           <div style={grp}>Templates &amp; URL override</div>
           <div>
             <div style={fl}>Summary Template</div>

@@ -167,6 +167,7 @@ interface AppState {
   setDefaultJiraConfig: (id: string) => void;
   setItsmConfig: (config: ItsmConfig | null) => void;
   setItsmSyncInfo: (taskId: string, info: { status: string; updatedOn: number }) => void;
+  setJiraSyncInfo: (taskId: string, info: { status?: string; error?: string }) => void;
   markItsmViewed: (taskId: string) => void;
   markTaskPlanned: (taskId: string, planned: boolean) => void;
   setAiConfig: (patch: Partial<AiConfig>) => void;
@@ -749,6 +750,16 @@ export const useStore = create<AppState>()(
         if (it.itsmStatus === info.status && it.itsmUpdatedOn === info.updatedOn) return;
         slog('itsm:sync', { id: taskId, status: info.status });
         set(s => ({ items: s.items.map(i => i.id === taskId ? { ...i, itsmStatus: info.status, itsmUpdatedOn: info.updatedOn } : i) }));
+      },
+      // Quiet (like itsm:sync): Jira's own status of the ticket, machine-written.
+      // No updatedAt bump — it must not re-flag the card for review.
+      setJiraSyncInfo: (taskId, info) => {
+        const it = get().items.find(i => i.id === taskId);
+        if (!it || it.kind !== 'task') return;
+        const status = info.status ?? it.jiraStatus;
+        if (it.jiraStatus === status && (it.jiraSyncError ?? undefined) === (info.error ?? undefined)) return;
+        slog('jira:sync', { id: taskId, ticket: it.jiraLink, status: info.status, error: info.error });
+        set(s => ({ items: s.items.map(i => i.id === taskId ? { ...i, jiraStatus: status, jiraStatusAt: info.status ? Date.now() : (i as Task).jiraStatusAt, jiraSyncError: info.error } : i) }));
       },
       markItsmViewed: (taskId) => {
         slog('itsm:viewed', { id: taskId });

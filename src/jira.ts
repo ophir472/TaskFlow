@@ -1,5 +1,6 @@
 import type { JiraConfig } from './types';
 import { loggedFetch } from './apiLog';
+import { buildCustomFields, detectFields, nextHop, sameStatus, statusFlowOf, type CreateExtras, type JiraFieldMeta } from './jiraFields';
 
 // Jira Data Center (REST v2) takes plain-text descriptions — no ADF.
 function buildDescription(description: string, requestedBy: string): string {
@@ -18,7 +19,7 @@ function authHeader(config: JiraConfig): string {
 
 export async function createJiraIssue(
   config: JiraConfig,
-  fields: { summary: string; description: string; requestedBy: string; reporterAccountId?: string; labels?: string[] }
+  fields: { summary: string; description: string; requestedBy: string; reporterAccountId?: string; labels?: string[] } & CreateExtras
 ): Promise<{ key: string; url: string }> {
   const host = config.host.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
@@ -37,6 +38,9 @@ export async function createJiraIssue(
       // rejects it, the whole create fails, so we only send it when mapped.
       ...(fields.reporterAccountId ? { reporter: { name: fields.reporterAccountId } } : {}),
       ...(fields.labels?.length ? { labels: fields.labels } : {}),
+      // Acceptance criteria / story points / scrum team / epic — only the
+      // ones whose field id is configured on the host.
+      ...buildCustomFields(config, fields),
     },
   };
 
@@ -74,6 +78,16 @@ export async function createJiraIssue(
  * done/close/resolve). Returns the resulting status name.
  */
 export async function closeJiraIssue(config: JiraConfig, issueKey: string): Promise<string> {
+  // Walk the configured flow (New > To do > In progress > Done) to its last
+  // status first — a ticket still in New has no direct "done" transition.
+  const flow = statusFlowOf(config);
+  try {
+    return await moveJiraIssueTo(config, issueKey, flow[flow.length - 1]);
+  } catch (err) {
+    // Unreachable API: nothing else will work either. Otherwise fall through
+    // to the workflow-agnostic pick below (done category / name match).
+    if (err instanceof Error && err.name === 'ApiUnreachableError') throw err;
+  }
   const host = config.host.replace(/^https?:\/\//, '').replace(/\/$/, '');
   const url = `https://${host}/rest/api/2/issue/${issueKey}/transitions`;
   const headers = {
@@ -158,4 +172,67 @@ export async function testJiraAuth(config: JiraConfig): Promise<string> {
   }
   const data = JSON.parse(text);
   return data.displayName ?? data.name ?? 'authenticated';
+}
+
+const hostOf = (config: JiraConfig) => config.host.replace(/^https?:\/\//, '').replace(/\/$/, '');
+const jsonHeaders = (config: JiraConfig) => ({
+  Authorization: authHeader(config),
+  'X-Atlassian-Token': 'no-check',
+  'Content-Type': 'application/json',
+  Accept: 'application/json',
+});
+function errorText(status: number, text: string): string {
+  try {
+    const err = JSON.parse(text);
+    if (err.errorMessages?.length) return err.errorMessages[0];
+    if (err.errors && Object.keys(err.errors).length) return Object.values(err.errors).join(', ');
+  } catch { /* ignore */ }
+  return `HTTP ${status}`;
+}
+
+/** The ticket's current Jira status name. */
+export async function getJiraStatus(config: JiraConfig, issueKey: string): Promise<string> {
+  const url = `https://${hostOf(config)}/rest/api/2/issue/${encodeURIComponent(issueKey)}?fields=status`;
+  const { res, text } = await loggedFetch('jira:status', url, { headers: jsonHeaders(config) });
+  if (!res.ok) throw new Error(errorText(res.status, text));
+  return JSON.parse(text)?.fields?.status?.name ?? '';
+}
+
+/**
+ * Move a ticket to `target`, one legal transition at a time along the host's
+ * status flow. Jira only offers the transitions its workflow defines from the
+ * current status, so New → Done is usually three hops. Works backwards too
+ * (Done → In progress when a card is reopened). Returns the final status.
+ */
+export async function moveJiraIssueTo(config: JiraConfig, issueKey: string, target: string): Promise<string> {
+  const flow = statusFlowOf(config);
+  const base = `https://${hostOf(config)}/rest/api/2/issue/${encodeURIComponent(issueKey)}`;
+  let current = await getJiraStatus(config, issueKey);
+  // A flow of n statuses needs at most n-1 hops; the margin covers a ticket
+  // that starts outside the flow.
+  for (let hop = 0; hop < flow.length + 2; hop++) {
+    if (sameStatus(current, target)) return current;
+    const { res, text } = await loggedFetch('jira:transitions', `${base}/transitions`, { headers: jsonHeaders(config) });
+    if (!res.ok) throw new Error(`Couldn't list transitions: ${errorText(res.status, text)}`);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const transitions: any[] = JSON.parse(text).transitions ?? [];
+    const offered = transitions.map(t => String(t.to?.name ?? '')).filter(Boolean);
+    const next = nextHop(flow, current, target, offered);
+    if (!next) throw new Error(`No transition from "${current}" toward "${target}" (Jira offers: ${offered.join(', ') || 'none'})`);
+    const tr = transitions.find(t => sameStatus(t.to?.name, next));
+    const post = await loggedFetch('jira:transition-post', `${base}/transitions`, {
+      method: 'POST', headers: jsonHeaders(config), body: JSON.stringify({ transition: { id: tr.id } }),
+    });
+    if (!post.res.ok) throw new Error(`"${current}" → "${next}": ${errorText(post.res.status, post.text)}`);
+    current = String(tr.to?.name ?? next);
+  }
+  if (sameStatus(current, target)) return current;
+  throw new Error(`Stopped at "${current}" before reaching "${target}"`);
+}
+
+/** Settings → Detect: look the four custom fields up by name. */
+export async function detectJiraFields(config: JiraConfig) {
+  const { res, text } = await loggedFetch('jira:fields', `https://${hostOf(config)}/rest/api/2/field`, { headers: jsonHeaders(config) });
+  if (!res.ok) throw new Error(errorText(res.status, text));
+  return detectFields(JSON.parse(text) as JiraFieldMeta[]);
 }

@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
 import type { Task } from '../../types';
-import { createJiraIssue } from '../../jira';
+import { createJiraIssue, getJiraStatus } from '../../jira';
+import { JiraCreateExtras } from './JiraCreateExtras';
+import { defaultAcceptanceCriteria, defaultStoryPoints } from '../../jiraFields';
 import { ApiUnreachableError } from '../../apiLog';
 import { openTicketWindow } from '../../ticketWindow';
 import { customOpenUrl, customCreateUrl, customTemplateUrl, openCustomUrl } from '../../customSystems';
 import { nextId } from '../../engine';
 import { RelevanceToggle, itsmKey, csKey } from '../Common/RelevanceToggle';
-import { getDefaultJiraConfig, jiraTicketUrl, applySummaryTemplate, buildJiraCreateUrl } from '../../jiraHosts';
+import { getDefaultJiraConfig, getJiraConfigForKey, jiraTicketUrl, applySummaryTemplate, buildJiraCreateUrl } from '../../jiraHosts';
 import { itsmTicketUrl, fetchSnTicket } from '../../itsm';
 
 interface Props {
@@ -52,6 +54,9 @@ export function TicketSections({ task, onToast }: Props) {
   const [createTarget, setCreateTarget] = useState<'primary' | number | null>(null);
   const [createDesc, setCreateDesc] = useState('');
   const [createSummary, setCreateSummary] = useState('');
+  const [createAC, setCreateAC] = useState('');
+  const [createPoints, setCreatePoints] = useState('1');
+  const setJiraSyncInfo = useStore(s => s.setJiraSyncInfo);
   // Host has a create-URL override → creation opens that URL in a new tab
   // (pre-filled Jira create screen) instead of calling the REST API.
   const openJira = (url: string, _key: string) => window.open(url, '_blank');
@@ -155,6 +160,21 @@ export function TicketSections({ task, onToast }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, t.itsmTicket, canSnSync]);
 
+  // Jira status for the ticket on show — read-only lookup, quiet write.
+  useEffect(() => {
+    const key = (t.jiraLink ?? '').trim();
+    if (!/^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(key)) return;
+    const cfg = getJiraConfigForKey(jiraConfigs, key);
+    if (!cfg?.apiToken?.trim()) return;
+    if (Date.now() - (t.jiraStatusAt ?? 0) < 5 * 60_000 && t.jiraStatus) return;
+    let alive = true;
+    const timer = setTimeout(() => {
+      getJiraStatus(cfg, key).then(status => { if (alive && status) setJiraSyncInfo(id, { status }); }).catch(() => { /* offline / no access: keep what we have */ });
+    }, 800);
+    return () => { alive = false; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, t.jiraLink]);
+
   const hasItsmUpdate = !!t.itsmTicket && !!t.itsmUpdatedOn && t.itsmUpdatedOn > (t.itsmViewedAt ?? 0);
 
   function label(key: string, current: string | undefined, fallback: string, save: (v: string) => void) {
@@ -178,11 +198,14 @@ export function TicketSections({ task, onToast }: Props) {
     setCreateTarget(target);
     setCreateDesc(t.description ?? '');
     setCreateSummary(applySummaryTemplate(defaultJira, t.title));
+    setCreateAC(defaultAcceptanceCriteria(defaultJira, t.title));
+    setCreatePoints(String(defaultStoryPoints(defaultJira)));
   }
 
   async function handleCreateConfirm() {
     if (!defaultJira || createTarget === null) return;
     const summary = createSummary.trim() || t.title;
+    const extras = { acceptanceCriteria: createAC.trim() || t.title, storyPoints: createPoints.trim() === '' ? defaultStoryPoints(defaultJira) : createPoints.trim() };
 
     setCreatingJira(true);
     try {
@@ -192,6 +215,7 @@ export function TicketSections({ task, onToast }: Props) {
         requestedBy: t.requester,
         labels: t.type === 'urgent' && defaultJira.urgentLabel?.trim() ? [defaultJira.urgentLabel.trim()] : undefined,
         reporterAccountId: t.requester ? requesterJiraIds[t.requester] : undefined,
+        ...extras,
       });
       if (createTarget === 'primary') {
         updateItem(id, { jiraLink: result.key, description: createDesc });
@@ -206,7 +230,7 @@ export function TicketSections({ task, onToast }: Props) {
     } catch (err) {
       // API unreachable (no proxy + CORS): fall back to the host's pre-filled
       // create URL when one is configured — the key gets pasted back by hand.
-      const fallbackUrl = err instanceof ApiUnreachableError ? buildJiraCreateUrl(defaultJira, summary, createDesc) : null;
+      const fallbackUrl = err instanceof ApiUnreachableError ? buildJiraCreateUrl(defaultJira, summary, createDesc, extras) : null;
       if (fallbackUrl) {
         window.open(fallbackUrl, '_blank');
         updateItem(id, { description: createDesc });
@@ -242,6 +266,7 @@ export function TicketSections({ task, onToast }: Props) {
           placeholder="Describe the ticket…"
           style={{ width: '100%', fontSize: 13, padding: '7px 9px', borderRadius: 7, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit', outline: 'none' }}
         />
+        {defaultJira && <JiraCreateExtras config={defaultJira} acceptance={createAC} onAcceptance={setCreateAC} points={createPoints} onPoints={setCreatePoints} onEscape={() => setCreateTarget(null)} />}
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           <button onClick={handleCreateConfirm} disabled={creatingJira}
             style={{ flex: 1, border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 12, fontWeight: 600, padding: '6px 0', borderRadius: 6, cursor: creatingJira ? 'wait' : 'pointer', opacity: creatingJira ? 0.6 : 1 }}>
@@ -279,6 +304,14 @@ export function TicketSections({ task, onToast }: Props) {
             }}
             placeholder="PROJ-1234" style={sInp} />
           {t.jiraLink && (() => { const url = jiraTicketUrl(jiraConfigs, t.jiraLink); return url ? <><span onClick={() => openJira(url, t.jiraLink)} style={{ ...extLink, cursor: 'pointer' }} title={`Open ${t.jiraLink}`}>↗</span><span onClick={() => openTicketWindow(url, t.jiraLink)} style={{ ...extLink, cursor: 'pointer', fontSize: 13 }} title={`Open ${t.jiraLink} in a popup window`}>⧉</span></> : null; })()}
+          {/* Jira's own status of the ticket — information only; the card's status is TaskFlow's */}
+          {t.jiraLink && (t.jiraStatus || t.jiraSyncError) && (
+            <span title={t.jiraSyncError ? `Jira: ${t.jiraSyncError}` : `Jira status${t.jiraStatusAt ? ` · checked ${new Date(t.jiraStatusAt).toLocaleString()}` : ''}`}
+              style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 10, textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0, whiteSpace: 'nowrap',
+                background: t.jiraSyncError ? 'var(--t-amber-bg)' : 'var(--t-acc-bg)', color: t.jiraSyncError ? 'var(--t-amber)' : 'var(--t-acc-dk)' }}>
+              {t.jiraStatus || 'Jira ?'}{t.jiraSyncError ? ' ⚠' : ''}
+            </span>
+          )}
         </div>
         {!t.jiraLink && defaultJira && createTarget !== 'primary' && (
           <button onMouseDown={e => e.preventDefault()} onClick={() => openCreatePrompt('primary')}

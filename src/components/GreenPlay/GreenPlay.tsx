@@ -6,6 +6,8 @@ import { flaggedTasks, stepsFor, type Step } from '../../greenPlay';
 import { EstimatesSection } from '../Common/EstimatesSection';
 import { CommunicationSection, getCommunications } from '../Common/CommunicationSection';
 import { createJiraIssue, addJiraComment, closeJiraIssue } from '../../jira';
+import { JiraCreateExtras } from '../Common/JiraCreateExtras';
+import { defaultAcceptanceCriteria, defaultStoryPoints } from '../../jiraFields';
 import { ApiUnreachableError } from '../../apiLog';
 import { buildReviewSummary, dayRange } from '../../reviewSummary';
 import { getDefaultJiraConfig, getJiraConfigForKey, applySummaryTemplate, buildJiraCreateUrl } from '../../jiraHosts';
@@ -28,6 +30,7 @@ export function GreenPlay({ onClose }: Props) {
   const requesterJiraIds = useStore(s => s.requesterJiraIds);
   const itsmConfig = useStore(s => s.itsmConfig);
   const updateItem = useStore(s => s.updateItem);
+  const setJiraSyncInfo = useStore(s => s.setJiraSyncInfo);
   const addSubtask = useStore(s => s.addSubtask);
   const toggleSubtaskDone = useStore(s => s.toggleSubtaskDone);
   const markTaskReviewed = useStore(s => s.markTaskReviewed);
@@ -87,6 +90,8 @@ export function GreenPlay({ onClose }: Props) {
   // "Create Jira" step: summary + description for the ticket about to be created.
   const [createJiraDesc, setCreateJiraDesc] = useState('');
   const [createJiraSummary, setCreateJiraSummary] = useState('');
+  const [createJiraAC, setCreateJiraAC] = useState('');
+  const [createJiraPoints, setCreateJiraPoints] = useState('1');
   const [urlCreateStatus, setUrlCreateStatus] = useState<string | null>(null);
   // Host has a create-URL override → creation opens that URL in a new tab
   // (pre-filled Jira create screen) instead of calling the REST API.
@@ -106,6 +111,7 @@ export function GreenPlay({ onClose }: Props) {
     if (!currentTask || !defaultJira) return;
     setJiraError(null);
     const summary = createJiraSummary.trim() || currentTask.title;
+    const extras = { acceptanceCriteria: createJiraAC.trim() || currentTask.title, storyPoints: createJiraPoints.trim() === '' ? defaultStoryPoints(defaultJira) : createJiraPoints.trim() };
 
     setCreatingJira(true);
     try {
@@ -115,12 +121,13 @@ export function GreenPlay({ onClose }: Props) {
         requestedBy: currentTask.requester ?? '',
         labels: currentTask.type === 'urgent' && defaultJira.urgentLabel?.trim() ? [defaultJira.urgentLabel.trim()] : undefined,
         reporterAccountId: currentTask.requester ? requesterJiraIds[currentTask.requester] : undefined,
+        ...extras,
       });
       updateItem(currentTask.id, { jiraLink: result.key, description: createJiraDesc });
     } catch (err) {
       // API unreachable (no proxy + CORS): fall back to the host's pre-filled
       // create URL when one is configured.
-      const fallbackUrl = err instanceof ApiUnreachableError ? buildJiraCreateUrl(defaultJira, summary, createJiraDesc) : null;
+      const fallbackUrl = err instanceof ApiUnreachableError ? buildJiraCreateUrl(defaultJira, summary, createJiraDesc, extras) : null;
       if (fallbackUrl) {
         window.open(fallbackUrl, '_blank');
         updateItem(currentTask.id, { description: createJiraDesc });
@@ -131,7 +138,7 @@ export function GreenPlay({ onClose }: Props) {
     } finally {
       setCreatingJira(false);
     }
-  }, [currentTask, defaultJira, requesterJiraIds, createJiraSummary, createJiraDesc, updateItem]);
+  }, [currentTask, defaultJira, requesterJiraIds, createJiraSummary, createJiraDesc, createJiraAC, createJiraPoints, updateItem]);
 
   // Clear the transient jira states whenever we move to another step/card.
   useEffect(() => {
@@ -147,6 +154,8 @@ export function GreenPlay({ onClose }: Props) {
     if (currentStep?.kind === 'createJira' && currentTask) {
       setCreateJiraDesc(currentTask.description ?? '');
       setCreateJiraSummary(applySummaryTemplate(defaultJira, currentTask.title));
+      setCreateJiraAC(defaultAcceptanceCriteria(defaultJira, currentTask.title));
+      setCreateJiraPoints(String(defaultStoryPoints(defaultJira)));
       setUrlCreateStatus(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,6 +205,7 @@ export function GreenPlay({ onClose }: Props) {
     try {
       const statusName = await closeJiraIssue(cfg, ticketKey);
       setCloseStatus(`✓ ${ticketKey} moved to ${statusName}`);
+      if (currentTask && ticketKey === (currentTask.jiraLink ?? '').trim()) setJiraSyncInfo(currentTask.id, { status: statusName });
     } catch (err) {
       setCloseStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -446,6 +456,7 @@ export function GreenPlay({ onClose }: Props) {
                       placeholder="Describe the ticket…"
                       style={{ width: '100%', fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--t-brd)', background: 'var(--t-surf2)', color: 'var(--t-txt)', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit', outline: 'none', marginBottom: 8 }}
                     />
+                    <JiraCreateExtras size="md" config={defaultJira} acceptance={createJiraAC} onAcceptance={setCreateJiraAC} points={createJiraPoints} onPoints={setCreateJiraPoints} />
                     <button onClick={handleCreateJira} disabled={creatingJira}
                       style={{ width: '100%', border: 'none', background: 'var(--t-acc)', color: 'white', fontSize: 14, fontWeight: 600, padding: '10px 14px', borderRadius: 8, cursor: creatingJira ? 'wait' : 'pointer', opacity: creatingJira ? 0.6 : 1 }}>
                       {creatingJira ? 'Creating…' : `+ Create in ${defaultJira.projectKey || defaultJira.host}`}
