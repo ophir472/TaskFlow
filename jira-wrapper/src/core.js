@@ -20,6 +20,9 @@ var JiraMoverCore = (function () {
       points: { label: 'Story points', id: '', value: '1', show: true },
       team: { label: 'Scrum team', id: '', value: '', show: false },
       epic: { label: 'Epic', id: '', value: '', show: true },
+      // Story only (types: which issue types the field applies to; empty = all).
+      fixVersions: { label: 'Fix Version/s', id: 'fixVersions', value: '', show: true, types: ['Story'] },
+      nft: { label: 'NFT Required', id: '', value: '', show: true, types: ['Story'] },
     },
     // Any other field a transition demands: { id, label, value }. Filled the
     // same way. The pane adds to this list when you tick "remember".
@@ -110,14 +113,17 @@ var JiraMoverCore = (function () {
   function defaultsFor(settings, issue) {
     var out = {};
     var title = (issue && issue.summary) || '';
-    var put = function (id, label, value, show) {
+    var type = (issue && issue.type) || '';
+    var applies = function (types) { if (!types || !types.length) return true; for (var k = 0; k < types.length; k++) if (same(types[k], type)) return true; return false; };
+    var put = function (id, label, value, show, types) {
       id = String(id || '').trim();
-      if (!id || String(value == null ? '' : value).trim() === '') return;
+      if (!id || !applies(types)) return;
+      if (String(value == null ? '' : value).trim() === '') { if (show !== false) out[id] = { label: label || id, raw: '', show: true, empty: true }; return; }   // shown, nothing to fill
       out[id] = { label: label || id, raw: String(value).replace(/<ticket title>|<task name>/gi, title), show: show !== false };
     };
     var f = settings.fields || {};
-    Object.keys(f).forEach(function (k) { put(f[k].id, f[k].label, f[k].value, f[k].show); });
-    (settings.extra || []).forEach(function (e) { put(e.id, e.label, e.value, e.show); });
+    Object.keys(f).forEach(function (k) { put(f[k].id, f[k].label, f[k].value, f[k].show, f[k].types); });
+    (settings.extra || []).forEach(function (e) { put(e.id, e.label, e.value, e.show, e.types); });
     return out;
   }
 
@@ -133,7 +139,7 @@ var JiraMoverCore = (function () {
       var meta = screen[id] || {};
       var has = !isEmpty(values ? values[id] : undefined);
       var raw = typed && typed[id] != null && String(typed[id]).trim() !== '' ? typed[id]
-        : defaults[id] ? defaults[id].raw : null;
+        : defaults[id] && !defaults[id].empty ? defaults[id].raw : null;
       if (has && !(settings.overwrite && raw != null) && !(typed && typed[id] != null && String(typed[id]).trim() !== '')) return;
       if (raw == null) {
         // Jira fills these itself or they have a server default.
@@ -164,7 +170,7 @@ var JiraMoverCore = (function () {
       if (t == null && !isEmpty(values ? values[id] : undefined) && !settings.overwrite) return;
       var meta = editmeta && editmeta[id];
       if (editmeta && !meta) return;               // not editable on this ticket type
-      var raw = t != null ? t : defaults[id] ? defaults[id].raw : null;
+      var raw = t != null ? t : defaults[id] && !defaults[id].empty ? defaults[id].raw : null;
       if (raw == null) return;
       var v = shape(raw, meta);
       if (v !== undefined && !(Array.isArray(v) && !v.length)) out[id] = v;
@@ -188,6 +194,7 @@ var JiraMoverCore = (function () {
     points: [/^story points$/i, /^story point estimate$/i, /story point/i],
     team: [/^scrum[ -]?team$/i, /scrum[ -]?team/i, /^team$/i],
     epic: [/^epic link$/i, /^parent link$/i],
+    nft: [/^nft required$/i, /nft/i],
   };
   function detect(fields) {
     var out = {};
@@ -223,9 +230,9 @@ var JiraMoverCore = (function () {
     if (saved.primary) d.primary = String(saved.primary);
     Object.keys(d.fields).forEach(function (k) {
       var s = (saved.fields || {})[k];
-      if (s) { if (s.id != null) d.fields[k].id = String(s.id).trim(); if (s.value != null) d.fields[k].value = String(s.value); if (typeof s.show === 'boolean') d.fields[k].show = s.show; }
+      if (s) { if (s.id != null) d.fields[k].id = String(s.id).trim(); if (s.value != null) d.fields[k].value = String(s.value); if (typeof s.show === 'boolean') d.fields[k].show = s.show; if (Array.isArray(s.types)) d.fields[k].types = s.types.map(function (t) { return String(t).trim(); }).filter(Boolean); }
     });
-    if (Array.isArray(saved.extra)) d.extra = saved.extra.filter(function (e) { return e && e.id; }).map(function (e) { return { id: String(e.id).trim(), label: String(e.label || e.id), value: String(e.value == null ? '' : e.value), show: e.show !== false }; });
+    if (Array.isArray(saved.extra)) d.extra = saved.extra.filter(function (e) { return e && e.id; }).map(function (e) { return { id: String(e.id).trim(), label: String(e.label || e.id), value: String(e.value == null ? '' : e.value), show: e.show !== false, types: Array.isArray(e.types) ? e.types.map(function (t) { return String(t).trim(); }).filter(Boolean) : [] }; });
     if (typeof saved.overwrite === 'boolean') d.overwrite = saved.overwrite;
     if (typeof saved.reloadAfter === 'boolean') d.reloadAfter = saved.reloadAfter;
     return d;

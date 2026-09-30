@@ -17,6 +17,14 @@ bar. On any Jira page, click the bookmark.
 `dist/jira-mover.user.js`. It wakes up only on Jira pages, survives page
 refreshes, and the pane opens by itself when you click a ticket.
 
+## Fields
+
+Acceptance criteria, story points, scrum team and epic for every type. For
+a **Story** also **Fix Version/s** and **NFT Required**; a field's *types*
+box in settings says which issue types it applies to (empty = all). Fields
+that are lists in Jira (NFT Required, Fix Version/s, scrum team) show as a
+dropdown of Jira's own choices on the main screen.
+
 ## Issue types
 
 A Task follows `New > To do > In progress > Done`, main button **In

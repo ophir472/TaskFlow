@@ -213,7 +213,7 @@
         var m = (state.missing || []).filter(function (x) { return x.id === id; })[0];
         var known = Object.keys(s.fields).filter(function (k) { return s.fields[k].id === id; })[0];
         if (known) s.fields[known].value = typed[id];
-        else { s.extra = s.extra.filter(function (e) { return e.id !== id; }); s.extra.push({ id: id, label: (m && m.label) || id, value: typed[id], show: true }); }
+        else { s.extra = s.extra.filter(function (e) { return e.id !== id; }); s.extra.push({ id: id, label: (m && m.label) || id, value: typed[id], show: true, types: [] }); }
       });
       save(s);
     }
@@ -321,16 +321,26 @@
       var value = state.draft[id] != null ? state.draft[id] : prefill;
       var r = el('div', 'display:flex;align-items:center;gap:8px;padding:3px 0;');
       r.appendChild(el('span', 'color:#6b778c;font-size:12px;flex:0 0 108px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', defs[id].label, { title: defs[id].label + (has ? ' — the ticket already has: ' + current(id) : ' — from settings') }));
-      var inp = el(/acceptance/i.test(defs[id].label) ? 'textarea' : 'input', INP + 'flex:1;font-size:12.5px;padding:5px 8px;' + (has && state.draft[id] == null ? 'background:#f4f5f7;' : ''));
+      var meta = (i.editmeta && i.editmeta[id]) || {};
+      var choices = (meta.allowedValues || []).map(function (a) { return a.value || a.name || a.key || String(a.id); });
+      var inp;
+      if (choices.length) {
+        inp = el('select', INP + 'flex:1;font-size:12.5px;padding:5px 8px;' + (has && state.draft[id] == null ? 'background:#f4f5f7;' : ''));
+        inp.appendChild(el('option', null, '— none —', { value: '' }));
+        choices.forEach(function (c) { inp.appendChild(el('option', null, c, { value: c })); });
+        if (value && choices.indexOf(value) === -1) inp.appendChild(el('option', null, value, { value: value }));
+      } else inp = el(/acceptance/i.test(defs[id].label) ? 'textarea' : 'input', INP + 'flex:1;font-size:12.5px;padding:5px 8px;' + (has && state.draft[id] == null ? 'background:#f4f5f7;' : ''));
       inp.value = value; inp.setAttribute('data-field-id', id);
       if (inp.tagName === 'TEXTAREA') inp.rows = 2;
+      if (inp.tagName === 'SELECT') inp.addEventListener('change', function () { state.draft[id] = inp.value; });
       inp.addEventListener('input', function () { state.draft[id] = inp.value; });
       inp.addEventListener('keydown', function (e) { e.stopPropagation(); });
       r.appendChild(inp);
       if (state.draft[id] != null) r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:14px;', '↺', { title: 'Back to the default', onclick: function () { delete state.draft[id]; render(); } }));
       pane.appendChild(r);
     });
-    if (hidden.length) pane.appendChild(el('div', 'color:#97a0af;font-size:11.5px;margin-top:4px;', 'Also filled: ' + hidden.map(function (id) { return defs[id].label + ' = ' + defs[id].raw; }).join(' · ')));
+    var alsoFilled = hidden.filter(function (id) { return !defs[id].empty; });
+    if (alsoFilled.length) pane.appendChild(el('div', 'color:#97a0af;font-size:11.5px;margin-top:4px;', 'Also filled: ' + alsoFilled.map(function (id) { return defs[id].label + ' = ' + defs[id].raw; }).join(' · ')));
 
     if (state.log.length) {
       var lg = el('div', 'margin-top:12px;padding-top:10px;border-top:1px solid #ebecf0;font-size:12px;');
@@ -374,7 +384,7 @@
       status.textContent = 'Asking Jira…'; status.style.color = '#6b778c';
       api('GET', '/field').then(function (list) {
         var found = C.detect(list), names = [];
-        Object.keys(found).forEach(function (k) { s.fields[k].id = found[k].id; names.push(found[k].name); });
+        Object.keys(found).forEach(function (k) { if (s.fields[k]) { s.fields[k].id = found[k].id; names.push(found[k].name); } });
         save(s); render();
         var st2 = pane.querySelector('[data-status]');
         if (st2) { st2.textContent = names.length ? '✓ Found: ' + names.join(', ') : 'Nothing matched by name — type the ids by hand'; st2.style.color = names.length ? '#006644' : '#974f0c'; }
@@ -392,15 +402,19 @@
       r.appendChild(eye);
       var id = el('input', INP + 'flex:0 0 132px;width:132px;font-family:ui-monospace,Menlo,monospace;font-size:12px;'); id.value = obj.id || ''; id.placeholder = 'customfield_…';
       var v = el('input', INP + 'flex:1;'); v.value = obj.value == null ? '' : obj.value; v.placeholder = 'default value';
+      var ty = el('input', INP + 'flex:0 0 64px;width:64px;font-size:11.5px;'); ty.value = (obj.types || []).join(', '); ty.placeholder = 'all types'; ty.title = 'Issue types this field applies to, comma separated (empty = every type)';
+      ty.addEventListener('change', function () { obj.types = ty.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean); save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
       id.addEventListener('change', function () { obj.id = id.value.trim(); save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
       v.addEventListener('change', function () { obj.value = v.value; save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
-      r.appendChild(id); r.appendChild(v);
+      r.appendChild(id); r.appendChild(v); r.appendChild(ty);
       return r;
     };
     pane.appendChild(pair('Acceptance criteria', s.fields.acceptance, '<TICKET TITLE> = the title'));
     pane.appendChild(pair('Story points', s.fields.points));
     pane.appendChild(pair('Scrum team', s.fields.team));
     pane.appendChild(pair('Epic', s.fields.epic, 'epic key'));
+    pane.appendChild(pair('Fix Version/s', s.fields.fixVersions, 'version name'));
+    pane.appendChild(pair('NFT Required', s.fields.nft, 'one of Jira\'s choices'));
 
     pane.appendChild(el('div', 'font-weight:800;margin-top:14px;', 'Other required fields'));
     pane.appendChild(el('div', 'font-size:12px;color:#6b778c;', 'Added when a move asks for a field and you tick "remember". The checkbox in front of each field shows or hides it on the main screen.'));
@@ -409,7 +423,7 @@
       r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:16px;align-self:center;', '×', { title: 'Remove', onclick: function () { s.extra.splice(idx, 1); save(s); render(); } }));
       pane.appendChild(r);
     });
-    pane.appendChild(el('button', BTN + 'margin-top:8px;padding:4px 9px;font-size:12px;', '+ Add a field', { onclick: function () { s.extra.push({ id: 'customfield_', label: 'Field', value: '', show: true }); save(s); render(); } }));
+    pane.appendChild(el('button', BTN + 'margin-top:8px;padding:4px 9px;font-size:12px;', '+ Add a field', { onclick: function () { s.extra.push({ id: 'customfield_', label: 'Field', value: '', show: true, types: [] }); save(s); render(); } }));
 
     var chk = function (label, key) {
       var l = el('label', 'display:flex;align-items:flex-start;gap:7px;margin-top:10px;cursor:pointer;font-size:12.5px;');

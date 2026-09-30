@@ -11,7 +11,7 @@ execSync('node build.mjs', { stdio: 'ignore' });
 const script = readFileSync('dist/jira-mover.user.js', 'utf8');
 
 const FLOW = ['New', 'Defined', 'In tech review', 'Ready for dev', 'In dev', 'In testing', 'Accepted'];   // the Story flow
-const issue = { key: 'PROJ-1', fields: { summary: 'Fix <b>login</b>', status: { name: 'New' }, issuetype: { name: 'Story' }, cf_ac: null, cf_sp: null, cf_team: null, cf_epic: null, cf_root: null, cf_sev: null, cf_keep: 'mine' } };
+const issue = { key: 'PROJ-1', fields: { summary: 'Fix <b>login</b>', status: { name: 'New' }, issuetype: { name: 'Story' }, cf_ac: null, cf_sp: null, cf_team: null, cf_epic: null, cf_root: null, cf_sev: null, cf_keep: 'mine', fixVersions: [], cf_nft: null } };
 const calls = [];
 const screenFor = to => to !== 'In dev' ? {} : {
   cf_ac: { required: true, name: 'Acceptance Criteria', schema: { type: 'string' } },
@@ -26,7 +26,7 @@ const finished = new Promise(r => { done = r; });
 
 const page = `<!doctype html><html><head><meta charset="utf-8"><meta name="application-name" content="JIRA"></head><body id="jira">
 <div class="board"><div class="card" data-issue-key="PROJ-1"><span class="title">PROJ-1 Fix login</span></div></div>
-<script>if (sessionStorage.getItem('phase') !== 'after-reload') localStorage.setItem('jira-mover-settings-v1', JSON.stringify({ fields: { acceptance: { id: 'cf_ac' }, points: { id: 'cf_sp' }, team: { id: 'cf_team', value: 'Platform' }, epic: { id: 'cf_epic', value: 'PROJ-12' } }, reloadAfter: true }));</script>
+<script>if (sessionStorage.getItem('phase') !== 'after-reload') localStorage.setItem('jira-mover-settings-v1', JSON.stringify({ fields: { acceptance: { id: 'cf_ac' }, points: { id: 'cf_sp' }, team: { id: 'cf_team', value: 'Platform' }, epic: { id: 'cf_epic', value: 'PROJ-12' }, fixVersions: { value: '2026.10' }, nft: { id: 'cf_nft' } }, reloadAfter: true }));</script>
 <script>${script.replace(/<\/script>/g, '<\\/script>')}</script>
 <script>
 (async function () {
@@ -62,6 +62,9 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><meta name="appli
     out.fieldsShown = [...pane().querySelectorAll('[data-field-id]')].map(i => i.getAttribute('data-field-id'));
     out.prefill = Object.fromEntries([...pane().querySelectorAll('[data-field-id]')].map(i => [i.getAttribute('data-field-id'), i.value]));
     const sp = pane().querySelector('[data-field-id="cf_sp"]'); sp.value = '3'; sp.dispatchEvent(new Event('input', { bubbles: true }));
+    const nft = pane().querySelector('[data-field-id="cf_nft"]'); out.nftIsSelect = nft.tagName === 'SELECT' && [...nft.options].map(o => o.value).slice(1).join('|');
+    nft.value = 'Performance not impacted / NFR not available'; nft.dispatchEvent(new Event('change', { bubbles: true }));
+    const fv = pane().querySelector('[data-field-id="fixVersions"]'); out.fvIsSelect = fv.tagName === 'SELECT' && fv.value;
     out.flowButtons = [...pane().querySelectorAll('button')].map(b => b.textContent).filter(t => /^(Move to |Already |● )?(New|Defined|In tech review|Ready for dev|In dev|In testing|Accepted)$/.test(t));
     big.isConnected ? big.click() : (await again()).click();
     const sev = await until(() => pane().querySelector('[data-missing-id="cf_sev"]'), 'asks for Severity');
@@ -90,7 +93,7 @@ const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/__report') { report = { ...(report || {}), ...JSON.parse(body) }; send(200, {}); if (report.reload || report.run?.error) done(); return; }
     if (url.pathname.startsWith('/rest/')) calls.push(`${req.method} ${url.pathname.replace('/rest/api/2', '')}${body ? ' ' + body : ''}`);
-    if (req.method === 'GET' && url.pathname === '/rest/api/2/issue/PROJ-1') return send(200, { ...issue, editmeta: { fields: { cf_epic: { name: 'Epic Link', schema: { type: 'any' } }, cf_ac: { name: 'Acceptance Criteria', schema: { type: 'string' } }, cf_sp: { name: 'Story Points', schema: { type: 'number' } }, cf_team: { name: 'Scrum-Team', schema: { type: 'option' }, allowedValues: [{ id: '101', value: 'Platform' }] }, cf_root: { name: 'Root cause', schema: { type: 'string' } }, cf_sev: { name: 'Severity', schema: { type: 'option' }, allowedValues: [{ id: '7', value: 'High' }, { id: '8', value: 'Low' }] } } } });
+    if (req.method === 'GET' && url.pathname === '/rest/api/2/issue/PROJ-1') return send(200, { ...issue, editmeta: { fields: { cf_epic: { name: 'Epic Link', schema: { type: 'any' } }, cf_ac: { name: 'Acceptance Criteria', schema: { type: 'string' } }, cf_sp: { name: 'Story Points', schema: { type: 'number' } }, cf_team: { name: 'Scrum-Team', schema: { type: 'option' }, allowedValues: [{ id: '101', value: 'Platform' }] }, cf_root: { name: 'Root cause', schema: { type: 'string' } }, cf_sev: { name: 'Severity', schema: { type: 'option' }, allowedValues: [{ id: '7', value: 'High' }, { id: '8', value: 'Low' }] }, fixVersions: { name: 'Fix Version/s', schema: { type: 'array', items: 'version' }, allowedValues: [{ id: '55', name: '2026.10' }, { id: '56', name: '2026.11' }] }, cf_nft: { name: 'NFT Required', schema: { type: 'option' }, allowedValues: [{ id: '31', value: 'Performance Impacted / NFR available' }, { id: '32', value: 'Performance not impacted / NFR not available' }] } } } });
     if (req.method === 'GET' && url.pathname === '/rest/api/2/issue/PROJ-1/transitions') return send(200, { transitions: transitions() });
     if (req.method === 'PUT' && url.pathname === '/rest/api/2/issue/PROJ-1') { Object.assign(issue.fields, JSON.parse(body).fields); return send(204); }
     if (req.method === 'POST' && url.pathname === '/rest/api/2/issue/PROJ-1/transitions') {
@@ -123,12 +126,14 @@ eq('ticket title is shown as text, never parsed as HTML', run.summaryAsText, tru
 eq('asked only for the one field with no default (not the one already set)', run.askedOnly, ['cf_root']);
 eq('ticket ended In dev', issue.fields.status.name, 'In dev');
 eq('fields filled from defaults, shaped per field type — story points as edited on the main screen', [issue.fields.cf_ac, issue.fields.cf_sp, issue.fields.cf_team, issue.fields.cf_root], ['Fix <b>login</b>', 3, { id: '101' }, 'Config drift']);
-eq('main screen shows acceptance criteria, story points, epic (team hidden), prefilled from settings', [run.fieldsShown, run.prefill], [['cf_ac', 'cf_sp', 'cf_epic'], { cf_ac: 'Fix <b>login</b>', cf_sp: '1', cf_epic: 'PROJ-12' }]);
+eq('main screen shows acceptance criteria, story points, epic (team hidden), prefilled from settings', [run.fieldsShown, run.prefill], [['cf_ac', 'cf_sp', 'cf_epic', 'fixVersions', 'cf_nft'], { cf_ac: 'Fix <b>login</b>', cf_sp: '1', cf_epic: 'PROJ-12', fixVersions: '2026.10', cf_nft: '' }]);
+eq('Story-only fields: NFT is a select with Jira\'s two choices; Fix Version/s a select preset from settings', [run.nftIsSelect, run.fvIsSelect], ['Performance Impacted / NFR available|Performance not impacted / NFR not available', '2026.10']);
+eq('fix version + NFT written as Jira objects', [issue.fields.fixVersions, issue.fields.cf_nft], [[{ id: '55' }], { id: '32' }]);
 eq('an edit on the main screen survives the pane re-rendering while it asks', run.spStillEdited, '3');
 eq('a Story gets the Story flow buttons, main = In dev', run.flowButtons, ['Move to In dev', '● New', 'Defined', 'In tech review', 'Ready for dev', 'In testing', 'Accepted']);
 eq('epic (on no screen) was set on the ticket', issue.fields.cf_epic, 'PROJ-12');
 eq('existing value untouched', issue.fields.cf_keep, 'mine');
-eq('typed values remembered as defaults (shown on the main screen from now on)', run.remembered, [{ id: 'cf_sev', label: 'Severity', value: 'High', show: true }, { id: 'cf_root', label: 'Root cause', value: 'Config drift', show: true }]);
+eq('typed values remembered as defaults (shown on the main screen from now on)', run.remembered, [{ id: 'cf_sev', label: 'Severity', value: 'High', show: true, types: [] }, { id: 'cf_root', label: 'Root cause', value: 'Config drift', show: true, types: [] }]);
 const posts = calls.filter(c => c.startsWith('POST'));
 eq('Story walked New → Defined → In tech review → Ready for dev → In dev', [...new Set(posts.map(p => JSON.parse(p.slice(p.indexOf('{'))).transition.id))], ['2', '3', '4', '5']);
 eq('the ticket was FILLED before the first move', (() => { const firstPost = calls.findIndex(c => c.startsWith('POST')); return ['cf_ac', 'cf_sp', 'cf_team', 'cf_epic'].map(id => { const i = calls.findIndex(c => c.startsWith('PUT') && c.includes('"' + id + '"')); return i !== -1 && i < firstPost; }); })(), [true, true, true, true]);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Mover
 // @namespace    jira-mover
-// @version      1.3.0
+// @version      1.4.0
 // @description  Click a ticket, move it to In progress in one click — required fields filled from your defaults
 // @match        *://*/browse/*
 // @match        *://*/secure/*
@@ -39,6 +39,9 @@ var JiraMoverCore = (function () {
       points: { label: 'Story points', id: '', value: '1', show: true },
       team: { label: 'Scrum team', id: '', value: '', show: false },
       epic: { label: 'Epic', id: '', value: '', show: true },
+      // Story only (types: which issue types the field applies to; empty = all).
+      fixVersions: { label: 'Fix Version/s', id: 'fixVersions', value: '', show: true, types: ['Story'] },
+      nft: { label: 'NFT Required', id: '', value: '', show: true, types: ['Story'] },
     },
     // Any other field a transition demands: { id, label, value }. Filled the
     // same way. The pane adds to this list when you tick "remember".
@@ -129,14 +132,17 @@ var JiraMoverCore = (function () {
   function defaultsFor(settings, issue) {
     var out = {};
     var title = (issue && issue.summary) || '';
-    var put = function (id, label, value, show) {
+    var type = (issue && issue.type) || '';
+    var applies = function (types) { if (!types || !types.length) return true; for (var k = 0; k < types.length; k++) if (same(types[k], type)) return true; return false; };
+    var put = function (id, label, value, show, types) {
       id = String(id || '').trim();
-      if (!id || String(value == null ? '' : value).trim() === '') return;
+      if (!id || !applies(types)) return;
+      if (String(value == null ? '' : value).trim() === '') { if (show !== false) out[id] = { label: label || id, raw: '', show: true, empty: true }; return; }   // shown, nothing to fill
       out[id] = { label: label || id, raw: String(value).replace(/<ticket title>|<task name>/gi, title), show: show !== false };
     };
     var f = settings.fields || {};
-    Object.keys(f).forEach(function (k) { put(f[k].id, f[k].label, f[k].value, f[k].show); });
-    (settings.extra || []).forEach(function (e) { put(e.id, e.label, e.value, e.show); });
+    Object.keys(f).forEach(function (k) { put(f[k].id, f[k].label, f[k].value, f[k].show, f[k].types); });
+    (settings.extra || []).forEach(function (e) { put(e.id, e.label, e.value, e.show, e.types); });
     return out;
   }
 
@@ -152,7 +158,7 @@ var JiraMoverCore = (function () {
       var meta = screen[id] || {};
       var has = !isEmpty(values ? values[id] : undefined);
       var raw = typed && typed[id] != null && String(typed[id]).trim() !== '' ? typed[id]
-        : defaults[id] ? defaults[id].raw : null;
+        : defaults[id] && !defaults[id].empty ? defaults[id].raw : null;
       if (has && !(settings.overwrite && raw != null) && !(typed && typed[id] != null && String(typed[id]).trim() !== '')) return;
       if (raw == null) {
         // Jira fills these itself or they have a server default.
@@ -183,7 +189,7 @@ var JiraMoverCore = (function () {
       if (t == null && !isEmpty(values ? values[id] : undefined) && !settings.overwrite) return;
       var meta = editmeta && editmeta[id];
       if (editmeta && !meta) return;               // not editable on this ticket type
-      var raw = t != null ? t : defaults[id] ? defaults[id].raw : null;
+      var raw = t != null ? t : defaults[id] && !defaults[id].empty ? defaults[id].raw : null;
       if (raw == null) return;
       var v = shape(raw, meta);
       if (v !== undefined && !(Array.isArray(v) && !v.length)) out[id] = v;
@@ -207,6 +213,7 @@ var JiraMoverCore = (function () {
     points: [/^story points$/i, /^story point estimate$/i, /story point/i],
     team: [/^scrum[ -]?team$/i, /scrum[ -]?team/i, /^team$/i],
     epic: [/^epic link$/i, /^parent link$/i],
+    nft: [/^nft required$/i, /nft/i],
   };
   function detect(fields) {
     var out = {};
@@ -242,9 +249,9 @@ var JiraMoverCore = (function () {
     if (saved.primary) d.primary = String(saved.primary);
     Object.keys(d.fields).forEach(function (k) {
       var s = (saved.fields || {})[k];
-      if (s) { if (s.id != null) d.fields[k].id = String(s.id).trim(); if (s.value != null) d.fields[k].value = String(s.value); if (typeof s.show === 'boolean') d.fields[k].show = s.show; }
+      if (s) { if (s.id != null) d.fields[k].id = String(s.id).trim(); if (s.value != null) d.fields[k].value = String(s.value); if (typeof s.show === 'boolean') d.fields[k].show = s.show; if (Array.isArray(s.types)) d.fields[k].types = s.types.map(function (t) { return String(t).trim(); }).filter(Boolean); }
     });
-    if (Array.isArray(saved.extra)) d.extra = saved.extra.filter(function (e) { return e && e.id; }).map(function (e) { return { id: String(e.id).trim(), label: String(e.label || e.id), value: String(e.value == null ? '' : e.value), show: e.show !== false }; });
+    if (Array.isArray(saved.extra)) d.extra = saved.extra.filter(function (e) { return e && e.id; }).map(function (e) { return { id: String(e.id).trim(), label: String(e.label || e.id), value: String(e.value == null ? '' : e.value), show: e.show !== false, types: Array.isArray(e.types) ? e.types.map(function (t) { return String(t).trim(); }).filter(Boolean) : [] }; });
     if (typeof saved.overwrite === 'boolean') d.overwrite = saved.overwrite;
     if (typeof saved.reloadAfter === 'boolean') d.reloadAfter = saved.reloadAfter;
     return d;
@@ -468,7 +475,7 @@ var JiraMoverCore = (function () {
         var m = (state.missing || []).filter(function (x) { return x.id === id; })[0];
         var known = Object.keys(s.fields).filter(function (k) { return s.fields[k].id === id; })[0];
         if (known) s.fields[known].value = typed[id];
-        else { s.extra = s.extra.filter(function (e) { return e.id !== id; }); s.extra.push({ id: id, label: (m && m.label) || id, value: typed[id], show: true }); }
+        else { s.extra = s.extra.filter(function (e) { return e.id !== id; }); s.extra.push({ id: id, label: (m && m.label) || id, value: typed[id], show: true, types: [] }); }
       });
       save(s);
     }
@@ -576,16 +583,26 @@ var JiraMoverCore = (function () {
       var value = state.draft[id] != null ? state.draft[id] : prefill;
       var r = el('div', 'display:flex;align-items:center;gap:8px;padding:3px 0;');
       r.appendChild(el('span', 'color:#6b778c;font-size:12px;flex:0 0 108px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', defs[id].label, { title: defs[id].label + (has ? ' — the ticket already has: ' + current(id) : ' — from settings') }));
-      var inp = el(/acceptance/i.test(defs[id].label) ? 'textarea' : 'input', INP + 'flex:1;font-size:12.5px;padding:5px 8px;' + (has && state.draft[id] == null ? 'background:#f4f5f7;' : ''));
+      var meta = (i.editmeta && i.editmeta[id]) || {};
+      var choices = (meta.allowedValues || []).map(function (a) { return a.value || a.name || a.key || String(a.id); });
+      var inp;
+      if (choices.length) {
+        inp = el('select', INP + 'flex:1;font-size:12.5px;padding:5px 8px;' + (has && state.draft[id] == null ? 'background:#f4f5f7;' : ''));
+        inp.appendChild(el('option', null, '— none —', { value: '' }));
+        choices.forEach(function (c) { inp.appendChild(el('option', null, c, { value: c })); });
+        if (value && choices.indexOf(value) === -1) inp.appendChild(el('option', null, value, { value: value }));
+      } else inp = el(/acceptance/i.test(defs[id].label) ? 'textarea' : 'input', INP + 'flex:1;font-size:12.5px;padding:5px 8px;' + (has && state.draft[id] == null ? 'background:#f4f5f7;' : ''));
       inp.value = value; inp.setAttribute('data-field-id', id);
       if (inp.tagName === 'TEXTAREA') inp.rows = 2;
+      if (inp.tagName === 'SELECT') inp.addEventListener('change', function () { state.draft[id] = inp.value; });
       inp.addEventListener('input', function () { state.draft[id] = inp.value; });
       inp.addEventListener('keydown', function (e) { e.stopPropagation(); });
       r.appendChild(inp);
       if (state.draft[id] != null) r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:14px;', '↺', { title: 'Back to the default', onclick: function () { delete state.draft[id]; render(); } }));
       pane.appendChild(r);
     });
-    if (hidden.length) pane.appendChild(el('div', 'color:#97a0af;font-size:11.5px;margin-top:4px;', 'Also filled: ' + hidden.map(function (id) { return defs[id].label + ' = ' + defs[id].raw; }).join(' · ')));
+    var alsoFilled = hidden.filter(function (id) { return !defs[id].empty; });
+    if (alsoFilled.length) pane.appendChild(el('div', 'color:#97a0af;font-size:11.5px;margin-top:4px;', 'Also filled: ' + alsoFilled.map(function (id) { return defs[id].label + ' = ' + defs[id].raw; }).join(' · ')));
 
     if (state.log.length) {
       var lg = el('div', 'margin-top:12px;padding-top:10px;border-top:1px solid #ebecf0;font-size:12px;');
@@ -629,7 +646,7 @@ var JiraMoverCore = (function () {
       status.textContent = 'Asking Jira…'; status.style.color = '#6b778c';
       api('GET', '/field').then(function (list) {
         var found = C.detect(list), names = [];
-        Object.keys(found).forEach(function (k) { s.fields[k].id = found[k].id; names.push(found[k].name); });
+        Object.keys(found).forEach(function (k) { if (s.fields[k]) { s.fields[k].id = found[k].id; names.push(found[k].name); } });
         save(s); render();
         var st2 = pane.querySelector('[data-status]');
         if (st2) { st2.textContent = names.length ? '✓ Found: ' + names.join(', ') : 'Nothing matched by name — type the ids by hand'; st2.style.color = names.length ? '#006644' : '#974f0c'; }
@@ -647,15 +664,19 @@ var JiraMoverCore = (function () {
       r.appendChild(eye);
       var id = el('input', INP + 'flex:0 0 132px;width:132px;font-family:ui-monospace,Menlo,monospace;font-size:12px;'); id.value = obj.id || ''; id.placeholder = 'customfield_…';
       var v = el('input', INP + 'flex:1;'); v.value = obj.value == null ? '' : obj.value; v.placeholder = 'default value';
+      var ty = el('input', INP + 'flex:0 0 64px;width:64px;font-size:11.5px;'); ty.value = (obj.types || []).join(', '); ty.placeholder = 'all types'; ty.title = 'Issue types this field applies to, comma separated (empty = every type)';
+      ty.addEventListener('change', function () { obj.types = ty.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean); save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
       id.addEventListener('change', function () { obj.id = id.value.trim(); save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
       v.addEventListener('change', function () { obj.value = v.value; save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
-      r.appendChild(id); r.appendChild(v);
+      r.appendChild(id); r.appendChild(v); r.appendChild(ty);
       return r;
     };
     pane.appendChild(pair('Acceptance criteria', s.fields.acceptance, '<TICKET TITLE> = the title'));
     pane.appendChild(pair('Story points', s.fields.points));
     pane.appendChild(pair('Scrum team', s.fields.team));
     pane.appendChild(pair('Epic', s.fields.epic, 'epic key'));
+    pane.appendChild(pair('Fix Version/s', s.fields.fixVersions, 'version name'));
+    pane.appendChild(pair('NFT Required', s.fields.nft, 'one of Jira\'s choices'));
 
     pane.appendChild(el('div', 'font-weight:800;margin-top:14px;', 'Other required fields'));
     pane.appendChild(el('div', 'font-size:12px;color:#6b778c;', 'Added when a move asks for a field and you tick "remember". The checkbox in front of each field shows or hides it on the main screen.'));
@@ -664,7 +685,7 @@ var JiraMoverCore = (function () {
       r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:16px;align-self:center;', '×', { title: 'Remove', onclick: function () { s.extra.splice(idx, 1); save(s); render(); } }));
       pane.appendChild(r);
     });
-    pane.appendChild(el('button', BTN + 'margin-top:8px;padding:4px 9px;font-size:12px;', '+ Add a field', { onclick: function () { s.extra.push({ id: 'customfield_', label: 'Field', value: '', show: true }); save(s); render(); } }));
+    pane.appendChild(el('button', BTN + 'margin-top:8px;padding:4px 9px;font-size:12px;', '+ Add a field', { onclick: function () { s.extra.push({ id: 'customfield_', label: 'Field', value: '', show: true, types: [] }); save(s); render(); } }));
 
     var chk = function (label, key) {
       var l = el('label', 'display:flex;align-items:flex-start;gap:7px;margin-top:10px;cursor:pointer;font-size:12.5px;');
