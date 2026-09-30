@@ -22,8 +22,9 @@ refreshes, and the pane opens by itself when you click a ticket.
 Acceptance criteria, story points, scrum team and epic for every type. For
 a **Story** also **Fix Version/s** and **NFT Required**; a field's *types*
 box in settings says which issue types it applies to (empty = all). Fields
-that are lists in Jira (NFT Required, Fix Version/s, scrum team) show as a
-dropdown of Jira's own choices on the main screen.
+that are lists in Jira (Fix Version/s, NFT Required, scrum team) get a
+searchable dropdown of Jira's own choices, like Jira's pickers: type to
+filter, ↑↓ Enter to pick; Fix Version/s collects several as chips.
 
 ## Issue types
 

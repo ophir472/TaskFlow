@@ -233,6 +233,68 @@
     });
   }
 
+  // A searchable dropdown like Jira's own pickers: type to filter Jira's
+  // choices, ↑↓ Enter to pick, Esc to close; multi-valued fields (Fix
+  // Version/s) collect chips. The value lives in a hidden input (data-field-id
+  // / data-missing-id) as a comma-separated string, the way the move reads it.
+  function picker(opts) {   // { choices, value, multi, attr, id, onChange, grey }
+    var wrap = el('div', 'flex:1;min-width:0;position:relative;');
+    var hidden = el('input'); hidden.type = 'hidden'; hidden.setAttribute(opts.attr, opts.id); hidden.value = opts.value || '';
+    wrap.appendChild(hidden);
+    var box = el('div', INP + 'display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:3px 6px;min-height:30px;cursor:text;font-size:12.5px;' + (opts.grey ? 'background:#f4f5f7;' : ''));
+    var search = el('input', 'flex:1;min-width:60px;border:none;outline:none;background:transparent;font:inherit;color:inherit;padding:3px 2px;');
+    search.setAttribute('data-search-for', opts.id); search.placeholder = 'Search…';
+    var list = el('div', 'position:absolute;left:0;right:0;top:100%;z-index:5;max-height:180px;overflow:auto;background:#fff;border:1px solid #c1c7d0;border-radius:6px;box-shadow:0 8px 24px rgba(9,30,66,.2);display:none;');
+    var hi = 0;
+    var selected = function () { return hidden.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean); };
+    var setValue = function (arr) { hidden.value = arr.join(', '); opts.onChange(hidden.value); draw(); };
+    var pick = function (c) { if (opts.multi) { var cur = selected(); if (cur.indexOf(c) === -1) cur.push(c); setValue(cur); } else setValue([c]); search.value = ''; close(); if (opts.multi) search.focus(); };
+    var close = function () { list.style.display = 'none'; };
+    var openList = function () { hi = 0; fill(); list.style.display = list.childNodes.length ? 'block' : 'none'; };
+    var fill = function () {
+      while (list.firstChild) list.removeChild(list.firstChild);
+      var q = search.value.trim().toLowerCase(), cur = selected();
+      opts.choices.filter(function (c) { return (!q || c.toLowerCase().indexOf(q) !== -1) && !(opts.multi && cur.indexOf(c) !== -1); }).slice(0, 60).forEach(function (c, idx) {
+        var row = el('div', 'padding:6px 9px;cursor:pointer;font-size:12.5px;' + (idx === hi ? 'background:#deebff;' : ''), c, { 'data-choice': c });
+        row.addEventListener('mousedown', function (e) { e.preventDefault(); pick(c); });
+        list.appendChild(row);
+      });
+      if (!list.childNodes.length) list.appendChild(el('div', 'padding:6px 9px;color:#97a0af;font-size:12px;', q ? 'No match' : 'Nothing left to add'));
+    };
+    var draw = function () {
+      while (box.firstChild) box.removeChild(box.firstChild);
+      var cur = selected();
+      if (opts.multi) cur.forEach(function (c) {
+        var chip = el('span', 'display:inline-flex;align-items:center;gap:4px;padding:1px 6px;border-radius:4px;background:#deebff;color:#0747a6;font-size:12px;', c);
+        chip.appendChild(el('span', 'cursor:pointer;font-weight:700;', '×', { title: 'Remove', onclick: function () { setValue(cur.filter(function (x) { return x !== c; })); } }));
+        box.appendChild(chip);
+      });
+      else if (cur[0]) {
+        var one = el('span', 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', cur[0]);
+        box.appendChild(one);
+        box.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-weight:700;padding:0 2px;', '×', { title: 'Clear', onclick: function (e) { e.stopPropagation(); setValue([]); search.focus(); } }));
+      }
+      if (opts.multi || !cur[0]) box.appendChild(search);
+      box.appendChild(el('span', 'color:#6b778c;font-size:10px;pointer-events:none;', '▾'));
+    };
+    box.addEventListener('mousedown', function (e) { if (e.target === box || e.target === search) { if (!box.contains(search)) { setValue([]); } setTimeout(function () { search.focus(); openList(); }, 0); } });
+    search.addEventListener('input', function () { hi = 0; fill(); list.style.display = 'block'; });
+    search.addEventListener('focus', openList);
+    search.addEventListener('blur', function () { setTimeout(close, 120); });
+    search.addEventListener('keydown', function (e) {
+      e.stopPropagation();
+      var rows = list.querySelectorAll('[data-choice]');
+      if (e.key === 'ArrowDown') { e.preventDefault(); hi = Math.min(rows.length - 1, hi + 1); fill(); list.style.display = 'block'; }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); hi = Math.max(0, hi - 1); fill(); }
+      else if (e.key === 'Enter') { e.preventDefault(); var r = list.querySelectorAll('[data-choice]')[hi]; if (r) pick(r.getAttribute('data-choice')); }
+      else if (e.key === 'Escape') { search.value = ''; close(); search.blur(); }
+      else if (e.key === 'Backspace' && !search.value && opts.multi) { var cur = selected(); if (cur.length) setValue(cur.slice(0, -1)); }
+    });
+    draw();
+    wrap.appendChild(box); wrap.appendChild(list);
+    return wrap;
+  }
+
   function header(title) {
     var h = el('div', 'display:flex;align-items:center;gap:8px;margin:-14px -16px 8px;padding:10px 16px 8px;cursor:move;user-select:none;border-bottom:1px solid #ebecf0;background:#f4f5f7;border-radius:12px 12px 0 0;position:sticky;top:-14px;z-index:1;');
     h.title = 'Drag to move · drag the bottom-right corner to resize · double-click to reset';
@@ -273,11 +335,9 @@
         box.appendChild(el('div', LBL, m.label));
         var inp;
         if (m.allowed && m.allowed.length) {
-          inp = el('select', INP);
-          inp.appendChild(el('option', null, '— choose —', { value: '' }));
-          m.allowed.forEach(function (a) { inp.appendChild(el('option', null, a, { value: a })); });
-        } else inp = el('input', INP);
-        inp.setAttribute('data-missing-id', m.id);
+          var meta2 = (state.issue.editmeta && state.issue.editmeta[m.id]) || {};
+          inp = picker({ choices: m.allowed, value: '', multi: (meta2.schema || {}).type === 'array', attr: 'data-missing-id', id: m.id, onChange: function () {} });
+        } else { inp = el('input', INP); inp.setAttribute('data-missing-id', m.id); }
         box.appendChild(inp);
       });
       var rl = el('label', 'display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;cursor:pointer;');
@@ -325,16 +385,14 @@
       var choices = (meta.allowedValues || []).map(function (a) { return a.value || a.name || a.key || String(a.id); });
       var inp;
       if (choices.length) {
-        inp = el('select', INP + 'flex:1;font-size:12.5px;padding:5px 8px;' + (has && state.draft[id] == null ? 'background:#f4f5f7;' : ''));
-        inp.appendChild(el('option', null, '— none —', { value: '' }));
-        choices.forEach(function (c) { inp.appendChild(el('option', null, c, { value: c })); });
-        if (value && choices.indexOf(value) === -1) inp.appendChild(el('option', null, value, { value: value }));
-      } else inp = el(/acceptance/i.test(defs[id].label) ? 'textarea' : 'input', INP + 'flex:1;font-size:12.5px;padding:5px 8px;' + (has && state.draft[id] == null ? 'background:#f4f5f7;' : ''));
-      inp.value = value; inp.setAttribute('data-field-id', id);
-      if (inp.tagName === 'TEXTAREA') inp.rows = 2;
-      if (inp.tagName === 'SELECT') inp.addEventListener('change', function () { state.draft[id] = inp.value; });
-      inp.addEventListener('input', function () { state.draft[id] = inp.value; });
-      inp.addEventListener('keydown', function (e) { e.stopPropagation(); });
+        inp = picker({ choices: choices, value: value, multi: (meta.schema || {}).type === 'array', attr: 'data-field-id', id: id, grey: has && state.draft[id] == null, onChange: function (v) { state.draft[id] = v; } });
+      } else {
+        inp = el(/acceptance/i.test(defs[id].label) ? 'textarea' : 'input', INP + 'flex:1;font-size:12.5px;padding:5px 8px;' + (has && state.draft[id] == null ? 'background:#f4f5f7;' : ''));
+        inp.value = value; inp.setAttribute('data-field-id', id);
+        if (inp.tagName === 'TEXTAREA') inp.rows = 2;
+        inp.addEventListener('input', function () { state.draft[id] = inp.value; });
+        inp.addEventListener('keydown', function (e) { e.stopPropagation(); });
+      }
       r.appendChild(inp);
       if (state.draft[id] != null) r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:14px;', '↺', { title: 'Back to the default', onclick: function () { delete state.draft[id]; render(); } }));
       pane.appendChild(r);
