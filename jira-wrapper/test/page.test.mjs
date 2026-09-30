@@ -10,8 +10,8 @@ if (!CHROME) { console.log('SKIP page test — no Chrome found'); process.exit(0
 execSync('node build.mjs', { stdio: 'ignore' });
 const script = readFileSync('dist/jira-mover.user.js', 'utf8');
 
-const FLOW = ['New', 'To do', 'In progress', 'Done'];
-const issue = { key: 'PROJ-1', fields: { summary: 'Fix <b>login</b>', status: { name: 'New' }, issuetype: { name: 'Story' }, cf_ac: null, cf_sp: null, cf_team: null, cf_epic: null, cf_root: null, cf_sev: null, cf_keep: 'mine' } };
+const FLOW = ['To do', 'In assessment', 'In progress', 'Done'];   // the Story flow
+const issue = { key: 'PROJ-1', fields: { summary: 'Fix <b>login</b>', status: { name: 'To do' }, issuetype: { name: 'Story' }, cf_ac: null, cf_sp: null, cf_team: null, cf_epic: null, cf_root: null, cf_sev: null, cf_keep: 'mine' } };
 const calls = [];
 const screenFor = to => to !== 'In progress' ? {} : {
   cf_ac: { required: true, name: 'Acceptance Criteria', schema: { type: 'string' } },
@@ -58,11 +58,17 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><meta name="appli
     const r2 = pane().getBoundingClientRect(); out.clamped = r2.left >= 0 && r2.top >= 0;
     fire(bar, 'mousedown', r2.left + 40, r2.top + 12); fire(document, 'mousemove', r2.left + 140, r2.top + 72); fire(document, 'mouseup', r2.left + 140, r2.top + 72);
     out.geom = JSON.parse(localStorage.getItem('jira-mover-geom-v1'));
+    // main-screen fields: prefilled from settings; hidden team not shown; change story points to 3
+    out.fieldsShown = [...pane().querySelectorAll('[data-field-id]')].map(i => i.getAttribute('data-field-id'));
+    out.prefill = Object.fromEntries([...pane().querySelectorAll('[data-field-id]')].map(i => [i.getAttribute('data-field-id'), i.value]));
+    const sp = pane().querySelector('[data-field-id="cf_sp"]'); sp.value = '3'; sp.dispatchEvent(new Event('input', { bubbles: true }));
+    out.flowButtons = [...pane().querySelectorAll('button')].map(b => b.textContent).filter(t => /^(Move to |Already |● )?(To do|In assessment|In progress|Done|New)$/.test(t));
     big.isConnected ? big.click() : (await again()).click();
     const sev = await until(() => pane().querySelector('[data-missing-id="cf_sev"]'), 'asks for Severity');
     out.asked1 = [...pane().querySelectorAll('[data-missing-id]')].map(i => i.getAttribute('data-missing-id'));
     out.sevIsSelect = sev.tagName === 'SELECT' && [...sev.options].map(o => o.value).join() === ',High,Low';
     out.statusWhenAsked1 = (await (await fetch('/rest/api/2/issue/PROJ-1')).json()).fields.status.name;
+    out.spStillEdited = pane().querySelector('[data-field-id="cf_sp"]').value;
     sev.value = 'High';
     (await again()).click();
     const inp = await until(() => pane().querySelector('[data-missing-id="cf_root"]'), 'asks for Root cause');
@@ -91,8 +97,8 @@ const server = http.createServer((req, res) => {
       const b = JSON.parse(body); const tr = transitions().find(t => t.id === b.transition.id);
       if (!tr) return send(400, { errorMessages: ['Transition not valid from ' + issue.fields.status.name], errors: {} });
       const after = { ...issue.fields, ...(b.fields || {}) };
-      // workflow validator on New → To do: the TICKET must have story points and a severity (neither is on a screen)
-      if (tr.to.name === 'To do') { const v = {}; if (after.cf_sp == null) v.cf_sp = 'Story Points is required.'; if (after.cf_sev == null) v.cf_sev = 'Severity is required.'; if (Object.keys(v).length) return send(400, { errorMessages: [], errors: v }); }
+      // workflow validator on To do → In assessment: the TICKET must have story points and a severity (neither is on a screen)
+      if (tr.to.name === 'In assessment') { const v = {}; if (after.cf_sp == null) v.cf_sp = 'Story Points is required.'; if (after.cf_sev == null) v.cf_sev = 'Severity is required.'; if (Object.keys(v).length) return send(400, { errorMessages: [], errors: v }); }
       const lacking = Object.entries(tr.fields).filter(([id, m]) => m.required && (after[id] == null || after[id] === ''));
       if (lacking.length) return send(400, { errorMessages: [], errors: Object.fromEntries(lacking.map(([id, m]) => [id, m.name + ' is required'])) });
       Object.assign(issue.fields, b.fields || {}); issue.fields.status = { name: tr.to.name }; return send(204);
@@ -116,14 +122,17 @@ eq('on a ticket page the pane opens by itself; clicking the card keeps it on tha
 eq('ticket title is shown as text, never parsed as HTML', run.summaryAsText, true);
 eq('asked only for the one field with no default (not the one already set)', run.askedOnly, ['cf_root']);
 eq('ticket ended In progress', issue.fields.status.name, 'In progress');
-eq('fields filled from defaults, shaped per field type', [issue.fields.cf_ac, issue.fields.cf_sp, issue.fields.cf_team, issue.fields.cf_root], ['Fix <b>login</b>', 1, { id: '101' }, 'Config drift']);
+eq('fields filled from defaults, shaped per field type — story points as edited on the main screen', [issue.fields.cf_ac, issue.fields.cf_sp, issue.fields.cf_team, issue.fields.cf_root], ['Fix <b>login</b>', 3, { id: '101' }, 'Config drift']);
+eq('main screen shows acceptance criteria, story points, epic (team hidden), prefilled from settings', [run.fieldsShown, run.prefill], [['cf_ac', 'cf_sp', 'cf_epic'], { cf_ac: 'Fix <b>login</b>', cf_sp: '1', cf_epic: 'PROJ-12' }]);
+eq('an edit on the main screen survives the pane re-rendering while it asks', run.spStillEdited, '3');
+eq('a Story gets the Story flow buttons', run.flowButtons, ['Move to In progress', '● To do', 'In assessment', 'Done']);
 eq('epic (on no screen) was set on the ticket', issue.fields.cf_epic, 'PROJ-12');
 eq('existing value untouched', issue.fields.cf_keep, 'mine');
-eq('typed values remembered as defaults', run.remembered, [{ id: 'cf_sev', label: 'Severity', value: 'High' }, { id: 'cf_root', label: 'Root cause', value: 'Config drift' }]);
+eq('typed values remembered as defaults (shown on the main screen from now on)', run.remembered, [{ id: 'cf_sev', label: 'Severity', value: 'High', show: true }, { id: 'cf_root', label: 'Root cause', value: 'Config drift', show: true }]);
 const posts = calls.filter(c => c.startsWith('POST'));
-eq('walked New → To do → In progress', [...new Set(posts.map(p => JSON.parse(p.slice(p.indexOf('{'))).transition.id))], ['2', '3']);
+eq('Story walked To do → In assessment → In progress', [...new Set(posts.map(p => JSON.parse(p.slice(p.indexOf('{'))).transition.id))], ['2', '3']);
 eq('the ticket was FILLED before the first move', (() => { const firstPost = calls.findIndex(c => c.startsWith('POST')); return ['cf_ac', 'cf_sp', 'cf_team', 'cf_epic'].map(id => { const i = calls.findIndex(c => c.startsWith('PUT') && c.includes('"' + id + '"')); return i !== -1 && i < firstPost; }); })(), [true, true, true, true]);
-eq('validator refusal (field on no screen) became a question, with Jira\'s own choices', [run.asked1, run.sevIsSelect, run.statusWhenAsked1], [['cf_sev'], true, 'New']);
+eq('validator refusal (field on no screen) became a question, with Jira\'s own choices', [run.asked1, run.sevIsSelect, run.statusWhenAsked1], [['cf_sev'], true, 'To do']);
 eq('severity written as Jira\'s option id', issue.fields.cf_sev, { id: '7' });
 eq('pane dragged by its title bar', run.dragged, [-200, 100]);
 eq('pane can never be dragged off-screen', run.clamped, true);

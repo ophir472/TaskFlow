@@ -17,13 +17,24 @@ bar. On any Jira page, click the bookmark.
 `dist/jira-mover.user.js`. It wakes up only on Jira pages, survives page
 refreshes, and the pane opens by itself when you click a ticket.
 
+## Issue types
+
+A Task follows `New > To do > In progress > Done`. A **Story** follows
+`To do > In assessment > In progress > Done`. Settings → *Flows by issue
+type* holds these; add a row for any other type. The same fields are filled
+for every type.
+
 ## First use
 
 1. Open the pane, press **⚙**, then **Detect**. It finds the field ids of
    acceptance criteria, story points, scrum team and epic by name.
 2. Type your default scrum team and epic. Story points default to 1 and
    acceptance criteria to the ticket's title.
-3. Click a ticket, press **Move to In progress**.
+3. Click a ticket. The main screen shows acceptance criteria, story points
+   and epic, prefilled from settings (or the ticket's own value when it has
+   one). Change any of them if you like, then press **Move to In progress**.
+   The checkbox in front of each field in settings shows or hides it here;
+   hidden fields are still filled.
 
 If Jira asks for a field that has no default, the pane shows an input for it.
 Tick "remember" and it is never asked again.

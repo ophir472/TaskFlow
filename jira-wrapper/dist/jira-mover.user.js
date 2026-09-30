@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Mover
 // @namespace    jira-mover
-// @version      1.1.0
+// @version      1.2.0
 // @description  Click a ticket, move it to In progress in one click — required fields filled from your defaults
 // @match        *://*/browse/*
 // @match        *://*/secure/*
@@ -28,13 +28,15 @@ var JiraMoverCore = (function () {
 
   var DEFAULT_SETTINGS = {
     flow: ['New', 'To do', 'In progress', 'Done'],
+    // Issue types with their own flow (matched by name); anything else uses `flow`.
+    flows: { Story: ['To do', 'In assessment', 'In progress', 'Done'] },
     primary: 'In progress',
     // The four known fields. id = customfield_12345 (Detect fills it).
     fields: {
-      acceptance: { label: 'Acceptance criteria', id: '', value: '<TICKET TITLE>' },
-      points: { label: 'Story points', id: '', value: '1' },
-      team: { label: 'Scrum team', id: '', value: '' },
-      epic: { label: 'Epic', id: '', value: '' },
+      acceptance: { label: 'Acceptance criteria', id: '', value: '<TICKET TITLE>', show: true },
+      points: { label: 'Story points', id: '', value: '1', show: true },
+      team: { label: 'Scrum team', id: '', value: '', show: false },
+      epic: { label: 'Epic', id: '', value: '', show: true },
     },
     // Any other field a transition demands: { id, label, value }. Filled the
     // same way. The pane adds to this list when you tick "remember".
@@ -42,6 +44,13 @@ var JiraMoverCore = (function () {
     overwrite: false,        // false = fill only what is empty
     reloadAfter: true,       // refresh the page after a successful move
   };
+
+  // The flow this ticket follows: its issue type's own, else the default.
+  function flowFor(settings, issueType) {
+    var flows = settings.flows || {};
+    for (var k in flows) if (same(k, issueType) && flows[k] && flows[k].length >= 2) return flows[k];
+    return settings.flow;
+  }
 
   function norm(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/[\s_-]+/g, ' '); }
   function same(a, b) { return !!norm(a) && norm(a) === norm(b); }
@@ -111,14 +120,14 @@ var JiraMoverCore = (function () {
   function defaultsFor(settings, issue) {
     var out = {};
     var title = (issue && issue.summary) || '';
-    var put = function (id, label, value) {
+    var put = function (id, label, value, show) {
       id = String(id || '').trim();
       if (!id || String(value == null ? '' : value).trim() === '') return;
-      out[id] = { label: label || id, raw: String(value).replace(/<ticket title>|<task name>/gi, title) };
+      out[id] = { label: label || id, raw: String(value).replace(/<ticket title>|<task name>/gi, title), show: show !== false };
     };
     var f = settings.fields || {};
-    Object.keys(f).forEach(function (k) { put(f[k].id, f[k].label, f[k].value); });
-    (settings.extra || []).forEach(function (e) { put(e.id, e.label, e.value); });
+    Object.keys(f).forEach(function (k) { put(f[k].id, f[k].label, f[k].value, f[k].show); });
+    (settings.extra || []).forEach(function (e) { put(e.id, e.label, e.value, e.show); });
     return out;
   }
 
@@ -209,19 +218,24 @@ var JiraMoverCore = (function () {
   function mergeSettings(saved) {
     var d = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
     if (!saved || typeof saved !== 'object') return d;
-    if (Array.isArray(saved.flow) && saved.flow.filter(Boolean).length >= 2) d.flow = saved.flow.map(function (s) { return String(s).trim(); }).filter(Boolean);
+    var cleanFlow = function (f) { return Array.isArray(f) ? f.map(function (s) { return String(s == null ? '' : s).trim(); }).filter(Boolean) : []; };
+    if (cleanFlow(saved.flow).length >= 2) d.flow = cleanFlow(saved.flow);
+    if (saved.flows && typeof saved.flows === 'object') {
+      d.flows = {};
+      Object.keys(saved.flows).forEach(function (k) { var f = cleanFlow(saved.flows[k]); if (String(k).trim() && f.length >= 2) d.flows[String(k).trim()] = f; });
+    }
     if (saved.primary) d.primary = String(saved.primary);
     Object.keys(d.fields).forEach(function (k) {
       var s = (saved.fields || {})[k];
-      if (s) { if (s.id != null) d.fields[k].id = String(s.id).trim(); if (s.value != null) d.fields[k].value = String(s.value); }
+      if (s) { if (s.id != null) d.fields[k].id = String(s.id).trim(); if (s.value != null) d.fields[k].value = String(s.value); if (typeof s.show === 'boolean') d.fields[k].show = s.show; }
     });
-    if (Array.isArray(saved.extra)) d.extra = saved.extra.filter(function (e) { return e && e.id; }).map(function (e) { return { id: String(e.id).trim(), label: String(e.label || e.id), value: String(e.value == null ? '' : e.value) }; });
+    if (Array.isArray(saved.extra)) d.extra = saved.extra.filter(function (e) { return e && e.id; }).map(function (e) { return { id: String(e.id).trim(), label: String(e.label || e.id), value: String(e.value == null ? '' : e.value), show: e.show !== false }; });
     if (typeof saved.overwrite === 'boolean') d.overwrite = saved.overwrite;
     if (typeof saved.reloadAfter === 'boolean') d.reloadAfter = saved.reloadAfter;
     return d;
   }
 
-  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, missingFromErrors: missingFromErrors, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
+  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, flowFor: flowFor, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, missingFromErrors: missingFromErrors, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
 })();
 
 // Jira Mover — the part that lives in the Jira page: the pane, the settings
@@ -314,7 +328,8 @@ var JiraMoverCore = (function () {
         if (guard <= 0) throw new Error('Stopped at "' + issue.status + '" before reaching "' + target + '"');
         return getTransitions(key).then(function (trs) {
           var offered = trs.map(function (t) { return (t.to && t.to.name) || ''; }).filter(Boolean);
-          var next = C.nextHop(settings.flow, issue.status, target, offered);
+          var flow = C.flowFor(settings, issue.type);
+          var next = C.nextHop(flow, issue.status, target, offered);
           if (!next) throw new Error('Jira offers no way from "' + issue.status + '" toward "' + target + '" (offered: ' + (offered.join(', ') || 'none') + ')');
           var tr = trs.filter(function (t) { return C.same(t.to && t.to.name, next); })[0];
           var plan = C.planHop(settings, issue, tr.fields || {}, issue.values, typed);
@@ -336,7 +351,7 @@ var JiraMoverCore = (function () {
         });
       });
     }
-    return fill().then(function () { return step(settings.flow.length + 2); });
+    return fill().then(function () { return step(settings.flow.length + 4); });
   }
   function labelOf(id) {
     var f = settings.fields, k;
@@ -400,7 +415,7 @@ var JiraMoverCore = (function () {
     var r = pane.getBoundingClientRect(); geom.left = Math.round(r.left); geom.top = Math.round(r.top); saveGeom();
   }, true);
 
-  var state = { key: null, issue: null, busy: false, log: [], missing: null, pendingTarget: null, view: 'ticket', loadErr: null };
+  var state = { key: null, issue: null, busy: false, log: [], missing: null, pendingTarget: null, view: 'ticket', loadErr: null, draft: {} };
 
   function show(on) { pane.style.display = on ? 'block' : 'none'; if (on) { applyGeom(geom); render(); setTimeout(function () { geomReady = true; }, 0); } }
   function visible() { return pane.style.display !== 'none'; }
@@ -408,7 +423,7 @@ var JiraMoverCore = (function () {
   function open(key) {
     if (!key) return;
     settings = load();   // another Jira tab may have changed them
-    if (state.key !== key) { state.key = key; state.issue = null; state.log = []; state.missing = null; state.pendingTarget = null; state.loadErr = null; }
+    if (state.key !== key) { state.key = key; state.issue = null; state.log = []; state.missing = null; state.pendingTarget = null; state.loadErr = null; state.draft = {}; }
     state.view = 'ticket';
     show(true);
     refresh();
@@ -425,6 +440,9 @@ var JiraMoverCore = (function () {
     if (state.busy || !state.key) return;
     settings = load();
     var typed = {};
+    // Field inputs on the main screen: only what you changed counts as typed
+    // (the rest are defaults, filled the normal way — empty fields only).
+    Object.keys(state.draft).forEach(function (id) { if (String(state.draft[id]).trim()) typed[id] = String(state.draft[id]).trim(); });
     Array.prototype.forEach.call(pane.querySelectorAll('[data-missing-id]'), function (inp) {
       if (inp.value.trim()) typed[inp.getAttribute('data-missing-id')] = inp.value.trim();
     });
@@ -435,14 +453,14 @@ var JiraMoverCore = (function () {
         var m = (state.missing || []).filter(function (x) { return x.id === id; })[0];
         var known = Object.keys(s.fields).filter(function (k) { return s.fields[k].id === id; })[0];
         if (known) s.fields[known].value = typed[id];
-        else { s.extra = s.extra.filter(function (e) { return e.id !== id; }); s.extra.push({ id: id, label: (m && m.label) || id, value: typed[id] }); }
+        else { s.extra = s.extra.filter(function (e) { return e.id !== id; }); s.extra.push({ id: id, label: (m && m.label) || id, value: typed[id], show: true }); }
       });
       save(s);
     }
     state.busy = true; state.missing = null; state.pendingTarget = target; state.log = [];
     render();
     move(state.key, target, typed, addLog).then(function (r) {
-      state.busy = false; state.pendingTarget = null;
+      state.busy = false; state.pendingTarget = null; state.draft = {};
       addLog('✓ ' + state.key + ' is now ' + r.status + (r.hops.length > 1 ? '  (' + r.hops.length + ' hops)' : ''), 'ok');
       refresh();
       if (r.hops.length && settings.reloadAfter && AUTO) { addLog('Refreshing the page…'); setTimeout(function () { location.reload(); }, 900); }
@@ -510,7 +528,8 @@ var JiraMoverCore = (function () {
     }
 
     // the moves — primary first, big
-    var primary = settings.flow.filter(function (s) { return C.same(s, settings.primary); })[0] || settings.flow[Math.min(2, settings.flow.length - 1)];
+    var flow = C.flowFor(settings, i.type);
+    var primary = flow.filter(function (s) { return C.same(s, settings.primary); })[0] || flow[Math.min(2, flow.length - 1)];
     var at = C.same(i.status, primary);
     var big = el('button', BTN + 'width:100%;padding:11px 10px;font-size:14px;border:none;color:#fff;background:' + (at ? '#97a0af' : '#0052cc') + ';' + (state.busy ? 'opacity:.6;cursor:wait;' : ''),
       state.busy && C.same(state.pendingTarget, primary) ? 'Moving…' : at ? 'Already ' + primary : 'Move to ' + primary,
@@ -518,7 +537,7 @@ var JiraMoverCore = (function () {
     if (at || state.busy) big.disabled = true;
     pane.appendChild(big);
     var row = el('div', 'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;');
-    settings.flow.forEach(function (s) {
+    flow.forEach(function (s) {
       if (C.same(s, primary)) return;
       var here = C.same(i.status, s);
       var b = el('button', BTN + 'flex:1;font-size:12px;' + (here ? 'background:#f4f5f7;color:#97a0af;cursor:default;' : '') + (state.busy ? 'opacity:.6;' : ''), here ? '● ' + s : s, { onclick: function () { if (!here) run(s); } });
@@ -527,18 +546,30 @@ var JiraMoverCore = (function () {
     });
     pane.appendChild(row);
 
-    // what a move will fill
+    // The fields — prefilled from settings (or the ticket's own value when it
+    // has one), editable; what you change is written with the move. Hidden
+    // fields (⚙ → show) are still filled, just not shown.
     var defs = C.defaultsFor(settings, i), ids = Object.keys(defs);
-    var will = ids.filter(function (id) { return settings.overwrite || C.isEmpty(i.values[id]); });
-    pane.appendChild(el('div', LBL, 'On move'));
+    var shown = ids.filter(function (id) { return defs[id].show; }), hidden = ids.filter(function (id) { return !defs[id].show; });
+    var current = function (id) { var v = i.values[id]; if (C.isEmpty(v)) return ''; if (Array.isArray(v)) return v.map(function (x) { return x && typeof x === 'object' ? (x.value || x.name || x.key || x.id) : x; }).join(', '); return typeof v === 'object' ? String(v.value || v.name || v.key || v.id || '') : String(v); };
+    pane.appendChild(el('div', LBL + 'display:flex;align-items:center;', 'Fields'));
     if (!ids.length) pane.appendChild(el('div', 'color:#6b778c;font-size:12px;', 'No field defaults yet — open ⚙ and press Detect.'));
-    else if (!will.length) pane.appendChild(el('div', 'color:#6b778c;font-size:12px;', 'Nothing to fill — every field already has a value.'));
-    else will.forEach(function (id) {
-      var r = el('div', 'display:flex;gap:8px;font-size:12px;padding:2px 0;');
-      r.appendChild(el('span', 'color:#6b778c;flex:0 0 118px;', defs[id].label));
-      r.appendChild(el('span', 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', defs[id].raw));
+    shown.forEach(function (id) {
+      var has = current(id) !== '';
+      var prefill = has && !settings.overwrite ? current(id) : defs[id].raw;
+      var value = state.draft[id] != null ? state.draft[id] : prefill;
+      var r = el('div', 'display:flex;align-items:center;gap:8px;padding:3px 0;');
+      r.appendChild(el('span', 'color:#6b778c;font-size:12px;flex:0 0 108px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', defs[id].label, { title: defs[id].label + (has ? ' — the ticket already has: ' + current(id) : ' — from settings') }));
+      var inp = el(/acceptance/i.test(defs[id].label) ? 'textarea' : 'input', INP + 'flex:1;font-size:12.5px;padding:5px 8px;' + (has && state.draft[id] == null ? 'background:#f4f5f7;' : ''));
+      inp.value = value; inp.setAttribute('data-field-id', id);
+      if (inp.tagName === 'TEXTAREA') inp.rows = 2;
+      inp.addEventListener('input', function () { state.draft[id] = inp.value; });
+      inp.addEventListener('keydown', function (e) { e.stopPropagation(); });
+      r.appendChild(inp);
+      if (state.draft[id] != null) r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:14px;', '↺', { title: 'Back to the default', onclick: function () { delete state.draft[id]; render(); } }));
       pane.appendChild(r);
     });
+    if (hidden.length) pane.appendChild(el('div', 'color:#97a0af;font-size:11.5px;margin-top:4px;', 'Also filled: ' + hidden.map(function (id) { return defs[id].label + ' = ' + defs[id].raw; }).join(' · ')));
 
     if (state.log.length) {
       var lg = el('div', 'margin-top:12px;padding-top:10px;border-top:1px solid #ebecf0;font-size:12px;');
@@ -558,7 +589,20 @@ var JiraMoverCore = (function () {
       i.addEventListener('change', function () { onchange(i.value); save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
       pane.appendChild(i); return i;
     };
-    field('Status flow, in order', s.flow.join(' > '), function (v) { var f = v.split(/>|,/).map(function (x) { return x.trim(); }).filter(Boolean); if (f.length >= 2) s.flow = f; }, 'New > To do > In progress > Done');
+    var parseFlow = function (v) { return v.split(/>|,/).map(function (x) { return x.trim(); }).filter(Boolean); };
+    field('Status flow, in order (Task and everything else)', s.flow.join(' > '), function (v) { var f = parseFlow(v); if (f.length >= 2) s.flow = f; }, 'New > To do > In progress > Done');
+    pane.appendChild(el('div', LBL, 'Flows by issue type'));
+    Object.keys(s.flows).forEach(function (type) {
+      var r = el('div', 'display:flex;gap:6px;margin-bottom:6px;');
+      var t = el('input', INP + 'flex:0 0 96px;width:96px;'); t.value = type; t.placeholder = 'Story';
+      var f = el('input', INP + 'flex:1;'); f.value = s.flows[type].join(' > '); f.placeholder = 'To do > In assessment > In progress > Done';
+      t.addEventListener('change', function () { var nt = t.value.trim(); if (!nt || nt === type) return; s.flows[nt] = s.flows[type]; delete s.flows[type]; save(s); render(); });
+      f.addEventListener('change', function () { var pf = parseFlow(f.value); if (pf.length >= 2) { s.flows[type] = pf; save(s); status.textContent = 'Saved'; status.style.color = '#006644'; } });
+      r.appendChild(t); r.appendChild(f);
+      r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:16px;align-self:center;', '×', { title: 'Remove — this type then uses the default flow', onclick: function () { delete s.flows[type]; save(s); render(); } }));
+      pane.appendChild(r);
+    });
+    pane.appendChild(el('button', BTN + 'padding:4px 9px;font-size:12px;', '+ Add an issue type', { onclick: function () { var n = 'Type'; while (s.flows[n]) n += '2'; s.flows[n] = s.flow.slice(); save(s); render(); } }));
     field('Main button moves to', s.primary, function (v) { s.primary = v.trim() || 'In progress'; }, 'In progress');
 
     var dh = el('div', 'display:flex;align-items:center;margin-top:14px;');
@@ -580,7 +624,10 @@ var JiraMoverCore = (function () {
     var pair = function (label, obj, note) {
       pane.appendChild(el('div', LBL, label + (note ? '  ·  ' + note : '')));
       var r = el('div', 'display:flex;gap:6px;');
-      var id = el('input', INP + 'flex:0 0 138px;width:138px;font-family:ui-monospace,Menlo,monospace;font-size:12px;'); id.value = obj.id || ''; id.placeholder = 'customfield_…';
+      var eye = el('input'); eye.type = 'checkbox'; eye.checked = obj.show !== false; eye.title = 'Show this field on the main screen (it is filled either way)'; eye.style.cssText = 'margin:0 2px 0 0;align-self:center;cursor:pointer;';
+      eye.addEventListener('change', function () { obj.show = eye.checked; save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
+      r.appendChild(eye);
+      var id = el('input', INP + 'flex:0 0 132px;width:132px;font-family:ui-monospace,Menlo,monospace;font-size:12px;'); id.value = obj.id || ''; id.placeholder = 'customfield_…';
       var v = el('input', INP + 'flex:1;'); v.value = obj.value == null ? '' : obj.value; v.placeholder = 'default value';
       id.addEventListener('change', function () { obj.id = id.value.trim(); save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
       v.addEventListener('change', function () { obj.value = v.value; save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
@@ -593,13 +640,13 @@ var JiraMoverCore = (function () {
     pane.appendChild(pair('Epic', s.fields.epic, 'epic key'));
 
     pane.appendChild(el('div', 'font-weight:800;margin-top:14px;', 'Other required fields'));
-    pane.appendChild(el('div', 'font-size:12px;color:#6b778c;', 'Added when a move asks for a field and you tick "remember".'));
+    pane.appendChild(el('div', 'font-size:12px;color:#6b778c;', 'Added when a move asks for a field and you tick "remember". The checkbox in front of each field shows or hides it on the main screen.'));
     s.extra.forEach(function (e, idx) {
       var r = pair(e.label, e);
       r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:16px;align-self:center;', '×', { title: 'Remove', onclick: function () { s.extra.splice(idx, 1); save(s); render(); } }));
       pane.appendChild(r);
     });
-    pane.appendChild(el('button', BTN + 'margin-top:8px;padding:4px 9px;font-size:12px;', '+ Add a field', { onclick: function () { s.extra.push({ id: 'customfield_', label: 'Field', value: '' }); save(s); render(); } }));
+    pane.appendChild(el('button', BTN + 'margin-top:8px;padding:4px 9px;font-size:12px;', '+ Add a field', { onclick: function () { s.extra.push({ id: 'customfield_', label: 'Field', value: '', show: true }); save(s); render(); } }));
 
     var chk = function (label, key) {
       var l = el('label', 'display:flex;align-items:flex-start;gap:7px;margin-top:10px;cursor:pointer;font-size:12.5px;');

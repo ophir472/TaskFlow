@@ -9,13 +9,15 @@ var JiraMoverCore = (function () {
 
   var DEFAULT_SETTINGS = {
     flow: ['New', 'To do', 'In progress', 'Done'],
+    // Issue types with their own flow (matched by name); anything else uses `flow`.
+    flows: { Story: ['To do', 'In assessment', 'In progress', 'Done'] },
     primary: 'In progress',
     // The four known fields. id = customfield_12345 (Detect fills it).
     fields: {
-      acceptance: { label: 'Acceptance criteria', id: '', value: '<TICKET TITLE>' },
-      points: { label: 'Story points', id: '', value: '1' },
-      team: { label: 'Scrum team', id: '', value: '' },
-      epic: { label: 'Epic', id: '', value: '' },
+      acceptance: { label: 'Acceptance criteria', id: '', value: '<TICKET TITLE>', show: true },
+      points: { label: 'Story points', id: '', value: '1', show: true },
+      team: { label: 'Scrum team', id: '', value: '', show: false },
+      epic: { label: 'Epic', id: '', value: '', show: true },
     },
     // Any other field a transition demands: { id, label, value }. Filled the
     // same way. The pane adds to this list when you tick "remember".
@@ -23,6 +25,13 @@ var JiraMoverCore = (function () {
     overwrite: false,        // false = fill only what is empty
     reloadAfter: true,       // refresh the page after a successful move
   };
+
+  // The flow this ticket follows: its issue type's own, else the default.
+  function flowFor(settings, issueType) {
+    var flows = settings.flows || {};
+    for (var k in flows) if (same(k, issueType) && flows[k] && flows[k].length >= 2) return flows[k];
+    return settings.flow;
+  }
 
   function norm(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/[\s_-]+/g, ' '); }
   function same(a, b) { return !!norm(a) && norm(a) === norm(b); }
@@ -92,14 +101,14 @@ var JiraMoverCore = (function () {
   function defaultsFor(settings, issue) {
     var out = {};
     var title = (issue && issue.summary) || '';
-    var put = function (id, label, value) {
+    var put = function (id, label, value, show) {
       id = String(id || '').trim();
       if (!id || String(value == null ? '' : value).trim() === '') return;
-      out[id] = { label: label || id, raw: String(value).replace(/<ticket title>|<task name>/gi, title) };
+      out[id] = { label: label || id, raw: String(value).replace(/<ticket title>|<task name>/gi, title), show: show !== false };
     };
     var f = settings.fields || {};
-    Object.keys(f).forEach(function (k) { put(f[k].id, f[k].label, f[k].value); });
-    (settings.extra || []).forEach(function (e) { put(e.id, e.label, e.value); });
+    Object.keys(f).forEach(function (k) { put(f[k].id, f[k].label, f[k].value, f[k].show); });
+    (settings.extra || []).forEach(function (e) { put(e.id, e.label, e.value, e.show); });
     return out;
   }
 
@@ -190,18 +199,23 @@ var JiraMoverCore = (function () {
   function mergeSettings(saved) {
     var d = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
     if (!saved || typeof saved !== 'object') return d;
-    if (Array.isArray(saved.flow) && saved.flow.filter(Boolean).length >= 2) d.flow = saved.flow.map(function (s) { return String(s).trim(); }).filter(Boolean);
+    var cleanFlow = function (f) { return Array.isArray(f) ? f.map(function (s) { return String(s == null ? '' : s).trim(); }).filter(Boolean) : []; };
+    if (cleanFlow(saved.flow).length >= 2) d.flow = cleanFlow(saved.flow);
+    if (saved.flows && typeof saved.flows === 'object') {
+      d.flows = {};
+      Object.keys(saved.flows).forEach(function (k) { var f = cleanFlow(saved.flows[k]); if (String(k).trim() && f.length >= 2) d.flows[String(k).trim()] = f; });
+    }
     if (saved.primary) d.primary = String(saved.primary);
     Object.keys(d.fields).forEach(function (k) {
       var s = (saved.fields || {})[k];
-      if (s) { if (s.id != null) d.fields[k].id = String(s.id).trim(); if (s.value != null) d.fields[k].value = String(s.value); }
+      if (s) { if (s.id != null) d.fields[k].id = String(s.id).trim(); if (s.value != null) d.fields[k].value = String(s.value); if (typeof s.show === 'boolean') d.fields[k].show = s.show; }
     });
-    if (Array.isArray(saved.extra)) d.extra = saved.extra.filter(function (e) { return e && e.id; }).map(function (e) { return { id: String(e.id).trim(), label: String(e.label || e.id), value: String(e.value == null ? '' : e.value) }; });
+    if (Array.isArray(saved.extra)) d.extra = saved.extra.filter(function (e) { return e && e.id; }).map(function (e) { return { id: String(e.id).trim(), label: String(e.label || e.id), value: String(e.value == null ? '' : e.value), show: e.show !== false }; });
     if (typeof saved.overwrite === 'boolean') d.overwrite = saved.overwrite;
     if (typeof saved.reloadAfter === 'boolean') d.reloadAfter = saved.reloadAfter;
     return d;
   }
 
-  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, missingFromErrors: missingFromErrors, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
+  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, flowFor: flowFor, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, missingFromErrors: missingFromErrors, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = JiraMoverCore;

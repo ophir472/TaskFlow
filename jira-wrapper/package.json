@@ -1,6 +1,6 @@
 {
   "name": "jira-mover",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Move a Jira ticket to In progress in one click, from inside the Jira page",
   "type": "module",
