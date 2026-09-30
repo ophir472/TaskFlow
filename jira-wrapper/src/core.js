@@ -10,8 +10,10 @@ var JiraMoverCore = (function () {
   var DEFAULT_SETTINGS = {
     flow: ['New', 'To do', 'In progress', 'Done'],
     // Issue types with their own flow (matched by name); anything else uses `flow`.
-    flows: { Story: ['To do', 'In assessment', 'In progress', 'Done'] },
+    flows: { Story: ['New', 'Defined', 'In tech review', 'Ready for dev', 'In dev', 'In testing', 'Accepted'] },
+    // The main button's target: per issue type, else `primary`.
     primary: 'In progress',
+    primaries: { Story: 'In dev' },
     // The four known fields. id = customfield_12345 (Detect fills it).
     fields: {
       acceptance: { label: 'Acceptance criteria', id: '', value: '<TICKET TITLE>', show: true },
@@ -31,6 +33,13 @@ var JiraMoverCore = (function () {
     var flows = settings.flows || {};
     for (var k in flows) if (same(k, issueType) && flows[k] && flows[k].length >= 2) return flows[k];
     return settings.flow;
+  }
+
+  // What the main button moves this ticket to: the type's own, else the default.
+  function primaryFor(settings, issueType) {
+    var p = settings.primaries || {};
+    for (var k in p) if (same(k, issueType) && String(p[k]).trim()) return String(p[k]).trim();
+    return settings.primary;
   }
 
   function norm(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/[\s_-]+/g, ' '); }
@@ -204,6 +213,12 @@ var JiraMoverCore = (function () {
     if (saved.flows && typeof saved.flows === 'object') {
       d.flows = {};
       Object.keys(saved.flows).forEach(function (k) { var f = cleanFlow(saved.flows[k]); if (String(k).trim() && f.length >= 2) d.flows[String(k).trim()] = f; });
+      // 1.2.0 shipped a placeholder Story flow; a saved copy of it is replaced by the real one.
+      if (d.flows.Story && d.flows.Story.join('|') === 'To do|In assessment|In progress|Done') d.flows.Story = DEFAULT_SETTINGS.flows.Story.slice();
+    }
+    if (saved.primaries && typeof saved.primaries === 'object') {
+      d.primaries = {};
+      Object.keys(saved.primaries).forEach(function (k) { if (String(k).trim() && String(saved.primaries[k] == null ? '' : saved.primaries[k]).trim()) d.primaries[String(k).trim()] = String(saved.primaries[k]).trim(); });
     }
     if (saved.primary) d.primary = String(saved.primary);
     Object.keys(d.fields).forEach(function (k) {
@@ -216,6 +231,6 @@ var JiraMoverCore = (function () {
     return d;
   }
 
-  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, flowFor: flowFor, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, missingFromErrors: missingFromErrors, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
+  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, flowFor: flowFor, primaryFor: primaryFor, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, missingFromErrors: missingFromErrors, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = JiraMoverCore;

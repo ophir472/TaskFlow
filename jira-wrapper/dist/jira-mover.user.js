@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jira Mover
 // @namespace    jira-mover
-// @version      1.2.0
+// @version      1.3.0
 // @description  Click a ticket, move it to In progress in one click — required fields filled from your defaults
 // @match        *://*/browse/*
 // @match        *://*/secure/*
@@ -29,8 +29,10 @@ var JiraMoverCore = (function () {
   var DEFAULT_SETTINGS = {
     flow: ['New', 'To do', 'In progress', 'Done'],
     // Issue types with their own flow (matched by name); anything else uses `flow`.
-    flows: { Story: ['To do', 'In assessment', 'In progress', 'Done'] },
+    flows: { Story: ['New', 'Defined', 'In tech review', 'Ready for dev', 'In dev', 'In testing', 'Accepted'] },
+    // The main button's target: per issue type, else `primary`.
     primary: 'In progress',
+    primaries: { Story: 'In dev' },
     // The four known fields. id = customfield_12345 (Detect fills it).
     fields: {
       acceptance: { label: 'Acceptance criteria', id: '', value: '<TICKET TITLE>', show: true },
@@ -50,6 +52,13 @@ var JiraMoverCore = (function () {
     var flows = settings.flows || {};
     for (var k in flows) if (same(k, issueType) && flows[k] && flows[k].length >= 2) return flows[k];
     return settings.flow;
+  }
+
+  // What the main button moves this ticket to: the type's own, else the default.
+  function primaryFor(settings, issueType) {
+    var p = settings.primaries || {};
+    for (var k in p) if (same(k, issueType) && String(p[k]).trim()) return String(p[k]).trim();
+    return settings.primary;
   }
 
   function norm(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/[\s_-]+/g, ' '); }
@@ -223,6 +232,12 @@ var JiraMoverCore = (function () {
     if (saved.flows && typeof saved.flows === 'object') {
       d.flows = {};
       Object.keys(saved.flows).forEach(function (k) { var f = cleanFlow(saved.flows[k]); if (String(k).trim() && f.length >= 2) d.flows[String(k).trim()] = f; });
+      // 1.2.0 shipped a placeholder Story flow; a saved copy of it is replaced by the real one.
+      if (d.flows.Story && d.flows.Story.join('|') === 'To do|In assessment|In progress|Done') d.flows.Story = DEFAULT_SETTINGS.flows.Story.slice();
+    }
+    if (saved.primaries && typeof saved.primaries === 'object') {
+      d.primaries = {};
+      Object.keys(saved.primaries).forEach(function (k) { if (String(k).trim() && String(saved.primaries[k] == null ? '' : saved.primaries[k]).trim()) d.primaries[String(k).trim()] = String(saved.primaries[k]).trim(); });
     }
     if (saved.primary) d.primary = String(saved.primary);
     Object.keys(d.fields).forEach(function (k) {
@@ -235,7 +250,7 @@ var JiraMoverCore = (function () {
     return d;
   }
 
-  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, flowFor: flowFor, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, missingFromErrors: missingFromErrors, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
+  return { DEFAULT_SETTINGS: DEFAULT_SETTINGS, flowFor: flowFor, primaryFor: primaryFor, norm: norm, same: same, nextHop: nextHop, isEmpty: isEmpty, shape: shape, defaultsFor: defaultsFor, planHop: planHop, planEdit: planEdit, missingFromErrors: missingFromErrors, detect: detect, issueKeyFrom: issueKeyFrom, mergeSettings: mergeSettings };
 })();
 
 // Jira Mover — the part that lives in the Jira page: the pane, the settings
@@ -529,7 +544,8 @@ var JiraMoverCore = (function () {
 
     // the moves — primary first, big
     var flow = C.flowFor(settings, i.type);
-    var primary = flow.filter(function (s) { return C.same(s, settings.primary); })[0] || flow[Math.min(2, flow.length - 1)];
+    var want = C.primaryFor(settings, i.type);
+    var primary = flow.filter(function (s) { return C.same(s, want); })[0] || flow[Math.min(2, flow.length - 1)];
     var at = C.same(i.status, primary);
     var big = el('button', BTN + 'width:100%;padding:11px 10px;font-size:14px;border:none;color:#fff;background:' + (at ? '#97a0af' : '#0052cc') + ';' + (state.busy ? 'opacity:.6;cursor:wait;' : ''),
       state.busy && C.same(state.pendingTarget, primary) ? 'Moving…' : at ? 'Already ' + primary : 'Move to ' + primary,
@@ -595,15 +611,17 @@ var JiraMoverCore = (function () {
     Object.keys(s.flows).forEach(function (type) {
       var r = el('div', 'display:flex;gap:6px;margin-bottom:6px;');
       var t = el('input', INP + 'flex:0 0 96px;width:96px;'); t.value = type; t.placeholder = 'Story';
-      var f = el('input', INP + 'flex:1;'); f.value = s.flows[type].join(' > '); f.placeholder = 'To do > In assessment > In progress > Done';
-      t.addEventListener('change', function () { var nt = t.value.trim(); if (!nt || nt === type) return; s.flows[nt] = s.flows[type]; delete s.flows[type]; save(s); render(); });
+      var f = el('input', INP + 'flex:1;'); f.value = s.flows[type].join(' > '); f.placeholder = 'New > Defined > In tech review > Ready for dev > In dev > In testing > Accepted';
+      var pm = el('input', INP + 'flex:0 0 92px;width:92px;'); pm.value = (s.primaries || {})[type] || ''; pm.placeholder = 'main: In dev'; pm.title = 'What the main button moves this type to (empty = the default above)';
+      pm.addEventListener('change', function () { s.primaries = s.primaries || {}; if (pm.value.trim()) s.primaries[type] = pm.value.trim(); else delete s.primaries[type]; save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
+      t.addEventListener('change', function () { var nt = t.value.trim(); if (!nt || nt === type) return; s.flows[nt] = s.flows[type]; delete s.flows[type]; if (s.primaries && s.primaries[type]) { s.primaries[nt] = s.primaries[type]; delete s.primaries[type]; } save(s); render(); });
       f.addEventListener('change', function () { var pf = parseFlow(f.value); if (pf.length >= 2) { s.flows[type] = pf; save(s); status.textContent = 'Saved'; status.style.color = '#006644'; } });
-      r.appendChild(t); r.appendChild(f);
-      r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:16px;align-self:center;', '×', { title: 'Remove — this type then uses the default flow', onclick: function () { delete s.flows[type]; save(s); render(); } }));
+      r.appendChild(t); r.appendChild(f); r.appendChild(pm);
+      r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:16px;align-self:center;', '×', { title: 'Remove — this type then uses the default flow', onclick: function () { delete s.flows[type]; if (s.primaries) delete s.primaries[type]; save(s); render(); } }));
       pane.appendChild(r);
     });
     pane.appendChild(el('button', BTN + 'padding:4px 9px;font-size:12px;', '+ Add an issue type', { onclick: function () { var n = 'Type'; while (s.flows[n]) n += '2'; s.flows[n] = s.flow.slice(); save(s); render(); } }));
-    field('Main button moves to', s.primary, function (v) { s.primary = v.trim() || 'In progress'; }, 'In progress');
+    field('Main button moves to (Task and everything else)', s.primary, function (v) { s.primary = v.trim() || 'In progress'; }, 'In progress');
 
     var dh = el('div', 'display:flex;align-items:center;margin-top:14px;');
     dh.appendChild(el('div', 'font-weight:800;flex:1;', 'Fields filled on a move'));
@@ -691,7 +709,7 @@ var JiraMoverCore = (function () {
   document.addEventListener('keydown', function (e) {
     var t = e.target, typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
     if (e.altKey && e.code === 'KeyJ') { e.preventDefault(); if (visible()) show(false); else { var k = state.key || keyOfPage(); if (k) open(k); else show(true); } }
-    else if (e.altKey && e.code === 'KeyI') { e.preventDefault(); var key = state.key || keyOfPage(); if (key) { open(key); var go = function () { if (state.issue && state.key === key) run(settings.primary); else setTimeout(go, 200); }; go(); } }
+    else if (e.altKey && e.code === 'KeyI') { e.preventDefault(); var key = state.key || keyOfPage(); if (key) { open(key); var go = function () { if (state.issue && state.key === key) run(C.primaryFor(settings, state.issue.type)); else setTimeout(go, 200); }; go(); } }
     else if (e.key === 'Escape' && visible() && !(typing && pane.contains(t) === false)) show(false);
   }, true);
 

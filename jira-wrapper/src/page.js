@@ -289,7 +289,8 @@
 
     // the moves — primary first, big
     var flow = C.flowFor(settings, i.type);
-    var primary = flow.filter(function (s) { return C.same(s, settings.primary); })[0] || flow[Math.min(2, flow.length - 1)];
+    var want = C.primaryFor(settings, i.type);
+    var primary = flow.filter(function (s) { return C.same(s, want); })[0] || flow[Math.min(2, flow.length - 1)];
     var at = C.same(i.status, primary);
     var big = el('button', BTN + 'width:100%;padding:11px 10px;font-size:14px;border:none;color:#fff;background:' + (at ? '#97a0af' : '#0052cc') + ';' + (state.busy ? 'opacity:.6;cursor:wait;' : ''),
       state.busy && C.same(state.pendingTarget, primary) ? 'Moving…' : at ? 'Already ' + primary : 'Move to ' + primary,
@@ -355,15 +356,17 @@
     Object.keys(s.flows).forEach(function (type) {
       var r = el('div', 'display:flex;gap:6px;margin-bottom:6px;');
       var t = el('input', INP + 'flex:0 0 96px;width:96px;'); t.value = type; t.placeholder = 'Story';
-      var f = el('input', INP + 'flex:1;'); f.value = s.flows[type].join(' > '); f.placeholder = 'To do > In assessment > In progress > Done';
-      t.addEventListener('change', function () { var nt = t.value.trim(); if (!nt || nt === type) return; s.flows[nt] = s.flows[type]; delete s.flows[type]; save(s); render(); });
+      var f = el('input', INP + 'flex:1;'); f.value = s.flows[type].join(' > '); f.placeholder = 'New > Defined > In tech review > Ready for dev > In dev > In testing > Accepted';
+      var pm = el('input', INP + 'flex:0 0 92px;width:92px;'); pm.value = (s.primaries || {})[type] || ''; pm.placeholder = 'main: In dev'; pm.title = 'What the main button moves this type to (empty = the default above)';
+      pm.addEventListener('change', function () { s.primaries = s.primaries || {}; if (pm.value.trim()) s.primaries[type] = pm.value.trim(); else delete s.primaries[type]; save(s); status.textContent = 'Saved'; status.style.color = '#006644'; });
+      t.addEventListener('change', function () { var nt = t.value.trim(); if (!nt || nt === type) return; s.flows[nt] = s.flows[type]; delete s.flows[type]; if (s.primaries && s.primaries[type]) { s.primaries[nt] = s.primaries[type]; delete s.primaries[type]; } save(s); render(); });
       f.addEventListener('change', function () { var pf = parseFlow(f.value); if (pf.length >= 2) { s.flows[type] = pf; save(s); status.textContent = 'Saved'; status.style.color = '#006644'; } });
-      r.appendChild(t); r.appendChild(f);
-      r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:16px;align-self:center;', '×', { title: 'Remove — this type then uses the default flow', onclick: function () { delete s.flows[type]; save(s); render(); } }));
+      r.appendChild(t); r.appendChild(f); r.appendChild(pm);
+      r.appendChild(el('span', 'cursor:pointer;color:#6b778c;font-size:16px;align-self:center;', '×', { title: 'Remove — this type then uses the default flow', onclick: function () { delete s.flows[type]; if (s.primaries) delete s.primaries[type]; save(s); render(); } }));
       pane.appendChild(r);
     });
     pane.appendChild(el('button', BTN + 'padding:4px 9px;font-size:12px;', '+ Add an issue type', { onclick: function () { var n = 'Type'; while (s.flows[n]) n += '2'; s.flows[n] = s.flow.slice(); save(s); render(); } }));
-    field('Main button moves to', s.primary, function (v) { s.primary = v.trim() || 'In progress'; }, 'In progress');
+    field('Main button moves to (Task and everything else)', s.primary, function (v) { s.primary = v.trim() || 'In progress'; }, 'In progress');
 
     var dh = el('div', 'display:flex;align-items:center;margin-top:14px;');
     dh.appendChild(el('div', 'font-weight:800;flex:1;', 'Fields filled on a move'));
@@ -451,7 +454,7 @@
   document.addEventListener('keydown', function (e) {
     var t = e.target, typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
     if (e.altKey && e.code === 'KeyJ') { e.preventDefault(); if (visible()) show(false); else { var k = state.key || keyOfPage(); if (k) open(k); else show(true); } }
-    else if (e.altKey && e.code === 'KeyI') { e.preventDefault(); var key = state.key || keyOfPage(); if (key) { open(key); var go = function () { if (state.issue && state.key === key) run(settings.primary); else setTimeout(go, 200); }; go(); } }
+    else if (e.altKey && e.code === 'KeyI') { e.preventDefault(); var key = state.key || keyOfPage(); if (key) { open(key); var go = function () { if (state.issue && state.key === key) run(C.primaryFor(settings, state.issue.type)); else setTimeout(go, 200); }; go(); } }
     else if (e.key === 'Escape' && visible() && !(typing && pane.contains(t) === false)) show(false);
   }, true);
 

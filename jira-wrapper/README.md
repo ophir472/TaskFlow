@@ -19,10 +19,11 @@ refreshes, and the pane opens by itself when you click a ticket.
 
 ## Issue types
 
-A Task follows `New > To do > In progress > Done`. A **Story** follows
-`To do > In assessment > In progress > Done`. Settings → *Flows by issue
-type* holds these; add a row for any other type. The same fields are filled
-for every type.
+A Task follows `New > To do > In progress > Done`, main button **In
+progress**. A **Story** follows `New > Defined > In tech review > Ready for
+dev > In dev > In testing > Accepted`, main button **In dev**. Settings →
+*Flows by issue type* holds these, each with its own main-button target;
+add a row for any other type. The same fields are filled for every type.
 
 ## First use
 
