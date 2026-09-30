@@ -2,7 +2,7 @@
 // push (part of the session finish routine in CLAUDE.md). Shown at the
 // bottom of Settings; clicking the version opens the full history.
 
-export const APP_VERSION = '1.8.2';
+export const APP_VERSION = '1.8.3';
 
 export interface Release {
   version: string;
@@ -11,6 +11,13 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
+  {
+    version: '1.8.3',
+    date: '2026-09-30',
+    notes: [
+      'jira-wrapper 1.5.0 (side tool): the real Story flow New > Defined > In tech review > Ready for dev > In dev > In testing > Accepted with its own main button (In dev); Story-only fields Fix Version/s and NFT Required; list fields get Jira-style searchable pickers. Re-install the bookmark / userscript to get it',
+    ],
+  },
   {
     version: '1.8.2',
     date: '2026-09-30',
